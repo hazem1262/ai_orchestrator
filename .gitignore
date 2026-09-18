@@ -6,3 +6,4 @@ coverage/
 spikes/**/out/
 .env
 .env.*
+.obsidian/
