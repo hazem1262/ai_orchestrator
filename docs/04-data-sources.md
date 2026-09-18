@@ -32,7 +32,7 @@
 - **user:**
   - `message.content` is either a string or an array of blocks.
   - Other fields: `promptId`, `permissionMode`, `origin.kind`, `promptSource`, `isMeta`.
-  - A record is a **tool result** when it has `toolUseResult` + `sourceToolAssistantUUID`.
+  - A record is a **tool result** when it has `toolUseResult`, or its content contains a `tool_result` block. `sourceToolAssistantUUID` alone is neither necessary nor sufficient: spike S1 measured 0 records with `toolUseResult` and no `sourceToolAssistantUUID`, and 808 with `sourceToolAssistantUUID` but no `toolUseResult` — all 808 carry a `tool_result` content block and classify correctly via that branch.
   - A record is a **real human prompt** when it has no `toolUseResult`, `isMeta` is not true, and the content is not a tool_result block.
 - **assistant:**
   - `message.id` and `message.model`.

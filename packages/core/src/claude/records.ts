@@ -23,8 +23,10 @@ export interface ClaudeMessageRecord {
   gitBranch?: string;
   version?: string;
   isMeta?: boolean;
+  isCompactSummary?: boolean;
   isApiErrorMessage?: boolean;
   toolUseResult?: unknown;
+  sourceToolAssistantUUID?: string;
   attributionSkill?: string;
   apiBlockIndex?: number;
   subtype?: string;
@@ -41,6 +43,8 @@ export interface ClaudeMessageRecord {
 
 export type ClaudeRecordClass =
   | { kind: 'human_prompt'; rec: ClaudeMessageRecord; text: string }
+  | { kind: 'command'; rec: ClaudeMessageRecord; text: string }
+  | { kind: 'compact_summary'; rec: ClaudeMessageRecord }
   | { kind: 'tool_result'; rec: ClaudeMessageRecord }
   | { kind: 'meta'; rec: ClaudeMessageRecord }
   | { kind: 'assistant'; rec: ClaudeMessageRecord }
@@ -101,7 +105,11 @@ export function classifyClaudeRecord(value: unknown): ClaudeRecordClass {
       if (rec.toolUseResult !== undefined || hasToolResultBlock(rec.message?.content))
         return { kind: 'tool_result', rec };
       if (rec.isMeta === true) return { kind: 'meta', rec };
-      return { kind: 'human_prompt', rec, text: contentText(rec.message?.content) };
+      if (rec.isCompactSummary === true) return { kind: 'compact_summary', rec };
+      const text = contentText(rec.message?.content);
+      if (text.startsWith('<command-name>') || text.startsWith('<local-command-stdout>'))
+        return { kind: 'command', rec, text };
+      return { kind: 'human_prompt', rec, text };
     }
     case 'assistant':
       return { kind: 'assistant', rec };

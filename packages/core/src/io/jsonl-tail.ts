@@ -4,6 +4,14 @@ export interface TailResult {
   lines: Array<{ offset: number; text: string }>;
   nextOffset: number;
   partial: boolean;
+  /** Current size (in bytes) of the file at read time. */
+  size: number;
+  /**
+   * True when the stored `offset` was past the end of the file — the file was replaced or
+   * truncated (Claude Code rewrites transcripts on compaction and replaces them on `/clear`).
+   * When this is true, `nextOffset` is reset to `0` so the caller re-scans from the start.
+   */
+  truncated: boolean;
 }
 
 const NL = 0x0a;
@@ -14,9 +22,13 @@ const NL = 0x0a;
  * `maxBytes` is the read chunk size (small values are used in tests).
  */
 export async function readJsonlFrom(path: string, offset: number, maxBytes = 1 << 20): Promise<TailResult> {
+  if (offset < 0) throw new RangeError('offset must be >= 0');
   const fh = await open(path, 'r');
   try {
     const { size } = await fh.stat();
+    if (offset > size) {
+      return { lines: [], nextOffset: 0, partial: false, size, truncated: true };
+    }
     const lines: TailResult['lines'] = [];
     let pos = offset;
     let carry = Buffer.alloc(0);
@@ -41,7 +53,7 @@ export async function readJsonlFrom(path: string, offset: number, maxBytes = 1 <
       carry = Buffer.from(chunk.subarray(start));
       pos += bytesRead;
     }
-    return { lines, nextOffset: carryStart, partial: carry.length > 0 };
+    return { lines, nextOffset: carryStart, partial: carry.length > 0, size, truncated: false };
   } finally {
     await fh.close();
   }

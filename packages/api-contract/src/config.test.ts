@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OrcConfig } from './config.ts';
+import { OrcConfig, ProjectConfig } from './config.ts';
 
 describe('OrcConfig', () => {
   it('fills defaults from an empty object', () => {
@@ -18,5 +18,22 @@ describe('OrcConfig', () => {
     });
     expect(c.projects[0]?.maxConcurrentOwned).toBe(6);
     expect(c.projects[0]?.features.workStreams).toBe(false);
+  });
+
+  it('rejects an unknown top-level key instead of silently discarding it', () => {
+    expect(() => OrcConfig.parse({ typoedKeyThatDoesNotExist: true })).toThrow();
+  });
+});
+
+describe('ProjectConfig', () => {
+  it('rejects an unknown key instead of silently discarding it', () => {
+    expect(() =>
+      ProjectConfig.parse({
+        id: 'wakecap',
+        name: 'Wakecap',
+        pathPrefixes: ['/Users/test/Wakecap'],
+        typoedKeyThatDoesNotExist: true,
+      }),
+    ).toThrow();
   });
 });

@@ -5,4 +5,6 @@
 {"type":"atis-latch","sessionId":"s-unknown"}
 {"type":"bridge-session","bridgeSessionId":"b-1","sessionId":"s-unknown"}
 {"type":"frame-link","path":"/tmp/x.html","frameUrl":"https://example.test/a","title":"Artifact","sessionId":"s-unknown"}
+{"type":"user","uuid":"k-cmd","parentUuid":"k-u1","isSidechain":false,"sessionId":"s-unknown","timestamp":"2026-09-05T08:01:00.000Z","cwd":"/Users/test/Wakecap","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>clear context</command-message>"}}
+{"type":"user","uuid":"k-compact","parentUuid":"k-cmd","isSidechain":false,"sessionId":"s-unknown","timestamp":"2026-09-05T08:02:00.000Z","cwd":"/Users/test/Wakecap","isCompactSummary":true,"message":{"role":"user","content":"Conversation compacted. Previous summary: invented placeholder text about redaction patterns."}}
 this line is not json

@@ -46,12 +46,18 @@ const server = createServer((req, res) => {
 });
 const wss = new WebSocketServer({ server, path: '/pty' });
 
+// A child session inherits CLAUDE_CODE_CHILD_SESSION from process.env and then writes NO
+// transcript (the bug this spike found). Delete that marker and force persistence.
+const childEnv = { ...process.env, TERM: 'xterm-256color' } as Record<string, string>;
+delete childEnv.CLAUDE_CODE_CHILD_SESSION;
+childEnv.CLAUDE_CODE_FORCE_SESSION_PERSISTENCE = '1';
+
 const pty = spawn('claude', ['--resume', sessionId, '--dangerously-skip-permissions'], {
   name: 'xterm-256color',
   cols: 120,
   rows: 36,
   cwd,
-  env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
+  env: childEnv,
 });
 console.log('pty spawned, pid', pty.pid);
 

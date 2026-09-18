@@ -46,6 +46,29 @@ describe('readJsonlFrom', () => {
     const r = await readJsonlFrom(f, 0, 64);
     expect(r.lines.map((l) => l.text)).toEqual([line, line]);
   });
+
+  it('recovers from truncation/replacement instead of silently returning nothing forever', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const f = join(dir, 'trunc.jsonl');
+    writeFileSync(f, '{"n":1}\n{"n":2}\n{"n":3}\n');
+    const first = await readJsonlFrom(f, 0);
+    expect(first.lines).toHaveLength(3);
+    expect(first.truncated).toBe(false);
+    // Claude Code rewrites the transcript on compaction / replaces it on `/clear`: the new
+    // file is shorter than the stored offset.
+    writeFileSync(f, '{"n":9}\n');
+    const second = await readJsonlFrom(f, first.nextOffset);
+    expect(second.truncated).toBe(true);
+    expect(second.nextOffset).toBe(0);
+  });
+
+  it('rejects a negative offset with a clear error instead of the raw fs error', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const f = join(dir, 'neg.jsonl');
+    writeFileSync(f, '{"n":1}\n');
+    await expect(readJsonlFrom(f, -1)).rejects.toThrow(RangeError);
+    await expect(readJsonlFrom(f, -1)).rejects.toThrow('offset must be >= 0');
+  });
 });
 
 describe('parseJsonLine', () => {

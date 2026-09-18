@@ -23,7 +23,7 @@
 
 ## File Structure (created in this phase)
 ```
-package.json  pnpm-workspace.yaml  tsconfig.base.json  biome.json  vitest.workspace.ts  .nvmrc  .gitignore  .npmrc
+package.json  pnpm-workspace.yaml  tsconfig.base.json  biome.json  vitest.config.ts  .nvmrc  .gitignore  .npmrc
 packages/core/{package.json,tsconfig.json,vitest.config.ts}
 packages/core/src/index.ts
 packages/core/src/types/{session.ts,events.ts,inbox.ts,work.ts,audit.ts,index.ts}
@@ -45,7 +45,7 @@ plan/spikes/{S1,S2-S8,S3,S5,S6,S7}.md
 ### Task 1: Repository scaffold
 
 **Files:**
-- Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `biome.json`, `vitest.workspace.ts`, `.nvmrc`, `.gitignore`, `.npmrc`
+- Create: `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json`, `biome.json`, `vitest.config.ts`, `.nvmrc`, `.gitignore`, `.npmrc`
 - Create: `packages/core/package.json`, `packages/core/tsconfig.json`, `packages/core/src/index.ts`, `packages/core/src/smoke.test.ts`
 
 **Interfaces:**
@@ -142,11 +142,12 @@ onlyBuiltDependencies:
 }
 ```
 
-`vitest.workspace.ts`
+`vitest.config.ts` (root; uses `test.projects` — the `defineWorkspace`/`vitest.workspace.ts` API was
+dropped)
 ```ts
-import { defineWorkspace } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 
-export default defineWorkspace(['packages/*', 'apps/*']);
+export default defineConfig({ test: { projects: ['packages/*', 'apps/*'] } });
 ```
 
 `.nvmrc`

@@ -47,10 +47,22 @@ describe('classifyClaudeRecord', () => {
       'ignored',
       'session_meta',
       'session_meta',
+      'command',
+      'compact_summary',
       'unknown',
     ]);
     expect(out[1]).toEqual({ kind: 'unknown', type: 'future-record-kind' });
-    expect(out[7]).toEqual({ kind: 'unknown', type: null });
+    expect(out[9]).toEqual({ kind: 'unknown', type: null });
+  });
+
+  it('classifies slash-command and local-command-stdout content as command, not human_prompt', () => {
+    const c = classifyClaudeRecord(load('s-unknown.jsonl')[7]);
+    expect(c.kind === 'command' && c.text.startsWith('<command-name>')).toBe(true);
+  });
+
+  it('classifies isCompactSummary records as compact_summary, not human_prompt', () => {
+    const c = classifyClaudeRecord(load('s-unknown.jsonl')[8]);
+    expect(c.kind).toBe('compact_summary');
   });
 
   it('exposes session meta type', () => {
