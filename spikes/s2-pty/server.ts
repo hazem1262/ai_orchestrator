@@ -19,9 +19,26 @@ if (!sessionId || !cwd) {
 }
 
 const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const MIME: Record<string, string> = {
+  '.mjs': 'text/javascript',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.map': 'application/json',
+};
+
 const server = createServer((req, res) => {
   if (req.url?.startsWith('/node_modules/')) {
-    res.end(readFileSync(new URL(`.${req.url}`, import.meta.url)));
+    const path = req.url.split('?')[0] ?? '';
+    const ext = path.slice(path.lastIndexOf('.'));
+    try {
+      const body = readFileSync(new URL(`.${path}`, import.meta.url));
+      // Chrome refuses a module script served without a JavaScript MIME type.
+      res.setHeader('content-type', MIME[ext] ?? 'application/octet-stream');
+      res.end(body);
+    } catch {
+      res.statusCode = 404;
+      res.end('not found');
+    }
     return;
   }
   res.setHeader('content-type', 'text/html');
