@@ -19,7 +19,10 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@orc/core": "workspace:*",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.10.0",
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^5.0.0",
     "tsx": "^4.23.13",
     "typescript": "~6.0.3",
     "vitest": "^5.0.1"
