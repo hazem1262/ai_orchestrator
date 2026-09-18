@@ -655,3 +655,16 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `resumeCommand`, `resumeCommandLine` | **P1** `apps/daemon/src/services/sessions/external.ts` | P2 and P7 import; P7's compare/automation launches go through `spawnClaudeSession`. |
 
 **Execution rule:** when a task says "Create" for a file that an earlier phase already created, the executor changes it to "Modify", keeps the existing exports, and adapts the surrounding code. If the two shapes genuinely conflict, the **later** phase adapts to the earlier one unless this table says otherwise, and the change is noted in the task's review note.
+
+## 14. Spike outcomes that bind later phases
+
+Phase 0's spikes settled several questions the phase plans left open. These override the plan text where they differ.
+
+| Spike | Outcome | What it binds |
+|---|---|---|
+| **S1** parser | GO. 968 files / 852 MB / 210,285 lines parsed in 3.3 s, 0 bad JSON, 0 partial files, **0 unknown record types** (Claude Code 2.1.275). | The `classifyClaudeRecord` type lists are complete for this version. `docs/04-data-sources.md`'s claim that a tool result needs `toolUseResult` **and** `sourceToolAssistantUUID` is wrong: all 42,408 records with `toolUseResult` also have the UUID, and the 808 with only the UUID carry a `tool_result` content block and classify correctly. `records.ts` stands as written. |
+| **S3** live status | GO, **watch-only**. Live transitions detected in 3–107 ms (median 27, n=6). | Phase 2 builds the Live Board on the chokidar registry watcher alone; the hook bridge (F10) stays a Phase 5 optimisation. Registry reads must swallow `ENOENT`/parse errors (partial writes are normal). `statusUpdatedAt` is status *age* at first scan, not a detection delay. A `waiting` transition was never observed in the window — Phase 2 must measure that case and record it. |
+| **S5** codex | Rollouts parse cleanly; originators observed: `codex_exec`, `codex_sdk_ts`, `codex-tui`, `Codex Desktop`. | Phase 1's Codex aggregate filters `codex_sdk_ts` by default (decision 3). The `automated` flag keys on originator. |
+| **S7** quota | **official** source found. | `LimitsConfig.quotaSource` defaults to `'official'`, with `officialFieldPaths` defaulting to `rate_limits.five_hour.used_percentage`, `rate_limits.five_hour.resets_at`, `rate_limits.seven_day.used_percentage`, `rate_limits.seven_day.resets_at`. These arrive on the **statusline command's stdin JSON**, so Phase 5's `POST /api/usage/official` is fed by the orchestrator statusline wrapper. The ccusage-style estimator stays as the labelled-"estimated" fallback for when no statusline is installed. Phase 5 must not overwrite a user's existing statusline — it merges or wraps. |
+| **S6** Wakecore | **BLOCKED** pending `gh auth refresh -s read:packages`. | Phase 1's `@/components/ui/*` re-export layer starts on the **shadcn/ui fallback** so Phase 1 is not blocked. Swapping to `@wakecap/core-ui` later touches only that layer. |
+| **S2/S8** PTY | pending (Task 6). | Phase 1's `PtyManager.sendText` and the resume UX depend on it. |
