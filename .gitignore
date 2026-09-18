@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+spikes/**/out/
+.env
+.env.*
+.obsidian/
+.playwright-mcp/

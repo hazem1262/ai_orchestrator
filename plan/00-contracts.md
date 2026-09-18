@@ -75,7 +75,7 @@ orchestrator/
 ├─ pnpm-workspace.yaml          # packages: apps/*, packages/*
 ├─ tsconfig.base.json           # strict, ES2023, moduleResolution "bundler", verbatimModuleSyntax
 ├─ biome.json
-├─ vitest.workspace.ts
+├─ vitest.config.ts             # root config; uses `test.projects` to run packages/* and apps/*
 ├─ .nvmrc  .gitignore  .npmrc   # .npmrc maps @wakecap to GitHub Packages (token from env)
 ├─ fixtures/                    # redacted sample data (see §9)
 ├─ scripts/                     # repo scripts (coverage checks, dry-runs)
@@ -154,25 +154,27 @@ export const ProjectConfig = z.object({
   openIn: z.enum(['vscode', 'terminal', 'finder']).default('vscode'),
   ticketRegex: z.string().nullable().default(null),       // e.g. "\\b(SAF|ALU|SUPRT|SAK|TAN)-\\d+\\b"
   prodPatterns: z.array(z.string()).default([]),
-  features: z.object({ workStreams: z.boolean().default(false), prodBadges: z.boolean().default(false), recaps: z.boolean().default(true) }).default({}),
+  features: z.object({ workStreams: z.boolean().default(false), prodBadges: z.boolean().default(false), recaps: z.boolean().default(true) }).prefault({}),
   repos: z.array(z.object({ path: z.string(), setup: z.string().optional(), run: z.string().optional(), archive: z.string().optional(), copyGlobs: z.array(z.string()).default([]), worktreeDir: z.string().default('.worktrees') })).default([]),
-  budgets: z.object({ dailyUsd: z.number().optional(), weeklyUsd: z.number().optional(), monthlyUsd: z.number().optional() }).default({}),
+  budgets: z.object({ dailyUsd: z.number().optional(), weeklyUsd: z.number().optional(), monthlyUsd: z.number().optional() }).prefault({}),
   maxConcurrentOwned: z.number().int().positive().default(6),
 });
 export const OrcConfig = z.object({
   port: z.number().int().default(4317),
   defaultProjectId: z.string().default('wakecap'),
-  resumeProfile: z.object({ claudeCommand: z.string().default('claude'), claudeArgs: z.array(z.string()).default(['--dangerously-skip-permissions']), codexCommand: z.string().default('codex'), codexArgs: z.array(z.string()).default([]) }).default({}),
+  resumeProfile: z.object({ claudeCommand: z.string().default('claude'), claudeArgs: z.array(z.string()).default(['--dangerously-skip-permissions']), codexCommand: z.string().default('codex'), codexArgs: z.array(z.string()).default([]) }).prefault({}),
   projects: z.array(ProjectConfig).default([]),
-  codex: z.object({ showAutomated: z.boolean().default(false) }).default({}),
-  recaps: z.object({ enabled: z.boolean().default(false), trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'), engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'), autoModel: z.string().default('claude-haiku-4-5'), onDemandModel: z.string().default('claude-sonnet-5'), monthlyBudgetUsd: z.number().default(20), maxInputTokens: z.number().default(30000), minPrompts: z.number().default(2), language: z.string().default('en'), promptTemplate: z.string().nullable().default(null) }).default({}),
+  codex: z.object({ showAutomated: z.boolean().default(false) }).prefault({}),
+  recaps: z.object({ enabled: z.boolean().default(false), trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'), engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'), autoModel: z.string().default('claude-haiku-4-5'), onDemandModel: z.string().default('claude-sonnet-5'), monthlyBudgetUsd: z.number().default(20), maxInputTokens: z.number().default(30000), minPrompts: z.number().default(2), language: z.string().default('en'), promptTemplate: z.string().nullable().default(null) }).prefault({}),
   notifications: z.record(z.string(), z.object({ enabled: z.boolean(), channels: z.array(z.enum(['macos', 'webpush', 'slack_dm'])) })).default({}),
-  archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).default({}),
+  archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
 });
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 ```
 
+
+> **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
 ## 4. Domain types (`@orc/core/src/types`)
@@ -639,7 +641,7 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `Route`, `OrcApp`, `registerXRoutes` | **P1** `apps/daemon/src/http/app.ts` | The `Route`/`OrcApp` types are declared once in P1; each phase adds its own `registerXRoutes(app: OrcApp, ctx: DaemonContext)` file. |
 | `DaemonContext`, `buildContext`, `createDaemon`, `ServiceError` | **P1** `apps/daemon/src/context.ts`, `services/errors.ts` | Later phases add optional fields to `DaemonContext` by modifying that file (see §11). |
 | `CORE_VERSION`, `FIXTURES_DIR` | **P0** `packages/core/src/index.ts`, `src/test-utils/fixtures.ts` | P1 reuses them. |
-| `encodePaste`, `sendText` | **P0** spike `spikes/s2-pty/send-text.ts` (throwaway) → **P1** `apps/daemon/src/pty/input.ts` (real) | P1 copies the validated algorithm from the spike report; the spike file is not imported by the build. |
+| `encodePaste`, `sendText` | **P0** `packages/core/src/pty/paste.ts` (real, pure module — amended from the brief's original throwaway-spike-file plan; see Task 6 ruling) | The S2 spike server (`spikes/s2-pty/server.ts`, outside the pnpm workspace) imports this module by relative path. P1's `apps/daemon/src/pty/input.ts` wraps it rather than re-implementing it. |
 | `SessionDetailPage` and any other web page component | The phase that **creates** the route file owns it (P1 for `/sessions/$source/$id`) | P3 and later **modify** it; they never create a second component with the same name. |
 | `useInboxKeys` | **P2** `apps/web/src/features/inbox/keys.ts` | P3 modifies it to register through the `hotkeys` registry. |
 | Web formatting helpers: `formatDuration`, `formatTokens`, `formatCost`, `shortPath`, `toolLabel`, `hasDrift` | **P1** `apps/web/src/lib/format.ts` | Every later phase imports from there and adds new helpers to the same file. |
@@ -653,3 +655,16 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `resumeCommand`, `resumeCommandLine` | **P1** `apps/daemon/src/services/sessions/external.ts` | P2 and P7 import; P7's compare/automation launches go through `spawnClaudeSession`. |
 
 **Execution rule:** when a task says "Create" for a file that an earlier phase already created, the executor changes it to "Modify", keeps the existing exports, and adapts the surrounding code. If the two shapes genuinely conflict, the **later** phase adapts to the earlier one unless this table says otherwise, and the change is noted in the task's review note.
+
+## 14. Spike outcomes that bind later phases
+
+Phase 0's spikes settled several questions the phase plans left open. These override the plan text where they differ.
+
+| Spike | Outcome | What it binds |
+|---|---|---|
+| **S1** parser | GO. 968 files / 852 MB / 210,285 lines parsed in 3.3 s, 0 bad JSON, 0 partial files, **0 unknown record types** (Claude Code 2.1.275). | The `classifyClaudeRecord` type lists are complete for this version. `docs/04-data-sources.md`'s claim that a tool result needs `toolUseResult` **and** `sourceToolAssistantUUID` is wrong: all 42,408 records with `toolUseResult` also have the UUID, and the 808 with only the UUID carry a `tool_result` content block and classify correctly. `records.ts` stands as written. |
+| **S3** live status | GO, **watch-only**. Live transitions detected in 3–107 ms (median 27, n=6). | Phase 2 builds the Live Board on the chokidar registry watcher alone; the hook bridge (F10) stays a Phase 5 optimisation. Registry reads must swallow `ENOENT`/parse errors (partial writes are normal). `statusUpdatedAt` is status *age* at first scan, not a detection delay. A `waiting` transition was never observed in the window — Phase 2 must measure that case and record it. |
+| **S5** codex | Rollouts parse cleanly; originators observed: `codex_exec`, `codex_sdk_ts`, `codex-tui`, `Codex Desktop`. | Phase 1's Codex aggregate filters `codex_sdk_ts` by default (decision 3). The `automated` flag keys on originator. The report's actual decision also carries: read the Codex SQLite read-only as well; the rollout-mtime<10s process-matching rule is untested under load; and the originator list came from a 5.2% recency-biased sample. |
+| **S7** quota | **official** source found. | `LimitsConfig.quotaSource` defaults to `'official'`, with `officialFieldPaths` defaulting to `rate_limits.five_hour.used_percentage`, `rate_limits.five_hour.resets_at`, `rate_limits.seven_day.used_percentage`, `rate_limits.seven_day.resets_at`. These arrive on the **statusline command's stdin JSON**, so Phase 5's `POST /api/usage/official` is fed by the orchestrator statusline wrapper. The ccusage-style estimator stays as the labelled-"estimated" fallback for when no statusline is installed. Phase 5 must not overwrite a user's existing statusline — it merges or wraps. Caveats: n=1 on one Max account; `/usage` parity was never checked; and `rate_limits` may be absent on some plan tiers or before the first API response, so Phase 5 must fall back to the estimator when the field is missing. |
+| **S6** Wakecore | **BLOCKED** pending `gh auth refresh -s read:packages`. | Phase 1's `@/components/ui/*` re-export layer starts on the **shadcn/ui fallback** so Phase 1 is not blocked. Swapping to `@wakecap/core-ui` later touches only that layer. |
+| **S2/S8** PTY | Scripted input **50/50** complete and in order; send-while-busy is queued by Claude's own TUI (not garbled); multi-line arrives as one prompt. `submitDelayMs` 120 ms works, and no idle detection is needed before sending. Browser render, typing, resize and scrollback replay all verified in headless Chrome. **GO.** | `encodePaste`/`sendText` live in `packages/core/src/pty/paste.ts`; Phase 1's `apps/daemon/src/pty/input.ts` wraps that module. **Two Phase 1 setup gotchas:** (1) node-pty 1.1.0's darwin-arm64 prebuild ships `spawn-helper` without the executable bit, and every `pty.spawn()` fails until it is `chmod +x`'d — the daemon package needs a postinstall step. (2) **A child session inherits `CLAUDE_CODE_CHILD_SESSION` and then writes NO transcript.** `PtyManager.spawn()` must delete that marker from the child env and set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, with a test asserting it; otherwise every session the app launches is invisible to its own indexer. |

@@ -1,0 +1,16 @@
+{
+  "name": "@orc/api-contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

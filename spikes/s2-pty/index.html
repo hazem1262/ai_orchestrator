@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
+    <style>html,body,#t{height:100%;margin:0;background:#111}</style>
+  </head>
+  <body>
+    <div id="t"></div>
+    <script type="module">
+      import { FitAddon } from '/node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
+      import { Terminal } from '/node_modules/@xterm/xterm/lib/xterm.mjs';
+
+      const term = new Terminal({ fontFamily: 'Menlo, monospace', fontSize: 13 });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.open(document.getElementById('t'));
+      fit.fit();
+      const ws = new WebSocket(`ws://${location.host}/pty`);
+      ws.onmessage = (e) => term.write(e.data);
+      term.onData((d) => ws.send(JSON.stringify({ t: 'in', d })));
+      const sendSize = () => { fit.fit(); ws.send(JSON.stringify({ t: 'resize', cols: term.cols, rows: term.rows })); };
+      window.addEventListener('resize', sendSize);
+      ws.onopen = sendSize;
+      window.say = (text) => ws.send(JSON.stringify({ t: 'say', text }));
+    </script>
+  </body>
+</html>
