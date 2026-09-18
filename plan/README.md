@@ -27,7 +27,7 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 
 | Phase | Plan | Milestone | Features | Tasks | Status |
 |---|---|---|---|---|---|
-| 0 | [Foundations & spikes](phase-0-foundations-and-spikes.md) | M0 | scaffold, core parser base, spikes S1–S3, S5–S8 | 11 | ☐ not started |
+| 0 | [Foundations & spikes](phase-0-foundations-and-spikes.md) | M0 | scaffold, core parser base, spikes S1–S3, S5–S8 | 11 | ✅ done (S6 blocked on `gh auth refresh -s read:packages`) |
 | 1 | [History, search & resume](phase-1-history-search-resume.md) | M1 | F3, F4 (resume/fork/adopt), F13, F2 (basic) | 20 | ☐ |
 | 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☐ |
 | 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☐ |
