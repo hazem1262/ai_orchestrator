@@ -1,0 +1,3 @@
+{"type":"user","uuid":"e-u1","parentUuid":null,"isSidechain":false,"sessionId":"s-errors","timestamp":"2026-09-04T08:00:00.000Z","cwd":"/Users/test/Forza","message":{"role":"user","content":"retry"}}
+{"type":"assistant","uuid":"e-a1","parentUuid":"e-u1","isSidechain":false,"sessionId":"s-errors","timestamp":"2026-09-04T08:00:01.000Z","cwd":"/Users/test/Forza","isApiErrorMessage":true,"message":{"id":"em1","role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: 529 overloaded"}],"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"assistant","uuid":"e-a2","parentUuid":"e-a1","isSidechain":false,"sessionId":"s-errors","timestamp":"2026-09-04T08:00:0

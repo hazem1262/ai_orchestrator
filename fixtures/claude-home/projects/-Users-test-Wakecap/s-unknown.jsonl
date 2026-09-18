@@ -1,0 +1,8 @@
+{"type":"user","uuid":"k-u1","parentUuid":null,"isSidechain":false,"sessionId":"s-unknown","timestamp":"2026-09-05T08:00:00.000Z","cwd":"/Users/test/Wakecap","message":{"role":"user","content":"hello"}}
+{"type":"future-record-kind","foo":1,"sessionId":"s-unknown"}
+{"type":"queue-operation","operation":"enqueue","sessionId":"s-unknown"}
+{"type":"file-history-snapshot","messageId":"x","snapshot":{}}
+{"type":"atis-latch","sessionId":"s-unknown"}
+{"type":"bridge-session","bridgeSessionId":"b-1","sessionId":"s-unknown"}
+{"type":"frame-link","path":"/tmp/x.html","frameUrl":"https://example.test/a","title":"Artifact","sessionId":"s-unknown"}
+this line is not json
