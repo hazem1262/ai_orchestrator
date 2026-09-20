@@ -7,6 +7,11 @@ import type { OrcApp } from '../types.ts';
 
 export function registerProjectRoutes(app: OrcApp, ctx: DaemonContext): void {
   app.get('/api/projects', (c) => c.json(ctx.projects.list()));
+  app.get('/api/projects/:id', (c) => {
+    const cfg = ctx.projects.get(c.req.param('id'));
+    if (!cfg) throw new ServiceError('not_found', 404, 'project not found');
+    return c.json(cfg);
+  });
   app.patch('/api/projects/:id', async (c) => {
     const patch = await readJson(c, ProjectPatchSchema);
     if (patch.ticketRegex && compileTicketRegex(patch.ticketRegex) === null) {

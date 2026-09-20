@@ -43,6 +43,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             History
           </Link>
+          <Link
+            to="/settings"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Settings
+          </Link>
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <main className="min-h-0 flex-1 overflow-auto">{children}</main>

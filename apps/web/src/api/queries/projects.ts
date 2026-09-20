@@ -10,11 +10,16 @@ export function useProjects() {
   });
 }
 
+export function useProjectConfig(id: string) {
+  return useQuery({ queryKey: ['project', id], queryFn: () => getApiClient().projectsGet(id) });
+}
+
 export function useUpdateProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: { id: string; patch: ProjectPatch }) => getApiClient().projectsUpdate(v.id, v.patch),
-    onSuccess: async () => {
+    onSuccess: async (cfg, v) => {
+      qc.setQueryData(['project', v.id], cfg);
       await qc.invalidateQueries({ queryKey: ['projects'] });
       await qc.invalidateQueries({ queryKey: ['sessions'] });
     },

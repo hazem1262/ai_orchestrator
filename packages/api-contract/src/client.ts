@@ -45,6 +45,7 @@ export interface ApiClientOptions {
 export interface ApiClient {
   healthGet(): Promise<HealthResponse>;
   projectsList(): Promise<Project[]>;
+  projectsGet(id: string): Promise<ProjectConfig>;
   projectsUpdate(id: string, patch: ProjectPatch): Promise<ProjectConfig>;
   sessionsList(filters: SessionListFilters): Promise<SessionListResponse>;
   sessionsGet(source: Source, id: string): Promise<Session>;
@@ -110,6 +111,7 @@ export function createApiClient(o: ApiClientOptions): ApiClient {
   return {
     healthGet: () => call(HealthResponseSchema, 'GET', '/api/health'),
     projectsList: () => call(z.array(ProjectSchema), 'GET', '/api/projects'),
+    projectsGet: (id) => call(ProjectConfig, 'GET', `/api/projects/${encodeURIComponent(id)}`),
     projectsUpdate: (id, patch) =>
       call(ProjectConfig, 'PATCH', `/api/projects/${encodeURIComponent(id)}`, patch),
     sessionsList: (filters) =>

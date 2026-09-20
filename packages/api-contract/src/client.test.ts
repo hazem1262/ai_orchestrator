@@ -65,6 +65,13 @@ describe('createApiClient', () => {
       init: { method: 'DELETE', body: '{"confirm":true}' },
     });
   });
+
+  it('gets a single project config', async () => {
+    const { fn, calls } = fakeFetch(200, { id: 'wakecap', name: 'Wakecap', pathPrefixes: ['/w'] });
+    const cfg = await createApiClient({ baseUrl: '', token: 't', fetch: fn }).projectsGet('wakecap');
+    expect(calls[0]?.url).toBe('/api/projects/wakecap');
+    expect(cfg).toMatchObject({ id: 'wakecap', openIn: 'vscode', hidden: false });
+  });
 });
 
 describe('createApiClient round trips (one per route family)', () => {

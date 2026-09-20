@@ -10,6 +10,7 @@ export function createFakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   const base: ApiClient = {
     healthGet: vi.fn(async () => ({ ok: true, version: '0.0.0', uptimeS: 1 })),
     projectsList: vi.fn(async () => []),
+    projectsGet: unexpected('projectsGet'),
     projectsUpdate: unexpected('projectsUpdate'),
     sessionsList: vi.fn(async () => ({ items: [], nextCursor: null })),
     sessionsGet: unexpected('sessionsGet'),
