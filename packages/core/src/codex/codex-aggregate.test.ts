@@ -12,6 +12,8 @@ const BASIC =
   'codex-home/sessions/2026/09/01/rollout-2026-09-01T09-00-00-c0dex000-0000-0000-0000-000000000001.jsonl';
 const AUTO =
   'codex-home/sessions/2026/03/10/rollout-2026-03-10T09-00-00-c0dex000-0000-0000-0000-000000000002.jsonl';
+const SEARCH =
+  'codex-home/sessions/2026/09/02/rollout-2026-09-02T10-00-00-c0dex000-0000-0000-0000-000000000003.jsonl';
 const opts = { projectId: 'wakecap', transcriptPath: '/r.jsonl', availability: 'resumable' as const };
 
 async function ingest(rel: string) {
@@ -155,5 +157,16 @@ describe('Codex aggregate', () => {
 
   it('returns null without session_meta', () => {
     expect(codexStateToSession(createCodexAggState(), opts)).toBeNull();
+  });
+
+  it('maps tool_search and web_search response_item payloads (S5 payload cross-check)', async () => {
+    const { state, events } = await ingest(SEARCH);
+    // prompt, tool_search_call, tool_search_output, web_search_call
+    expect(events.map((e) => e.kind)).toEqual(['prompt', 'tool_call', 'tool_result', 'tool_call']);
+    const [, searchCall, searchOutput, webCall] = events;
+    expect(searchCall).toMatchObject({ tool: 'tool_search', toolUseId: 's1' });
+    expect(searchOutput).toMatchObject({ kind: 'tool_result', toolUseId: 's1', text: '2 results' });
+    expect(webCall).toMatchObject({ tool: 'web_search', toolUseId: 'w1' });
+    expect(state.toolCallCount).toBe(2);
   });
 });

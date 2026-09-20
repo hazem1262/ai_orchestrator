@@ -1,5 +1,5 @@
 import type { DeriveConfig, ResolveDeriveConfig } from '../claude/session-aggregate.ts';
-import { deriveName } from '../derive/name.ts';
+import { deriveName, truncate } from '../derive/name.ts';
 import { matchesProd } from '../derive/prod.ts';
 import { isTestCommand, parseTestOutput } from '../derive/tests.ts';
 import { extractTickets } from '../derive/tickets.ts';
@@ -191,6 +191,26 @@ function onResponseItem(state: CodexAggState, env: CodexEnvelope, cfg: DeriveCon
     case 'custom_tool_call': {
       const name = str(p.name) ?? 'unknown';
       return [onToolCall(state, env, { name, input: p.input ?? null, command: null, cfg })];
+    }
+    case 'tool_search_call':
+    case 'web_search_call': {
+      const name = p.type === 'web_search_call' ? 'web_search' : 'tool_search';
+      let input: unknown = p.arguments ?? p.tools ?? null;
+      if (typeof input === 'string') {
+        try {
+          input = JSON.parse(input);
+        } catch {
+          // keep raw string
+        }
+      }
+      return [onToolCall(state, env, { name, input, command: null, cfg })];
+    }
+    case 'tool_search_output': {
+      // Search-result bodies can be large; store a short label instead of the raw payload.
+      const e = newEvent(state, env, 'tool_result');
+      e.toolUseId = str(p.call_id);
+      e.text = typeof p.output === 'string' ? truncate(p.output, TOOL_RESULT_MAX) : 'tool search result';
+      return [e];
     }
     case 'function_call_output':
     case 'custom_tool_call_output': {
