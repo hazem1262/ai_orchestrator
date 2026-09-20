@@ -55,6 +55,15 @@ export interface Indexer {
   watch(): Promise<void>;
   close(): Promise<void>;
   unknownTypes(): Record<string, number>;
+  /**
+   * Runs one reconciliation pass immediately — the same backstop sweep `watch()` schedules on
+   * `reconcileMs` — callable directly so tests and observability code (Task 19) don't have to
+   * wait on the timer or start the chokidar watcher just to see the counts. Returns how many
+   * indexable paths were actually re-checked (`swept`) versus skipped because they are
+   * already-known-automated Codex rollouts (`skipped`) — see
+   * `loadKnownAutomatedCodexRolloutPaths`'s doc comment for exactly what "already known" means.
+   */
+  reconcile(): Promise<{ swept: number; skipped: number }>;
 }
 
 export interface IndexerDeps {
@@ -131,15 +140,33 @@ export function createIndexer(deps: IndexerDeps): Indexer {
   let watcher: FSWatcher | null = null;
   let queue: Promise<void> = Promise.resolve();
   const resolveCfg = (cwd: string | null): DeriveConfig => projects.deriveConfigFor(cwd);
+  // One bulk lookup per sweep for the reconcile-sweep narrowing below, not a per-file query.
+  // Measured iteration (see task-10-report.md's "Flake fix"): a per-file `getSessionByPk` check
+  // (fetches + JSON.parses the whole session row) regressed the sweep from ~342ms to ~705ms on a
+  // real ~/.codex; a per-file lean single-column statement only marginally improved on that
+  // (~326ms), because ~6,700 individual prepared-statement round-trips is itself the dominant
+  // cost, not what each one reads. A single JOIN, turned into an in-memory `Set` the sweep loop
+  // checks with O(1) lookups, pays that cost exactly once per sweep instead of once per file.
+  const knownAutomatedCodexRolloutsStmt = raw.prepare<[], { path: string }>(
+    `SELECT fo.path AS path
+       FROM file_offsets fo
+       JOIN sessions s ON s.pk = fo.session_pk
+      WHERE fo.kind = 'codex-rollout' AND s.automated = 1`,
+  );
 
   // Every scan/index/watch task is funneled through this single promise chain, so two file
   // events (or a scan overlapping a watch event) can never race each other into the same
-  // session's transaction.
-  function enqueue(fn: () => Promise<void> | void): Promise<void> {
+  // session's transaction. Generic so a task (like reconcileSweep) can hand its result back to
+  // its own caller while the internal `queue` chain itself always settles to void — a failure in
+  // one task is logged and never stalls the tasks queued after it.
+  function enqueue<T = void>(fn: () => Promise<T> | T): Promise<T> {
     const run = queue.then(fn);
-    queue = run.catch((err: unknown) => {
-      log.error({ err }, 'indexing task failed');
-    });
+    queue = run.then(
+      () => undefined,
+      (err: unknown) => {
+        log.error({ err }, 'indexing task failed');
+      },
+    );
     return run;
   }
 
@@ -368,6 +395,19 @@ export function createIndexer(deps: IndexerDeps): Indexer {
   }
 
   /**
+   * "Already known automated" Codex rollout paths, for the reconcile-sweep narrowing below: a
+   * path is only in this set when `file_offsets` already has a `codex-rollout` row for it (it
+   * was indexed at least once before — a path the index has never seen is never "known", so a
+   * brand-new automated session can't go invisible until the next full scan) AND that row's
+   * session is already flagged `automated` in the `sessions` table. Decided entirely from what
+   * the index already persisted via one query — never by re-opening or re-parsing any file,
+   * which would defeat the point of skipping it.
+   */
+  function loadKnownAutomatedCodexRolloutPaths(): Set<string> {
+    return new Set(knownAutomatedCodexRolloutsStmt.all().map((r) => r.path));
+  }
+
+  /**
    * Backstop for chokidar's push notifications: a light re-listing of every indexable path, run
    * on `indexNow`'s existing (size, mtime) fast-skip so an already-current file costs one cheap
    * stat(). Native filesystem watch backends are not fully reliable under contention — an event
@@ -375,11 +415,43 @@ export function createIndexer(deps: IndexerDeps): Indexer {
    * both brand-new and already-watched directories (see the "Flake fix" section of
    * task-10-report.md for the reproduction). `watch()` runs this on `reconcileMs` so a session is
    * never stale for longer than that, independent of whether the underlying OS ever tells us.
+   *
+   * Narrowing: on a real `~/.codex`, the large majority of rollout files are already-known
+   * `codex_sdk_ts` ("automated") sessions, hidden from the UI by default — measured at 5,637 of
+   * 6,773 total indexable files (83.2%) against the author's real home, dominating the sweep's
+   * cost (see task-10-report.md's "Flake fix"). Those specific paths are skipped by THIS sweep
+   * only — never by `scanAll()`, and never by the watcher's own chokidar-triggered `indexNow`
+   * call when an event does arrive, so a real edit to one of them is still picked up normally the
+   * moment the OS tells us about it. Missing a change to one of them between OS events, bounded
+   * by the next full `scanAll()`, is an accepted trade since these sessions are hidden by
+   * default anyway.
    */
-  function reconcileSweep(): Promise<void> {
+  function reconcileSweep(): Promise<{ swept: number; skipped: number }> {
     return enqueue(async () => {
-      for (const f of listIndexableFiles(paths)) await indexNow(f);
-    }).catch(() => undefined);
+      const knownAutomated = loadKnownAutomatedCodexRolloutPaths();
+      let swept = 0;
+      let skipped = 0;
+      for (const f of listIndexableFiles(paths)) {
+        if (knownAutomated.has(f)) {
+          skipped += 1;
+          continue;
+        }
+        swept += 1;
+        try {
+          await indexNow(f);
+        } catch (err) {
+          // One bad path must not abort the rest of the sweep.
+          log.warn({ err, path: f }, 'reconcile sweep failed for path');
+        }
+      }
+      if (skipped > 0) {
+        log.debug({ swept, skipped }, 'reconcile sweep skipped known-automated codex rollouts');
+      }
+      return { swept, skipped };
+    }).catch((err: unknown) => {
+      log.error({ err }, 'reconcile sweep failed');
+      return { swept: 0, skipped: 0 };
+    });
   }
 
   return {
@@ -464,6 +536,9 @@ export function createIndexer(deps: IndexerDeps): Indexer {
         for (const [k, v] of Object.entries(counts)) out[k] = (out[k] ?? 0) + v;
       }
       return out;
+    },
+    reconcile() {
+      return reconcileSweep();
     },
   };
 }

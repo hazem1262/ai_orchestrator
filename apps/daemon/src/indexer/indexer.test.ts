@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -21,6 +22,7 @@ import { getFileOffset } from '../db/repos/file-offsets.ts';
 import { getSessionByPk, getSessionOrigin } from '../db/repos/sessions.ts';
 import { type BusEvent, createEventBus, type EventBus } from '../live/event-bus.ts';
 import { createProjectService } from '../services/projects.ts';
+import { listIndexableFiles } from './file-kinds.ts';
 import { createIndexer, type Indexer } from './indexer.ts';
 
 /**
@@ -316,5 +318,106 @@ describe('indexer', () => {
     });
     await waitForIndexed(bus, 'claude:s-new', 8000);
     expect(getSessionByPk(db, 'claude:s-new')?.firstPrompt).toBe('watched prompt');
+  });
+
+  // RECONCILE NARROWING: the periodic sweep may skip a Codex rollout the index already knows is
+  // `automated` (`codex_sdk_ts`, hidden in the UI by default), but only for the sweep itself
+  // (never scanAll(), never the watcher's own indexFile call when an OS event does arrive), and
+  // never for a path file_offsets has not seen yet.
+  it('reconcile sweep skips a known-automated codex rollout, but still sweeps an unknown or non-automated one', async () => {
+    await indexer.scanAll();
+
+    const knownAutomatedFile = join(
+      homes.codexHome,
+      'sessions/2026/03/10/rollout-2026-03-10T09-00-00-c0dex000-0000-0000-0000-000000000002.jsonl',
+    );
+    const nonAutomatedFile = join(
+      homes.codexHome,
+      'sessions/2026/09/01/rollout-2026-09-01T09-00-00-c0dex000-0000-0000-0000-000000000001.jsonl',
+    );
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000002')).toMatchObject({
+      promptCount: 1,
+      flags: expect.objectContaining({ automated: true }),
+    });
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000001')).toMatchObject({
+      promptCount: 1,
+      flags: expect.objectContaining({ automated: false }),
+    });
+
+    // Real changes to BOTH: if the known-automated one is genuinely skipped by the sweep, its
+    // promptCount must stay at 1; the non-automated one is a control that must still update.
+    appendFileSync(
+      knownAutomatedFile,
+      `${JSON.stringify({
+        timestamp: '2026-03-10T09:05:00.000Z',
+        ordinal: 2,
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'must be skipped' }],
+        },
+      })}\n`,
+    );
+    appendFileSync(
+      nonAutomatedFile,
+      `${JSON.stringify({
+        timestamp: '2026-09-01T09:05:00.000Z',
+        ordinal: 8,
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'must be swept' }] },
+      })}\n`,
+    );
+
+    // A brand-new, NEVER-indexed rollout that is also automated — "known automated" requires it
+    // to already be in the index, so this one must be swept despite its originator.
+    const newDir = join(homes.codexHome, 'sessions/2026/09/05');
+    mkdirSync(newDir, { recursive: true });
+    const unseenFile = join(newDir, 'rollout-2026-09-05T09-00-00-c0dex000-0000-0000-0000-000000000099.jsonl');
+    writeFileSync(
+      unseenFile,
+      `${[
+        JSON.stringify({
+          timestamp: '2026-09-05T09:00:00.000Z',
+          ordinal: 0,
+          type: 'session_meta',
+          payload: {
+            id: 'c0dex000-0000-0000-0000-000000000099',
+            session_id: 'c0dex000-0000-0000-0000-000000000099',
+            cwd: '/Users/test/Wakecap',
+            originator: 'codex_sdk_ts',
+          },
+        }),
+        JSON.stringify({
+          timestamp: '2026-09-05T09:00:02.000Z',
+          ordinal: 1,
+          type: 'response_item',
+          payload: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: 'brand new automated session must still be swept' }],
+          },
+        }),
+      ].join('\n')}\n`,
+    );
+
+    const totalFiles = listIndexableFiles(homes.paths).length;
+    const result = await indexer.reconcile();
+
+    expect(result).toEqual({ skipped: 1, swept: totalFiles - 1 });
+    // The known-automated file's session is untouched: the sweep really did skip it, not just
+    // happen to leave it unchanged.
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000002')?.promptCount).toBe(1);
+    // The control (non-automated) and the never-before-seen automated rollout were both swept.
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000001')?.promptCount).toBe(2);
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000099')).toMatchObject({
+      firstPrompt: 'brand new automated session must still be swept',
+      flags: expect.objectContaining({ automated: true }),
+    });
+
+    // The watcher still reacts normally to the known-automated file once an event does arrive —
+    // the narrowing applies only to the periodic sweep, never to a direct/watched index.
+    await indexer.indexFile(knownAutomatedFile);
+    expect(getSessionByPk(db, 'codex:c0dex000-0000-0000-0000-000000000002')?.promptCount).toBe(2);
   });
 });
