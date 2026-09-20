@@ -13,7 +13,13 @@ import {
   registryStatusToLive,
 } from './registry.ts';
 import { createClaudeAggState, ingestClaudeRecord } from './session-aggregate.ts';
-import { agentIdFromPath, buildAgentTree, claudeStateToAgentNode, parseSubagentMeta } from './subagents.ts';
+import {
+  agentIdFromPath,
+  buildAgentTree,
+  claudeStateToAgentNode,
+  parseSubagentMeta,
+  unreachableAgentIds,
+} from './subagents.ts';
 
 const home = join(FIXTURES_DIR, 'claude-home');
 const subDir = join(home, 'projects/-Users-test-Wakecap/s-subagents/subagents');
@@ -70,6 +76,52 @@ describe('subagents', () => {
     expect(tree[0]?.children[0]?.children.map((t) => [t.node.id, t.node.depth, t.node.background])).toEqual([
       ['ag3', 3, false],
     ]);
+  });
+});
+
+describe('buildAgentTree cycles', () => {
+  const cycleNode = (id: string, parentId: string | null): AgentNode => ({
+    id,
+    sessionId: 's-cycles',
+    parentId,
+    depth: 1,
+    agentType: 'general-purpose',
+    description: '',
+    background: false,
+    toolUseId: null,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: null },
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: null,
+    status: 'done',
+    transcriptPath: '/x',
+  });
+
+  it('drops a self-cycle from the tree and reports it as unreachable', () => {
+    const a = cycleNode('a', 'a');
+    expect(buildAgentTree([a])).toEqual([]);
+    expect(unreachableAgentIds([a])).toEqual(['a']);
+  });
+
+  it('drops a mutual a<->b cycle from the tree and reports both as unreachable', () => {
+    const a = cycleNode('a', 'b');
+    const b = cycleNode('b', 'a');
+    expect(buildAgentTree([a, b])).toEqual([]);
+    expect(unreachableAgentIds([a, b])).toEqual(['a', 'b']);
+  });
+
+  it('keeps a legitimate root+child intact alongside an unrelated 3-cycle', () => {
+    const r = cycleNode('r', null);
+    const ch = cycleNode('ch', 'r');
+    const x = cycleNode('x', 'y');
+    const y = cycleNode('y', 'z');
+    const z = cycleNode('z', 'x');
+    const nodes = [r, x, y, z, ch];
+
+    const tree = buildAgentTree(nodes);
+    expect(tree.map((t) => t.node.id)).toEqual(['r']);
+    expect(tree[0]?.children.map((t) => t.node.id)).toEqual(['ch']);
+
+    expect(unreachableAgentIds(nodes)).toEqual(['x', 'y', 'z']);
   });
 });
 

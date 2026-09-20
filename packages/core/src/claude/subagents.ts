@@ -59,6 +59,13 @@ export function claudeStateToAgentNode(
   };
 }
 
+/**
+ * Each node is placed exactly once: as a root (no resolvable parent) or as one parent's child.
+ * A node caught in a `parentId` cycle — a self-cycle, or two-or-more nodes pointing at each
+ * other — always has a parent that resolves inside the cycle, so it never reaches a root and is
+ * intentionally left out of the returned tree; it does not throw, hang, or otherwise surface.
+ * Use `unreachableAgentIds` to detect and report ids the tree silently dropped this way.
+ */
 export function buildAgentTree(nodes: AgentNode[]): AgentTreeNode[] {
   const byId = new Map<string, AgentTreeNode>();
   for (const n of nodes) byId.set(n.id, { node: n, children: [] });
@@ -74,4 +81,18 @@ export function buildAgentTree(nodes: AgentNode[]): AgentTreeNode[] {
   };
   sortRec(roots);
   return roots;
+}
+
+/** Ids that buildAgentTree cannot place in the tree because their parent chain forms a cycle. */
+export function unreachableAgentIds(nodes: AgentNode[]): string[] {
+  const reachable = new Set<string>();
+  const walk = (list: AgentTreeNode[]): void => {
+    for (const t of list) {
+      if (reachable.has(t.node.id)) continue;
+      reachable.add(t.node.id);
+      walk(t.children);
+    }
+  };
+  walk(buildAgentTree(nodes));
+  return nodes.filter((n) => !reachable.has(n.id)).map((n) => n.id);
 }
