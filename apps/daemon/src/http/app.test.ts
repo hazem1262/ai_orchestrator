@@ -16,6 +16,7 @@ import {
   type TestContext,
   writeClaudeSession,
 } from '../../test/helpers.ts';
+import { insertHistoryPrompts } from '../db/repos/history.ts';
 import type { Indexer } from '../indexer/indexer.ts';
 import { createApp } from './app.ts';
 import type { OrcApp } from './types.ts';
@@ -370,6 +371,60 @@ describe('redaction at the boundary', () => {
     const agentsText = JSON.stringify(agents);
 
     const everything = [JSON.stringify(session), JSON.stringify(item), eventsText, agentsText].join('\n');
+    for (const secret of SECRETS) {
+      expect(everything).not.toContain(secret);
+    }
+  });
+
+  it('never leaks a secret through the history-prompt search fallback either (Fix round 4)', async () => {
+    // Same session, same secrets, plus a history_prompts row (h.display: what sessions.ts's
+    // `!hits.has(h.pk)` fallback renders — the exact path Fix round 4 found shipping raw,
+    // unredacted text). Its own token ("historysentinel") appears nowhere in the indexed event
+    // text, so the FTS-native `searchEventSessions` never matches it for this session and the
+    // search MUST go through the history-prompt fallback to find it at all — proving this test
+    // actually exercises that branch through the real HTTP pipeline, not just the native path
+    // the previous test already covers.
+    await indexer.indexFile(writeSecretSession(ctx));
+    await indexer.indexFile(writeSecretSubagent(ctx));
+    insertHistoryPrompts(ctx.db, [
+      {
+        sessionId: SECRET_SESSION_ID,
+        ts: '2026-09-05T09:00:00.000Z',
+        // The secret sits exactly 30 chars before the matched token — inside highlight()'s
+        // default ±40-char radius, reproducing the same bisection Fix round 4 found: under the
+        // old (buggy, unredacted) fallback this leaves "hunter2" in clear even after the
+        // HTTP-boundary `redactSnippet` pass, because that pass runs on the already-bisected
+        // text, not the original.
+        display: `PGPASSWORD=hunter2${' '.repeat(30)}historysentinel followup text ghp_1234567890abcdefghij trailing`,
+        project: '/Users/test/Wakecap',
+      },
+    ]);
+
+    const list = SessionListResponseSchema.parse(
+      await json(await call('/api/sessions?source=claude&q=historysentinel')),
+    );
+    const item = list.items.find((i) => i.pk === 'claude:s-secret');
+    expect(item).toBeDefined(); // only findable via the history-prompt fallback (see above)
+    expect(item?.snippet).not.toBeNull();
+    // The snippet's ±40-char window can bisect the (short, post-redaction) tag itself — harmless,
+    // since a tag fragment carries no secret data — so this only asserts the property that
+    // actually matters: neither secret ever appears in clear, regardless of where the window
+    // lands relative to the tag.
+    expect(item?.snippet).not.toContain('hunter2');
+    expect(item?.snippet).not.toMatch(/ghp_[A-Za-z0-9]/);
+
+    const detail = await call('/api/sessions/claude/s-secret');
+    const session = SessionSchema.parse(await json(detail));
+    const events = await json(await call('/api/sessions/claude/s-secret/events'));
+    const agentsRes = await call('/api/sessions/claude/s-secret/agents');
+    const agents = z.array(AgentNodeSchema).parse(await json(agentsRes));
+
+    const everything = [
+      JSON.stringify(session),
+      JSON.stringify(list),
+      JSON.stringify(events),
+      JSON.stringify(agents),
+    ].join('\n');
     for (const secret of SECRETS) {
       expect(everything).not.toContain(secret);
     }

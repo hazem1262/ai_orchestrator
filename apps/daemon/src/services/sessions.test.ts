@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeSession } from '../../test/factories.ts';
 import {
   createTestContext,
   FAKE_CLAUDE,
@@ -8,6 +9,8 @@ import {
   type TestContext,
   writeClaudeSession,
 } from '../../test/helpers.ts';
+import { insertHistoryPrompts } from '../db/repos/history.ts';
+import { upsertSession } from '../db/repos/sessions.ts';
 import type { BusEvent } from '../live/event-bus.ts';
 import { resumeCommandLine } from './external.ts';
 import { buildResumeCommand, decodeCursor, encodeCursor } from './sessions.ts';
@@ -100,6 +103,48 @@ describe('session service', () => {
     // so it must NOT match 'notification' — proving earlier tokens genuinely filter rather than
     // silently falling back to prefix behavior everywhere.
     expect(ctx.sessions.list({ q: 'notif service' }).items).toEqual([]);
+  });
+
+  it('does not leak secrets through the history-prompt fallback (Fix round 4)', async () => {
+    await setup();
+    // Mirrors Fix round 3's snippet.test.ts matrix, but through the actual service-level
+    // `list()` response for the history-prompt fallback (sessions.ts's `!hits.has(h.pk)` branch,
+    // which previously called bare `highlight()` with no redaction at all — see the coordinator's
+    // repro: `h.display` is raw, transcript-derived prompt text, exactly where a pasted
+    // credential lands).
+    const cases: Array<{ label: string; secret: string; leaked: (out: string) => boolean }> = [
+      { label: 'keyword-anchored', secret: 'PGPASSWORD=hunter2', leaked: (out) => out.includes('hunter2') },
+      {
+        label: 'length-gated',
+        secret: `ghp_${'a'.repeat(36)}`,
+        leaked: (out) => /ghp_[A-Za-z0-9]/.test(out),
+      },
+    ];
+    let n = 0;
+    for (const { label, secret, leaked } of cases) {
+      for (const dir of ['before', 'after'] as const) {
+        for (const gapLen of [30, 40, 50]) {
+          n += 1;
+          const sessionId = `hist-fallback-${n}`;
+          const gap = ' '.repeat(gapLen);
+          const display =
+            dir === 'before'
+              ? `filler ${secret}${gap}target trailing filler text here`
+              : `leading filler text here target${gap}${secret} trailing`;
+          upsertSession(
+            ctx.db,
+            makeSession({ id: sessionId, name: `history fallback ${label} ${dir} ${gapLen}` }),
+          );
+          insertHistoryPrompts(ctx.db, [
+            { sessionId, ts: '2026-09-01T09:00:00.000Z', display, project: '/Users/test/Wakecap' },
+          ]);
+
+          const item = ctx.sessions.list({ q: 'target' }).items.find((i) => i.pk === `claude:${sessionId}`);
+          expect(item).toBeDefined();
+          expect(leaked(item?.snippet ?? '')).toBe(false);
+        }
+      }
+    }
   });
 
   it('hides automated codex sessions unless asked', async () => {

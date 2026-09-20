@@ -33,7 +33,7 @@ import type { PtyInfo, PtyManager } from '../pty/pty-manager.ts';
 import { ServiceError } from './errors.ts';
 import { type ExternalLauncher, resumeCommandLine } from './external.ts';
 import type { ProjectServiceImpl } from './projects.ts';
-import { highlight, redactedHighlight } from './snippet.ts';
+import { redactedHighlight } from './snippet.ts';
 
 export type { SessionListItem } from '@orc/api-contract';
 export { sessionPk } from '../db/keys.ts';
@@ -285,7 +285,14 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         for (const pk of searchSessionText(db, like)) set.add(pk);
         for (const h of searchHistoryPrompts(db, like)) {
           set.add(h.pk);
-          if (!hits.has(h.pk)) fallback.set(h.pk, highlight(h.display, text));
+          // redactedHighlight, not highlight: h.display is raw, transcript-derived prompt text —
+          // exactly where a pasted credential lands ("here's the token, go fix the deploy") — and
+          // must be redacted before truncation for the same reason the wide-fan-out event-snippet
+          // fallback was (Fix round 3): highlight()'s ±40-char truncation can bisect a secret
+          // pattern's anchor or length gate, and the HTTP-boundary redaction pass
+          // (`redactSnippet` in http/redact-out.ts) runs on the *already-truncated* text, so it
+          // cannot recover a secret that truncation has already made unrecognizable to `redact()`.
+          if (!hits.has(h.pk)) fallback.set(h.pk, redactedHighlight(h.display, text));
         }
         pks = [...set];
       }
