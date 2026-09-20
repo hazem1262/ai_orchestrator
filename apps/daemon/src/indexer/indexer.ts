@@ -68,7 +68,10 @@ export interface IndexerDeps {
   /**
    * How often, while `watch()` is active, to fall back to a light re-listing of every indexable
    * path as a backstop against a native filesystem-watch event that never arrives (see the
-   * `watch()` doc comment). Defaults to 5000ms; tests override it to keep assertions fast without
+   * `watch()` doc comment). Defaults to 15000ms — the guarantee this advertises is "never stale
+   * for more than ~15s even if the OS drops an event", well inside anything a human notices, at a
+   * duty cycle measured against a real `~/.claude`/`~/.codex` home (see task-10-report.md's
+   * "Flake fix" section). Tests override it to a small value to keep assertions fast without
    * depending on chokidar's push events actually firing.
    */
   reconcileMs?: number;
@@ -441,7 +444,7 @@ export function createIndexer(deps: IndexerDeps): Indexer {
       // to indexNow's existing fast-skip for files that haven't actually changed.
       reconcileTimer = setInterval(() => {
         reconcileSweep();
-      }, deps.reconcileMs ?? 5000);
+      }, deps.reconcileMs ?? 15000);
       reconcileTimer.unref();
     },
     async close() {
