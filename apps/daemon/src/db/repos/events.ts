@@ -131,12 +131,17 @@ export function eventSnippet(db: OrcDb, match: string, rowid: number): string | 
 }
 
 /**
- * Cheap (~1 ms) check of how many distinct terms in `events_fts`'s dictionary a prefix would
- * match, via the `temp.events_vocab` fts5vocab shadow table created once per connection
- * (`db/client.ts`). `sessions.ts`'s `list()` uses this to decide, once per search (not once per
- * result row), whether it's safe to pay FTS5 `snippet()`'s cost — which scales with this count,
- * not with the number of matching rows — or whether to fall back to a manual highlight instead.
- * See task-19-report.md's "Fix round 2" for the numbers behind the threshold.
+ * Cheap check of how many distinct terms in `events_fts`'s dictionary a prefix would match, via
+ * the `temp.events_vocab` fts5vocab shadow table created once per connection (`db/client.ts`).
+ * Cost scales with the prefix's own breadth and the corpus's total vocabulary size, not with
+ * `snippet()`'s cost: measured at well under 1 ms for typical prefixes against a real
+ * `~/.claude`/`~/.codex` corpus (~57k distinct terms), rising to single-digit milliseconds for
+ * very broad single-character prefixes (e.g. "a", "s" — ~3-7 ms), and up to ~34 ms measured at
+ * worst-case cardinality under cold-cache/contended conditions (see task-19-report.md's "Fix
+ * round 3" — an earlier "~1 ms" claim here understated the worst case). Still multiple orders of
+ * magnitude cheaper than the FTS5 `snippet()` cost it's guarding against, and `sessions.ts`'s
+ * `list()` calls it once per search (not once per result row), whether it's safe to pay that
+ * `snippet()` cost or whether to fall back to a manual highlight instead.
  */
 export function ftsPrefixCardinality(db: OrcDb, prefixToken: string): number {
   return (

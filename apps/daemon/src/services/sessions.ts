@@ -6,7 +6,6 @@ import {
   deriveAvailability,
   type LiveState,
   type PrRef,
-  redact,
   registryStatusToLive,
   type Session,
   type Source,
@@ -34,7 +33,7 @@ import type { PtyInfo, PtyManager } from '../pty/pty-manager.ts';
 import { ServiceError } from './errors.ts';
 import { type ExternalLauncher, resumeCommandLine } from './external.ts';
 import type { ProjectServiceImpl } from './projects.ts';
-import { highlight } from './snippet.ts';
+import { highlight, redactedHighlight } from './snippet.ts';
 
 export type { SessionListItem } from '@orc/api-contract';
 export { sessionPk } from '../db/keys.ts';
@@ -196,12 +195,23 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
 
   // Above this many distinct dictionary terms, FTS5's snippet() cost (which scales with term
   // cardinality, not row count — see events.ts's `ftsPrefixCardinality` doc comment) is no
-  // longer safe to pay per result row. Chosen from direct measurement: a ~1,111-term fan-out
-  // cost ~80 ms/row (a page of 50 would be seconds); this cap keeps the worst realistic case
-  // measured in task-19-report.md's "Fix round 2" comfortably inside the 150 ms budget while
-  // leaving every common-word/short-prefix shape untouched (their cardinality is in the single
-  // digits to low tens).
-  const FTS_PREFIX_CARDINALITY_CAP = 40;
+  // longer safe to pay per result row. Fix round 2's original value (40) was tuned against the
+  // perf suite's synthetic numbered vocabulary and turned out to be far too conservative: Fix
+  // round 3 measured real cardinality for common short prefixes against the user's actual
+  // `~/.claude`/`~/.codex` (read-only, temp ORC_HOME) and found ordinary 3-char prefixes like
+  // "get" (~438), "con" (~489), "use" (~490), "def" (~124) routinely exceed 40 — a cap that low
+  // made the fallback the common path, not the safety-net exception it was designed as. Directly
+  // timing FTS5 `snippet()` at each of those real cardinalities (not extrapolated) showed cost is
+  // NOT cleanly monotonic in cardinality alone (real text's posting-list sizes vary): every
+  // measured cardinality up to 244 stayed under ~75 ms for a full 50-row page, but at ~489 one
+  // real prefix ("con") measured 188 ms — over budget — while another at a similar cardinality
+  // ("get", ~438) measured only 31 ms. 250 is set just above the highest cardinality with a
+  // consistent safety margin in that measurement (keeping the great majority of real short
+  // prefixes — 17 of 20 measured common English prefixes — on the FTS5-native `snippet()` path,
+  // which gives better phrase-aware highlighting than the fallback), while still routing the few
+  // widest, riskiest prefixes to the bounded fallback. See task-19-report.md's "Fix round 3" for
+  // the full measured table.
+  const FTS_PREFIX_CARDINALITY_CAP = 250;
 
   function toItem(
     row: SessionRow,
@@ -306,7 +316,11 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
             // redaction guarantee, bounded cost regardless of how wide the prefix fans out.
             const row = eventTextByRowid(db, rid);
             const raw = row?.text ?? row?.searchInput ?? null;
-            snippet = raw === null ? null : redact(highlight(raw, prefixToken ?? text));
+            // redactedHighlight redacts the full raw text BEFORE truncating it for display — see
+            // its doc comment (services/snippet.ts) for why the order matters (Fix round 3: the
+            // reverse order let a secret survive when highlight()'s ±40-char truncation bisected
+            // the pattern redact() anchors on).
+            snippet = raw === null ? null : redactedHighlight(raw, prefixToken ?? text);
           } else {
             snippet = eventSnippet(db, match, rid);
           }
