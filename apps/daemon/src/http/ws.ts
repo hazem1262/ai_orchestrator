@@ -18,8 +18,14 @@ function reject(socket: Duplex, status: number, text: string): void {
 
 export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close(): Promise<void> } {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
+  // A server-level emit (e.g. a malformed upgrade the ws lib itself chokes on) must not be an
+  // unhandled 'error' event — Node treats that as fatal and kills the whole daemon process.
+  wss.on('error', (err) => o.ctx.log.warn({ err }, 'pty websocket server error'));
 
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    // The raw pre-upgrade socket is also an EventEmitter that can emit 'error' (e.g. the client
+    // resets the connection before the handshake finishes) with no listener otherwise attached.
+    socket.on('error', (err) => o.ctx.log.warn({ err }, 'pty upgrade socket error'));
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const match = /^\/pty\/([^/]+)$/.exec(url.pathname);
     if (!match?.[1]) {
@@ -48,6 +54,14 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
   function bridge(ws: WebSocket, ptyId: string): void {
     const { pty, bus } = o.ctx;
     let attached: { detach(): void } | null = null;
+    // Must be registered before any frames can flow: a transport-level error (e.g. a client
+    // frame over maxPayload, which the Receiver rejects before any 'message' handler runs) is an
+    // unhandled 'error' event on this socket's EventEmitter and is fatal to the whole process
+    // unless something is listening. One bad client must only lose its own connection.
+    ws.on('error', (err) => {
+      o.ctx.log.warn({ err, ptyId }, 'pty websocket error');
+      ws.terminate();
+    });
     const offExit = bus.on('pty.exited', (e) => {
       if (e.ptyId !== ptyId) return;
       ws.send(JSON.stringify({ t: 'exit', code: e.code }));

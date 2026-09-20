@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { createDaemon, type Daemon } from '../src/main.ts';
 import { createTestContext } from './helpers.ts';
-import { makeTempHomes, type TempHomes, writeClaudeSession } from './homes.ts';
+import { FAKE_CLAUDE, makeTempHomes, type TempHomes, writeClaudeSession } from './homes.ts';
 
 let homes: TempHomes;
 let daemon: Daemon;
@@ -126,5 +126,44 @@ describe('daemon server', () => {
     const res = await fetch(`http://127.0.0.1:${port}/bootstrap.js`);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain(daemon.token);
+  });
+
+  it('survives an oversized client frame without taking down the daemon or other sessions', async () => {
+    const port = await boot();
+    const base = `http://127.0.0.1:${port}`;
+    const origin = `http://127.0.0.1:${port}`;
+    const victimPty = daemon.ctx.pty.spawn({ command: FAKE_CLAUDE, args: [], cwd: homes.root });
+    const otherPty = daemon.ctx.pty.spawn({ command: FAKE_CLAUDE, args: [], cwd: homes.root });
+
+    const victim = await open(port, `/pty/${victimPty.id}?token=${daemon.token}`, origin);
+    await waitFor(() => victim.frames.length > 0);
+
+    const victimClosed = new Promise<void>((resolve) => victim.ws.once('close', () => resolve()));
+    // 2 MiB text frame, well over the server's `maxPayload: 1 << 20` (1 MiB) — the ws Receiver
+    // rejects this at the transport layer before any 'message' handler runs.
+    victim.ws.send('x'.repeat(2 * 1024 * 1024));
+    await victimClosed;
+    expect(victim.ws.readyState).toBe(WebSocket.CLOSED);
+
+    // The daemon process (and its HTTP server) must still be alive and serving requests.
+    const health = await fetch(`${base}/api/health`, { headers: { 'x-orc-token': daemon.token } });
+    expect(health.status).toBe(200);
+
+    // A second, unrelated PTY socket must still be fully usable.
+    const other = await open(port, `/pty/${otherPty.id}?token=${daemon.token}`, origin);
+    await waitFor(() =>
+      other.frames
+        .map((f) => f.text)
+        .join('')
+        .includes('fake-claude'),
+    );
+    other.ws.send(JSON.stringify({ t: 'in', d: 'still-alive\r' }));
+    await waitFor(() =>
+      other.frames
+        .map((f) => f.text)
+        .join('')
+        .includes('still-alive'),
+    );
+    other.ws.close();
   });
 });
