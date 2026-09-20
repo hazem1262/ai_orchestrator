@@ -15,6 +15,19 @@ const OPEN_IN: ProjectFormValues['openIn'][] = ['vscode', 'terminal', 'finder'];
  *  inline error reads the same whether it is caught here or bounced back by the server. */
 const REGEX_ERROR = 'ticketRegex is not a valid regular expression';
 
+function nonEmptyLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+/** Mirrors `ProjectPatchSchema.pathPrefixes` (`z.string().startsWith('/')`) — "a path prefix must
+ *  be absolute" is a product rule, not just a daemon quirk, so it is checked here too. */
+function firstRelativePrefix(text: string): string | null {
+  return nonEmptyLines(text).find((p) => !p.startsWith('/')) ?? null;
+}
+
 function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: number }) {
   const update = useUpdateProject();
   const id = useId();
@@ -35,11 +48,15 @@ function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: 
   const trimmedRegex = values.ticketRegex.trim();
   const regexInvalid = trimmedRegex !== '' && compileTicketRegex(trimmedRegex) === null;
 
+  const invalidPrefix = firstRelativePrefix(values.prefixes);
+  const prefixesInvalid = invalidPrefix !== null;
+
   const patch = useMemo(() => buildProjectPatch(cfg, values), [cfg, values]);
   const dirty = Object.keys(patch).length > 0;
-  const canSave = dirty && !regexInvalid && !update.isPending;
+  const canSave = dirty && !regexInvalid && !prefixesInvalid && !update.isPending;
 
   const regexErrorId = `${id}-regex-error`;
+  const prefixesErrorId = `${id}-prefixes-error`;
   const formErrorId = `${id}-form-error`;
 
   const submit = () => {
@@ -61,13 +78,22 @@ function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: 
       <label htmlFor={`${id}-prefixes`} className="pt-1 text-sm">
         Paths
       </label>
-      <textarea
-        id={`${id}-prefixes`}
-        rows={Math.max(2, values.prefixes.split('\n').length)}
-        className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
-        value={values.prefixes}
-        onChange={(e) => set('prefixes', e.target.value)}
-      />
+      <div className="flex flex-col gap-1">
+        <textarea
+          id={`${id}-prefixes`}
+          rows={Math.max(2, values.prefixes.split('\n').length)}
+          className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
+          value={values.prefixes}
+          onChange={(e) => set('prefixes', e.target.value)}
+          aria-invalid={prefixesInvalid ? true : undefined}
+          aria-describedby={prefixesInvalid ? prefixesErrorId : undefined}
+        />
+        {prefixesInvalid ? (
+          <p id={prefixesErrorId} role="alert" className="text-sm text-destructive">
+            Paths must be absolute — "{invalidPrefix}" does not start with "/"
+          </p>
+        ) : null}
+      </div>
 
       <label htmlFor={`${id}-open`} className="pt-1 text-sm">
         Open in
@@ -125,7 +151,23 @@ function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: 
 }
 
 function ProjectRow({ project }: { project: Project }) {
-  const { data: cfg } = useProjectConfig(project.id);
+  const { data: cfg, isError, error, refetch, isFetching } = useProjectConfig(project.id);
+  if (isError) {
+    return (
+      <fieldset className="rounded-lg border p-4">
+        <legend className="px-1 text-sm font-medium">{project.name}</legend>
+        <div className="flex items-center justify-between gap-3">
+          <p role="alert" className="text-sm text-destructive">
+            Couldn't load settings for {project.name}:{' '}
+            {error instanceof Error ? error.message : 'unknown error'}
+          </p>
+          <Button variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </div>
+      </fieldset>
+    );
+  }
   if (!cfg) return <Skeleton className="h-48" />;
   // Remounting on a config change (id unchanged, content changed) resets local edits to the
   // last confirmed server value — only happens after a successful save, never after a failure.
