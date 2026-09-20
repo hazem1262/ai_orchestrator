@@ -3,6 +3,7 @@ import { useSession } from '@/api/queries/sessions.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
+import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
 import { SessionHeader } from './SessionHeader.tsx';
 import { Timeline } from './Timeline.tsx';
 
@@ -30,7 +31,20 @@ export function SessionDetailPage({ source, id }: { source: Source; id: string }
   const session = q.data;
   return (
     <div className="flex flex-col gap-4 p-4">
-      <SessionHeader session={session} />
+      <SessionHeader
+        session={session}
+        actions={
+          <ResumeActions
+            target={{
+              source: session.source,
+              id: session.id,
+              availability: session.availability,
+              live: session.live,
+              title: session.name ?? session.firstPrompt ?? session.id,
+            }}
+          />
+        }
+      />
       <Tabs defaultValue="timeline">
         <TabsList>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>

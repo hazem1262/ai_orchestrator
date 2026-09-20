@@ -7,6 +7,7 @@ import { usePinSession } from '@/api/queries/sessions.ts';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
 import { formatCost, formatDateTime, formatDuration } from '@/lib/format.ts';
 import { HideToggle, LabelEditor } from './LabelEditor.tsx';
 import { Snippet } from './Snippet.tsx';
@@ -95,6 +96,16 @@ function Chips({ item }: { item: SessionListItem }) {
 function RowActions({ item }: { item: SessionListItem }) {
   return (
     <div className="flex items-center justify-end gap-1">
+      <ResumeActions
+        compact
+        target={{
+          source: item.source,
+          id: item.id,
+          availability: item.availability,
+          live: item.live,
+          title: item.name ?? item.firstPrompt ?? item.id,
+        }}
+      />
       <LabelEditor item={item} />
       <HideToggle item={item} />
     </div>

@@ -1,6 +1,9 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type FormEvent, type ReactNode, useState } from 'react';
+import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
 import { Input } from '@/components/ui/input.tsx';
+import { TerminalDock } from '@/features/terminal/TerminalDock.tsx';
+import { useTerminalStore } from '@/stores/terminals.ts';
 import { ProjectSelector } from './ProjectSelector.tsx';
 
 function GlobalSearch() {
@@ -21,6 +24,25 @@ function GlobalSearch() {
         className="w-full"
       />
     </form>
+  );
+}
+
+function Workspace({ children }: { children: ReactNode }) {
+  const hasTabs = useTerminalStore((s) => s.tabs.length > 0);
+  return (
+    <Group orientation="vertical" className="min-w-0 flex-1">
+      <Panel id="main" minSize="20">
+        <main className="h-full overflow-auto">{children}</main>
+      </Panel>
+      {hasTabs ? (
+        <>
+          <PanelSeparator className="h-1 cursor-row-resize bg-border" />
+          <Panel id="dock" defaultSize="40" minSize="10">
+            <TerminalDock />
+          </Panel>
+        </>
+      ) : null}
+    </Group>
   );
 }
 
@@ -51,9 +73,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Settings
           </Link>
         </nav>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <main className="min-h-0 flex-1 overflow-auto">{children}</main>
-        </div>
+        <Workspace>{children}</Workspace>
       </div>
     </div>
   );
