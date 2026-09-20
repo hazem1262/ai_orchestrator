@@ -11,7 +11,7 @@ import {
 import { join } from 'node:path';
 import type { OrcConfig } from '@orc/api-contract';
 import { pino } from 'pino';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useTempHomes, writeClaudeSession } from '../../test/helpers.ts';
 import { loadConfig, saveConfig } from '../config.ts';
 import { type OrcDb, openDb } from '../db/client.ts';
@@ -19,9 +19,29 @@ import { listAgents } from '../db/repos/agents.ts';
 import { countEvents, listEvents } from '../db/repos/events.ts';
 import { getFileOffset } from '../db/repos/file-offsets.ts';
 import { getSessionByPk, getSessionOrigin } from '../db/repos/sessions.ts';
-import { type BusEvent, createEventBus } from '../live/event-bus.ts';
+import { type BusEvent, createEventBus, type EventBus } from '../live/event-bus.ts';
 import { createProjectService } from '../services/projects.ts';
 import { createIndexer, type Indexer } from './indexer.ts';
+
+/**
+ * Waits for the actual `session.indexed` signal for `pk` rather than polling the database or
+ * sleeping a fixed duration — a real miss (event never fires) surfaces as a clear timeout error
+ * instead of silently passing or masking a hang.
+ */
+function waitForIndexed(bus: EventBus, pk: string, timeoutMs = 8000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off();
+      reject(new Error(`timed out after ${timeoutMs}ms waiting for session.indexed pk=${pk}`));
+    }, timeoutMs);
+    const off = bus.on('session.indexed', (e) => {
+      if (e.pk !== pk) return;
+      clearTimeout(timer);
+      off();
+      resolve();
+    });
+  });
+}
 
 const WAKE = 'projects/-Users-test-Wakecap';
 
@@ -44,6 +64,7 @@ describe('indexer', () => {
   let close: () => void;
   let indexer: Indexer;
   let events: BusEvent[];
+  let bus: EventBus;
 
   beforeEach(() => {
     const opened = openDb(homes.paths.dbFile);
@@ -59,7 +80,7 @@ describe('indexer', () => {
         cfg = next;
       },
     });
-    const bus = createEventBus();
+    bus = createEventBus();
     events = [];
     bus.on('index.progress', (e) => events.push(e));
     bus.on('session.indexed', (e) => events.push(e));
@@ -71,6 +92,9 @@ describe('indexer', () => {
       bus,
       log: pino({ level: 'silent' }),
       debounceMs: 20,
+      // Short reconcile interval so watch()'s periodic backstop (see indexer.ts) can be exercised
+      // and asserted on without the test needing to wait anywhere near production's default.
+      reconcileMs: 150,
     });
   });
 
@@ -271,7 +295,18 @@ describe('indexer', () => {
     expect(after?.size).toBe(originalSize);
   });
 
-  it('watches for new transcripts', async () => {
+  // FLAKE FIX: chokidar's `ready` event is already awaited inside `watch()` before it resolves
+  // (confirmed — see task-10-report.md "Flake fix"), so a write placed immediately after `await
+  // watch()` here is not racing watch()'s own startup. The flake was that the underlying native
+  // fs-watch backend can itself drop or indefinitely delay an event under system load, for a
+  // file in a brand-new subdirectory *or* an already-watched one — verified empirically by
+  // instrumenting chokidar's `add`/`addDir`/`change` events and observing zero of them fire
+  // within 8s on a failing run. `watch()` now runs a periodic reconciliation sweep
+  // (`reconcileMs`, overridden to 150ms above) as a backstop, so this no longer depends on that
+  // native event ever arriving. The assertion below waits on the real `session.indexed` bus
+  // signal (not a fixed sleep, not a raw DB poll) with a generous timeout, so a genuine
+  // regression still fails loudly instead of being masked.
+  it('indexes a transcript written immediately after watch() resolves', async () => {
     await indexer.scanAll();
     await indexer.watch();
     writeClaudeSession(homes, {
@@ -279,9 +314,7 @@ describe('indexer', () => {
       cwd: join(homes.root, 'work', 'Wakecap'),
       prompt: 'watched prompt',
     });
-    await vi.waitFor(() => expect(getSessionByPk(db, 'claude:s-new')?.firstPrompt).toBe('watched prompt'), {
-      timeout: 8000,
-      interval: 100,
-    });
+    await waitForIndexed(bus, 'claude:s-new', 8000);
+    expect(getSessionByPk(db, 'claude:s-new')?.firstPrompt).toBe('watched prompt');
   });
 });

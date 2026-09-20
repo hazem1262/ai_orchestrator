@@ -65,6 +65,13 @@ export interface IndexerDeps {
   bus: EventBus;
   log: Logger;
   debounceMs?: number;
+  /**
+   * How often, while `watch()` is active, to fall back to a light re-listing of every indexable
+   * path as a backstop against a native filesystem-watch event that never arrives (see the
+   * `watch()` doc comment). Defaults to 5000ms; tests override it to keep assertions fast without
+   * depending on chokidar's push events actually firing.
+   */
+  reconcileMs?: number;
 }
 
 interface FileStat {
@@ -117,6 +124,7 @@ export function createIndexer(deps: IndexerDeps): Indexer {
   const unknownByFile = new Map<string, Record<string, number>>();
   const timers = new Map<string, NodeJS.Timeout>();
   let detectTimer: NodeJS.Timeout | null = null;
+  let reconcileTimer: NodeJS.Timeout | null = null;
   let watcher: FSWatcher | null = null;
   let queue: Promise<void> = Promise.resolve();
   const resolveCfg = (cwd: string | null): DeriveConfig => projects.deriveConfigFor(cwd);
@@ -356,6 +364,21 @@ export function createIndexer(deps: IndexerDeps): Indexer {
     }, 2000);
   }
 
+  /**
+   * Backstop for chokidar's push notifications: a light re-listing of every indexable path, run
+   * on `indexNow`'s existing (size, mtime) fast-skip so an already-current file costs one cheap
+   * stat(). Native filesystem watch backends are not fully reliable under contention — an event
+   * for a real change can be delayed well past any reasonable timeout or simply never arrive, for
+   * both brand-new and already-watched directories (see the "Flake fix" section of
+   * task-10-report.md for the reproduction). `watch()` runs this on `reconcileMs` so a session is
+   * never stale for longer than that, independent of whether the underlying OS ever tells us.
+   */
+  function reconcileSweep(): Promise<void> {
+    return enqueue(async () => {
+      for (const f of listIndexableFiles(paths)) await indexNow(f);
+    }).catch(() => undefined);
+  }
+
   return {
     async scanAll() {
       const t0 = performance.now();
@@ -413,12 +436,21 @@ export function createIndexer(deps: IndexerDeps): Indexer {
       await new Promise<void>((resolve) => {
         w.once('ready', () => resolve());
       });
+      // Belt-and-suspenders against missed native fs events (see reconcileSweep's doc comment):
+      // this only starts once chokidar itself is confirmed ready, and every tick is cheap thanks
+      // to indexNow's existing fast-skip for files that haven't actually changed.
+      reconcileTimer = setInterval(() => {
+        reconcileSweep();
+      }, deps.reconcileMs ?? 5000);
+      reconcileTimer.unref();
     },
     async close() {
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
       if (detectTimer) clearTimeout(detectTimer);
       detectTimer = null;
+      if (reconcileTimer) clearInterval(reconcileTimer);
+      reconcileTimer = null;
       await watcher?.close();
       watcher = null;
       await queue;
