@@ -158,4 +158,31 @@ describe('HistoryPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete view Prod' }));
     await waitFor(() => expect(api.viewsDelete).toHaveBeenCalledWith('v1'));
   });
+
+  it('shows a retry button on error and clears it on successful refetch, without a contradictory empty message', async () => {
+    const sessionsList = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ items, nextCursor: null });
+    renderWithProviders(<Harness />, { api: createFakeApi({ sessionsList }) });
+
+    expect((await screen.findByRole('alert')).textContent).toBe('network down');
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    expect(retry).toBeTruthy();
+    expect(screen.queryByText('No sessions match these filters.')).toBeNull();
+
+    await userEvent.click(retry);
+    await screen.findByRole('link', { name: 'Notification service test check' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(sessionsList).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders the virtualised list with table semantics', async () => {
+    const api = createFakeApi({ sessionsList: vi.fn(async () => ({ items, nextCursor: null })) });
+    renderWithProviders(<Harness />, { api });
+    await screen.findByRole('link', { name: 'Notification service test check' });
+    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.getAllByRole('columnheader').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('row').length).toBeGreaterThanOrEqual(items.length + 1);
+  });
 });

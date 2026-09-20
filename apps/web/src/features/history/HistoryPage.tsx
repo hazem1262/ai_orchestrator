@@ -1,6 +1,7 @@
 import type { SessionListItem } from '@orc/api-contract';
 import { useCallback, useMemo } from 'react';
 import { useSessions } from '@/api/queries/sessions.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { useProjectStore } from '@/stores/project.ts';
 import { cleanSearch, type HistorySearch, toListFilters } from './filters.ts';
 import { HistoryFilters } from './HistoryFilters.tsx';
@@ -37,13 +38,19 @@ export function HistoryPage({
         onReset={() => onSearchChange({})}
       />
       {q.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {q.error.message}
-        </p>
+        <div className="flex items-center justify-between gap-3">
+          <p role="alert" className="text-sm text-destructive">
+            {q.error.message}
+          </p>
+          <Button variant="outline" size="sm" disabled={q.isFetching} onClick={() => void q.refetch()}>
+            Retry
+          </Button>
+        </div>
       ) : null}
       <SessionTable
         items={items}
         loading={q.isLoading}
+        error={q.isError}
         hasMore={q.hasNextPage}
         loadingMore={q.isFetchingNextPage}
         onEndReached={loadMore}
