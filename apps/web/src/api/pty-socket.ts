@@ -66,10 +66,15 @@ export function connectPty(
     ws = sock;
     let first = true;
     sock.onopen = () => {
+      // A close() during the handshake can still let a queued onopen fire; ignore it.
+      if (stopped) return;
       attempt = 0;
       h.onStatus?.('open');
     };
     sock.onmessage = (ev) => {
+      // The closing handshake can deliver one more in-flight frame after close() runs; the
+      // consumer (e.g. a disposed xterm instance) must never see it.
+      if (stopped) return;
       if (typeof ev.data === 'string') {
         try {
           const m = JSON.parse(ev.data) as { t?: string; code?: unknown };

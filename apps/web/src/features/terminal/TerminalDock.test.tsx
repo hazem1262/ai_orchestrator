@@ -119,6 +119,24 @@ describe('TerminalDock', () => {
     expect(mocks.sockets[0]?.closed).toBe(true);
   });
 
+  it('wires the active tab to its panel via aria-controls / role=tabpanel', async () => {
+    useTerminalStore.getState().open('p1', 'Session A');
+    useTerminalStore.getState().open('p2', 'Session B');
+    const api = createFakeApi({ ptyList: vi.fn(async () => [pty('p1'), pty('p2')]) });
+    renderWithProviders(<TerminalDock />, { api });
+
+    const activeTab = await screen.findByRole('tab', { name: 'Session B' });
+    const panel = screen.getByRole('tabpanel');
+    expect(activeTab.getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.getAttribute('aria-labelledby')).toBe(activeTab.id);
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Session A' }));
+    const nowActiveTab = screen.getByRole('tab', { name: 'Session A' });
+    const nowActivePanel = screen.getByRole('tabpanel');
+    expect(nowActiveTab.getAttribute('aria-controls')).toBe(nowActivePanel.id);
+    expect(nowActivePanel.getAttribute('aria-labelledby')).toBe(nowActiveTab.id);
+  });
+
   it('stops the active process only after confirmation', async () => {
     useTerminalStore.getState().open('p1', 'Session A');
     const api = createFakeApi({ ptyList: vi.fn(async () => [pty('p1')]) });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useKillPty, usePtyList } from '@/api/queries/pty.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { cn } from '@/components/ui/cn.ts';
@@ -6,6 +6,11 @@ import { useTerminalStore } from '@/stores/terminals.ts';
 import { TerminalView } from './TerminalView.tsx';
 
 export function TerminalDock() {
+  // `@/components/ui/tabs.tsx`'s <TabsContent> unmounts every non-active panel, which would kill
+  // the pty socket and xterm instance of every background tab on each switch; tabs here must stay
+  // mounted (just `hidden`) so their sessions keep streaming. So the tab strip is hand-rolled, but
+  // wired with the same id/aria-controls/role="tabpanel"/aria-labelledby pattern as that primitive.
+  const baseId = useId();
   const tabs = useTerminalStore((s) => s.tabs);
   const active = useTerminalStore((s) => s.active);
   const close = useTerminalStore((s) => s.close);
@@ -32,7 +37,7 @@ export function TerminalDock() {
     <section aria-label="Terminals" className="flex h-full flex-col bg-[#0b0d10] text-white">
       <div className="flex items-center gap-1 border-b border-white/10 px-2 py-1 text-xs">
         <div role="tablist" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-          {tabs.map((t) => {
+          {tabs.map((t, i) => {
             const title = exited.has(t.ptyId) ? `${t.title} (exited)` : t.title;
             return (
               <div
@@ -42,7 +47,9 @@ export function TerminalDock() {
                 <button
                   type="button"
                   role="tab"
+                  id={`${baseId}-tab-${i}`}
                   aria-selected={t.ptyId === active}
+                  aria-controls={`${baseId}-panel-${i}`}
                   onClick={() => setActive(t.ptyId)}
                   className="max-w-56 truncate px-2 py-1"
                 >
@@ -81,8 +88,15 @@ export function TerminalDock() {
         ) : null}
       </div>
       <div className="relative min-h-0 flex-1">
-        {tabs.map((t) => (
-          <div key={t.ptyId} className="absolute inset-0" hidden={t.ptyId !== active}>
+        {tabs.map((t, i) => (
+          <div
+            key={t.ptyId}
+            id={`${baseId}-panel-${i}`}
+            role="tabpanel"
+            aria-labelledby={`${baseId}-tab-${i}`}
+            className="absolute inset-0"
+            hidden={t.ptyId !== active}
+          >
             <TerminalView ptyId={t.ptyId} active={t.ptyId === active} />
           </div>
         ))}

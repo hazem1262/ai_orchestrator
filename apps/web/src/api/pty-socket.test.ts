@@ -123,4 +123,28 @@ describe('pty socket', () => {
     vi.advanceTimersByTime(10_000);
     expect(FakeWS.instances).toHaveLength(1);
   });
+
+  it('ignores a frame delivered after close() (in-flight during the closing handshake)', () => {
+    const events: string[] = [];
+    const sock = connectPty(
+      'p1',
+      {
+        onData: (d) => events.push(`data:${new TextDecoder().decode(d)}`),
+        onExit: (code) => events.push(`exit:${code}`),
+        onReset: () => events.push('reset'),
+      },
+      { WebSocketImpl: FakeWS, location: loc },
+    );
+    const ws = FakeWS.instances[0];
+    if (!ws) throw new Error('no socket');
+    ws.accept();
+    sock.close();
+    // The underlying socket can still deliver (or even "open") one more frame while it is
+    // tearing down; none of it should reach the handlers of a socket the caller already closed
+    // (a disposed xterm instance must never see a late `.write()`/`.reset()`/`.onExit()` call).
+    ws.onopen?.({});
+    ws.message(bytes('late'));
+    ws.message('{"t":"exit","code":1}');
+    expect(events).toEqual([]);
+  });
 });

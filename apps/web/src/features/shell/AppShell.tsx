@@ -1,10 +1,15 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, lazy, type ReactNode, Suspense, useState } from 'react';
 import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
 import { Input } from '@/components/ui/input.tsx';
-import { TerminalDock } from '@/features/terminal/TerminalDock.tsx';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { ProjectSelector } from './ProjectSelector.tsx';
+
+// xterm.js is sizeable and only ever used once a terminal tab is open, so it's kept out of the
+// main bundle (and every route that never opens one) behind a dynamic import.
+const TerminalDock = lazy(() =>
+  import('@/features/terminal/TerminalDock.tsx').then((m) => ({ default: m.TerminalDock })),
+);
 
 function GlobalSearch() {
   const navigate = useNavigate();
@@ -38,7 +43,15 @@ function Workspace({ children }: { children: ReactNode }) {
         <>
           <PanelSeparator className="h-1 cursor-row-resize bg-border" />
           <Panel id="dock" defaultSize="40" minSize="10">
-            <TerminalDock />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center bg-[#0b0d10] text-xs text-white/60">
+                  Loading terminal…
+                </div>
+              }
+            >
+              <TerminalDock />
+            </Suspense>
           </Panel>
         </>
       ) : null}
