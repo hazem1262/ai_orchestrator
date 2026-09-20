@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import {
   type ClaudeAggState,
@@ -69,7 +70,10 @@ export interface IndexerDeps {
 interface FileStat {
   size: number;
   mtimeMs: number;
+  headFingerprint: string;
 }
+
+const HEAD_FINGERPRINT_BYTES = 4096;
 
 function readMeta(jsonlPath: string): SubagentMeta {
   try {
@@ -77,6 +81,27 @@ function readMeta(jsonlPath: string): SubagentMeta {
   } catch {
     return parseSubagentMeta(null);
   }
+}
+
+/**
+ * Cheap content fingerprint for the (size, mtime) fast-path's blind spot: a file replaced with
+ * different content of the *exact same byte length* (mtime moves, size doesn't, `readJsonlFrom`
+ * never reports `truncated` because the stored offset never exceeds the new size). Hashes only
+ * the first `HEAD_FINGERPRINT_BYTES` bytes — never a whole multi-MB transcript — combined with
+ * the total size so a short file can't collide with a longer file sharing the same head.
+ */
+async function readHeadFingerprint(path: string, size: number): Promise<string> {
+  const len = Math.min(HEAD_FINGERPRINT_BYTES, size);
+  const buf = Buffer.alloc(len);
+  if (len > 0) {
+    const fh = await open(path, 'r');
+    try {
+      await fh.read(buf, 0, len, 0);
+    } finally {
+      await fh.close();
+    }
+  }
+  return `${size}:${createHash('sha1').update(buf).digest('hex')}`;
 }
 
 /**
@@ -125,6 +150,7 @@ export function createIndexer(deps: IndexerDeps): Indexer {
       mtimeMs: st.mtimeMs,
       offset: tail.nextOffset,
       stateJson,
+      headFingerprint: st.headFingerprint,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -266,10 +292,10 @@ export function createIndexer(deps: IndexerDeps): Indexer {
       refreshAgentMeta(cls, path);
       return;
     }
-    let st: FileStat;
+    let basic: { size: number; mtimeMs: number };
     try {
       const s = await stat(path);
-      st = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+      basic = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
     } catch {
       // ENOENT and friends are normal here: the watcher fires on delete, and a scan can race a
       // file being removed mid-pass. Skip and wait for the next event rather than erroring.
@@ -277,14 +303,34 @@ export function createIndexer(deps: IndexerDeps): Indexer {
       return;
     }
     const prev = getFileOffset(db, path);
-    if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return;
-    const start = prev && st.size >= prev.offset ? prev.offset : 0;
+    // The common, cheap case: neither size nor mtime moved since we last indexed this path.
+    if (prev && prev.size === basic.size && prev.mtimeMs === basic.mtimeMs) return;
+
+    // Past this point the file actually changed (by size or mtime), so the extra small head read
+    // below is never on the hot "nothing changed" path.
+    const headFingerprint = await readHeadFingerprint(path, basic.size);
+    const st: FileStat = { ...basic, headFingerprint };
+
+    // Second, independent trigger for "reset and re-index from scratch", alongside
+    // `readJsonlFrom`'s own `truncated` flag: a file replaced with *different* content of the
+    // *exact same byte length* moves mtime but not size, so the stored offset never exceeds the
+    // new size and `truncated` never fires. A row written before this fingerprint existed has
+    // `headFingerprint: null`; that's treated as "unknown" and falls through to the pre-existing
+    // (size, offset) logic below rather than forcing an unnecessary re-index.
+    const contentChangedAtSameSize =
+      prev !== null &&
+      prev.size === st.size &&
+      prev.headFingerprint !== null &&
+      prev.headFingerprint !== st.headFingerprint;
+
+    const start = prev && st.size >= prev.offset && !contentChangedAtSameSize ? prev.offset : 0;
     const reset = start === 0;
     const prevState = reset ? null : (prev?.stateJson ?? null);
     // readJsonlFrom itself detects a stored offset past the file's current size (truncation from
     // compaction or /clear) and reports `truncated: true` with `nextOffset: 0`; `start === 0`
-    // here also covers a brand-new file. Either way `reset` drops the old events for this path
-    // and starts a fresh aggregate state so the session reflects only the current file content.
+    // here also covers a brand-new file and the same-size-different-content case above. Either
+    // way `reset` drops the old events for this path and starts a fresh aggregate state so the
+    // session reflects only the current file content.
     const tail = await readJsonlFrom(path, start);
     switch (cls.kind) {
       case 'claude-history':

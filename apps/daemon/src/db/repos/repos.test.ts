@@ -312,6 +312,7 @@ describe('small repos', () => {
       mtimeMs: 5,
       offset: 10,
       stateJson: '{}',
+      headFingerprint: null,
       updatedAt: 'now',
     };
     putFileOffset(db, row);

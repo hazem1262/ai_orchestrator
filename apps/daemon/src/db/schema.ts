@@ -102,6 +102,14 @@ export const fileOffsets = sqliteTable('file_offsets', {
   mtimeMs: integer('mtime_ms').notNull(),
   offset: integer('offset').notNull(),
   stateJson: text('state_json'),
+  /**
+   * `"<size>:<sha1 of first 4096 bytes>"`, refreshed on every indexed write. Guards against a
+   * same-length transcript replacement (mtime moves, size doesn't) going undetected by the
+   * (size, mtime) fast-path skip. `null` on rows written before this column existed; those are
+   * treated as "unknown" and fall through to the pre-existing behaviour rather than forcing a
+   * re-index.
+   */
+  headFingerprint: text('head_fingerprint'),
   updatedAt: text('updated_at').notNull(),
 });
 

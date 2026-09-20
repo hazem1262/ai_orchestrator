@@ -15,6 +15,13 @@
       "when": 1789916017909,
       "tag": "0001_events_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789920005427,
+      "tag": "0002_file_offsets_head_fingerprint",
+      "breakpoints": true
     }
   ]
 }

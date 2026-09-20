@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  appendFileSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { OrcConfig } from '@orc/api-contract';
 import { pino } from 'pino';
@@ -212,6 +220,55 @@ describe('indexer', () => {
     expect(after?.offset).toBe(shrunkSize);
     expect(after?.size).toBe(shrunkSize);
     expect(after?.offset).toBeLessThanOrEqual(shrunkSize);
+  });
+
+  // FIX ROUND 1 finding: a transcript replaced with DIFFERENT content of the EXACT same byte
+  // length moves mtime but not size. `readJsonlFrom`'s `truncated` flag never fires (the stored
+  // offset never exceeds the new size), and the plain (size, mtime) skip only fires when BOTH
+  // are unchanged — so the old (size-only) fast path missed this case entirely and the session
+  // stayed silently stale forever. The head-fingerprint guard must catch it.
+  it('re-reads a file replaced with different content of the same byte length', async () => {
+    await indexer.scanAll();
+    const file = join(homes.claudeHome, WAKE, 's-drift.jsonl');
+    expect(countEvents(db, 'claude:s-drift')).toBe(3);
+    const originalSize = statSync(file).size;
+
+    const rec = {
+      type: 'user',
+      uuid: 'z-u1',
+      parentUuid: null,
+      isSidechain: false,
+      sessionId: 's-drift',
+      timestamp: '2026-09-03T09:30:00.000Z',
+      cwd: '/Users/test/Wakecap',
+      message: { role: 'user', content: '' },
+    };
+    const pad = originalSize - Buffer.byteLength(`${JSON.stringify(rec)}\n`, 'utf8');
+    expect(pad).toBeGreaterThan(0); // sanity: the fixture has room to pad to the same size
+    rec.message.content = `REPLACED-${'x'.repeat(Math.max(pad - 'REPLACED-'.length, 0))}`;
+    const newLine = `${JSON.stringify(rec)}\n`;
+    expect(Buffer.byteLength(newLine, 'utf8')).toBe(originalSize);
+
+    writeFileSync(file, newLine);
+    expect(statSync(file).size).toBe(originalSize); // same size as before...
+    utimesSync(file, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000)); // ...but a newer mtime
+
+    await indexer.indexFile(file);
+
+    // Session and events reflect the NEW content only — no duplicates from the old 3 events.
+    expect(countEvents(db, 'claude:s-drift')).toBe(1);
+    expect(listEvents(db, 'claude:s-drift', {}).items).toEqual([
+      expect.objectContaining({ seq: 1, kind: 'prompt', text: rec.message.content }),
+    ]);
+    expect(getSessionByPk(db, 'claude:s-drift')).toMatchObject({
+      promptCount: 1,
+      firstPrompt: rec.message.content,
+      lastActivityAt: '2026-09-03T09:30:00.000Z',
+    });
+
+    const after = getFileOffset(db, file);
+    expect(after?.offset).toBe(originalSize);
+    expect(after?.size).toBe(originalSize);
   });
 
   it('watches for new transcripts', async () => {
