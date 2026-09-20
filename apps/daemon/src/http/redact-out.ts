@@ -1,5 +1,5 @@
 import { type SessionListItem, SNIPPET_CLOSE, SNIPPET_OPEN } from '@orc/api-contract';
-import { redact, type Session, type TimelineEvent } from '@orc/core';
+import { type AgentNode, redact, type Session, type TimelineEvent } from '@orc/core';
 
 const r = (t: string | null): string | null => (t === null ? null : redact(t));
 
@@ -24,7 +24,13 @@ export function redactSession(s: Session): Session {
     lastPrompt: r(s.lastPrompt),
     awaySummary: r(s.awaySummary),
     recap: r(s.recap),
+    lastTest: s.lastTest === null ? null : { ...s.lastTest, command: redact(s.lastTest.command) },
   };
+}
+
+/** `description` is transcript-derived free text (the parent session's Agent tool-call input). */
+export function redactAgent(a: AgentNode): AgentNode {
+  return { ...a, description: redact(a.description) };
 }
 
 /** Highlight markers can split a secret (e.g. "⟦PGPASSWORD⟧=x"), so redaction runs on the plain text first. */

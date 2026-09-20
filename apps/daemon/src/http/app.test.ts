@@ -55,12 +55,19 @@ async function json(res: Response): Promise<unknown> {
   return res.json();
 }
 
+const SECRET_SESSION_ID = 's-secret';
+
+function secretSessionDir(ctx: TestContext): { cwd: string; dir: string } {
+  const cwd = join(ctx.homes.root, 'work', 'secret');
+  const dir = join(ctx.homes.claudeHome, 'projects', cwd.replace(/[/._ ]/g, '-'));
+  return { cwd, dir };
+}
+
 /** Writes a raw Claude transcript with two user turns and an assistant text reply, each secret-bearing. */
 function writeSecretSession(ctx: TestContext): string {
-  const sessionId = 's-secret';
-  const cwd = join(ctx.homes.root, 'work', 'secret');
+  const sessionId = SECRET_SESSION_ID;
+  const { cwd, dir } = secretSessionDir(ctx);
   mkdirSync(cwd, { recursive: true });
-  const dir = join(ctx.homes.claudeHome, 'projects', cwd.replace(/[/._ ]/g, '-'));
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `${sessionId}.jsonl`);
   const records = [
@@ -108,6 +115,35 @@ function writeSecretSession(ctx: TestContext): string {
   ];
   writeFileSync(file, `${records.map((r) => JSON.stringify(r)).join('\n')}\n`);
   return file;
+}
+
+/** Writes a subagent whose meta.json `description` (Agent tool-call input) also carries secrets. */
+function writeSecretSubagent(ctx: TestContext): string {
+  const { cwd, dir } = secretSessionDir(ctx);
+  const subDir = join(dir, SECRET_SESSION_ID, 'subagents');
+  mkdirSync(subDir, { recursive: true });
+  const meta = {
+    agentType: 'general-purpose',
+    description: 'Rotate PGPASSWORD=hunter2 and revoke ghp_1234567890abcdefghij',
+    toolUseId: 'sec-agent-tu1',
+    parentAgentId: null,
+    spawnDepth: 1,
+  };
+  writeFileSync(join(subDir, 'agent-ag-secret.meta.json'), JSON.stringify(meta));
+  const jsonlPath = join(subDir, 'agent-ag-secret.jsonl');
+  const record = {
+    type: 'user',
+    uuid: 'agsec-u1',
+    parentUuid: null,
+    isSidechain: true,
+    sessionId: SECRET_SESSION_ID,
+    agentId: 'ag-secret',
+    timestamp: '2026-09-05T09:00:06.000Z',
+    cwd,
+    message: { role: 'user', content: 'investigate the rotation' },
+  };
+  writeFileSync(jsonlPath, `${JSON.stringify(record)}\n`);
+  return jsonlPath;
 }
 
 const SECRETS = ['hunter2', 'ghp_1234567890abcdefghij', 'AKIAABCDEFGHIJKLMNOP'];
@@ -166,7 +202,12 @@ describe('projects', () => {
     expect(res.status).toBe(200);
     expect(await json(res)).toMatchObject({ id: 'forza', name: 'Forza App', hidden: true });
     expect((await call('/api/projects/nope', { method: 'PATCH', body: { name: 'x' } })).status).toBe(404);
-    expect((await call('/api/projects/forza', { method: 'PATCH', body: { id: 'x' } })).status).toBe(400);
+    // Controller ruling: unify on 422 for an unrecognised body key everywhere, including this
+    // pre-existing strict schema — the brief's own literal test here expected 400, but shipping
+    // two status conventions for the same failure class (typo'd key) forces every client to
+    // special-case one route. `ticketRegex` below stays 400: it's a recognised key whose value
+    // fails a semantic check unrelated to strict-object unknown-key rejection.
+    expect((await call('/api/projects/forza', { method: 'PATCH', body: { id: 'x' } })).status).toBe(422);
     expect((await call('/api/projects/forza', { method: 'PATCH', body: { ticketRegex: '(' } })).status).toBe(
       400,
     );
@@ -298,8 +339,9 @@ describe('sessions', () => {
 });
 
 describe('redaction at the boundary', () => {
-  it('never leaks a secret from name, firstPrompt, lastPrompt or event text', async () => {
+  it('never leaks a secret from name, firstPrompt, lastPrompt, event text or a subagent description', async () => {
     await indexer.indexFile(writeSecretSession(ctx));
+    await indexer.indexFile(writeSecretSubagent(ctx));
 
     const detail = await call('/api/sessions/claude/s-secret');
     expect(detail.status).toBe(200);
@@ -318,7 +360,16 @@ describe('redaction at the boundary', () => {
     const eventsText = JSON.stringify(events);
     expect(eventsText).toContain('«redacted:github»');
 
-    const everything = [JSON.stringify(session), JSON.stringify(item), eventsText].join('\n');
+    const agentsRes = await call('/api/sessions/claude/s-secret/agents');
+    expect(agentsRes.status).toBe(200);
+    const agents = z.array(AgentNodeSchema).parse(await json(agentsRes));
+    const secretAgent = agents.find((a) => a.id === 'ag-secret');
+    expect(secretAgent).toBeDefined();
+    expect(secretAgent?.description).toContain('«redacted:secret»');
+    expect(secretAgent?.description).toContain('«redacted:github»');
+    const agentsText = JSON.stringify(agents);
+
+    const everything = [JSON.stringify(session), JSON.stringify(item), eventsText, agentsText].join('\n');
     for (const secret of SECRETS) {
       expect(everything).not.toContain(secret);
     }

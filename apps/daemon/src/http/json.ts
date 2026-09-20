@@ -8,19 +8,14 @@ export function parseWith<T>(schema: z.ZodType<T>, value: unknown): T {
   return r.data;
 }
 
-export interface ReadJsonOptions {
-  /**
-   * Controller ruling (Task 5 review): `ResumeRequestSchema`, `PinRequestSchema`,
-   * `LabelRequestSchema` and `SaveViewRequestSchema` are `z.strictObject`, so a typo'd key
-   * (e.g. `{ mode: 'embedded', frok: true }`) must not be silently dropped. Those four routes
-   * pass `unknownKeyStatus: 422` so an unrecognised key is reported as semantically rejected
-   * rather than a generic 400; every other body validation failure (and every other route,
-   * e.g. `ProjectPatchSchema`) keeps the plain 400.
-   */
-  unknownKeyStatus?: 400 | 422;
-}
-
-export async function readJson<T>(c: Context, schema: z.ZodType<T>, opts: ReadJsonOptions = {}): Promise<T> {
+/**
+ * Controller ruling: every `z.strictObject` request-body schema (`ProjectPatchSchema`,
+ * `ResumeRequestSchema`, `PinRequestSchema`, `LabelRequestSchema`, `SaveViewRequestSchema`) rejects
+ * an unrecognised key (e.g. a typo'd `{ mode: 'embedded', frok: true }`) with 422
+ * `validation_failed` — the JSON is well-formed, but semantically rejected, unlike a generic 400
+ * for a missing/mistyped field. Every other body validation failure stays 400.
+ */
+export async function readJson<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
   let body: unknown;
   try {
     body = await c.req.json();
@@ -29,8 +24,7 @@ export async function readJson<T>(c: Context, schema: z.ZodType<T>, opts: ReadJs
   }
   const r = schema.safeParse(body);
   if (!r.success) {
-    const status =
-      opts.unknownKeyStatus === 422 && r.error.issues.some((i) => i.code === 'unrecognized_keys') ? 422 : 400;
+    const status = r.error.issues.some((i) => i.code === 'unrecognized_keys') ? 422 : 400;
     throw new ServiceError('validation_failed', status, 'invalid request', r.error.issues);
   }
   return r.data;
