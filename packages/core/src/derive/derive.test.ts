@@ -15,6 +15,13 @@ describe('name', () => {
     expect(long.endsWith('…')).toBe(true);
   });
 
+  it('never splits a surrogate pair when the cut lands mid-emoji', () => {
+    const out = truncate(`${'a'.repeat(78)}😀zzzz`);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(out)).toBe(false);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(NAME_MAX);
+  });
+
   it('prefers agent-name, then custom title, ai-title, summary, first prompt', () => {
     const base = { agentName: null, customTitle: null, aiTitle: null, summary: null, firstPrompt: null };
     expect(deriveName(base)).toBeNull();

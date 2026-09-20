@@ -3,7 +3,10 @@ export const NAME_MAX = 80;
 export function truncate(text: string, max: number = NAME_MAX): string {
   const flat = text.replace(/\s+/g, ' ').trim();
   if (flat.length <= max) return flat;
-  return `${flat.slice(0, max - 1).trimEnd()}…`;
+  let end = max - 1;
+  const code = flat.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1; // don't split a surrogate pair
+  return `${flat.slice(0, end).trimEnd()}…`;
 }
 
 export interface NameInputs {
