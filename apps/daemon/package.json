@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
-    "perf": "vitest run --config vitest.perf.config.ts"
+    "perf": "vitest run --config vitest.perf.config.ts",
+    "postinstall": "node -e 'try{const p=require(\"path\"),f=require(\"fs\");let d;try{d=p.dirname(require.resolve(\"node-pty/package.json\",{paths:[__dirname]}))}catch(e){process.exit(0)}const pb=p.join(d,\"prebuilds\");if(f.existsSync(pb)){for(const x of f.readdirSync(pb)){const h=p.join(pb,x,\"spawn-helper\");if(f.existsSync(h))f.chmodSync(h,0o755)}}}catch(e){}'"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
@@ -18,6 +19,7 @@
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.8",
+    "node-pty": "^1.1.0",
     "pino": "^10.3.1",
     "zod": "^4.6.5"
   },

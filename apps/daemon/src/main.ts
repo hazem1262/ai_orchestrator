@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { CORE_VERSION } from '@orc/core';
 import { Hono } from 'hono';
+import { warnIfChildSessionEnv } from './pty/pty-manager.ts';
 
 const startedAt = Date.now();
 
@@ -13,6 +14,7 @@ export function createHealthApp(): Hono {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  warnIfChildSessionEnv();
   const port = Number(process.env.ORC_PORT ?? 4317);
   serve({ fetch: createHealthApp().fetch, port, hostname: '127.0.0.1' });
   console.log(`orchestrator daemon on http://127.0.0.1:${port}`);
