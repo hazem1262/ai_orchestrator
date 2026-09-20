@@ -8,7 +8,7 @@ export const SavedViewSchema = z.object({
 });
 export type SavedView = z.output<typeof SavedViewSchema>;
 
-export const SaveViewRequestSchema = z.object({
+export const SaveViewRequestSchema = z.strictObject({
   name: z.string().trim().min(1).max(60),
   query: z.record(z.string(), z.string()),
 });

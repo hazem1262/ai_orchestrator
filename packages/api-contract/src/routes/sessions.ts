@@ -81,7 +81,7 @@ export const SessionEventsResponseSchema = z.object({
 });
 export type SessionEventsResponse = z.output<typeof SessionEventsResponseSchema>;
 
-export const ResumeRequestSchema = z.object({
+export const ResumeRequestSchema = z.strictObject({
   mode: z.enum(['embedded', 'external']),
   fork: z.boolean().optional(),
   popOut: z.boolean().optional(),
@@ -96,9 +96,11 @@ export const ResumeResponseSchema = z.union([
 ]);
 export type ResumeResponse = z.output<typeof ResumeResponseSchema>;
 
-export const PinRequestSchema = z.object({ pinned: z.boolean() });
+export const PinRequestSchema = z.strictObject({ pinned: z.boolean() });
 export const PinResponseSchema = PinRequestSchema;
-export const LabelRequestSchema = z.object({ labels: z.array(z.string().trim().min(1).max(40)).max(20) });
+export const LabelRequestSchema = z.strictObject({
+  labels: z.array(z.string().trim().min(1).max(40)).max(20),
+});
 export const LabelResponseSchema = z.object({ labels: z.array(z.string()) });
 export const LabelsListSchema = z.array(z.string());
 export const OkSchema = z.object({ ok: z.literal(true) });
