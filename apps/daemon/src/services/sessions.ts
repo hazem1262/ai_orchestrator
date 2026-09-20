@@ -6,6 +6,7 @@ import {
   deriveAvailability,
   type LiveState,
   type PrRef,
+  redact,
   registryStatusToLive,
   type Session,
   type Source,
@@ -13,10 +14,16 @@ import {
 } from '@orc/core';
 import type { OrcPaths } from '../config.ts';
 import type { OrcDb } from '../db/client.ts';
-import { escapeLike, toFtsQuery } from '../db/fts.ts';
+import { escapeLike, ftsPrefixToken, toFtsQuery } from '../db/fts.ts';
 import { sessionPk } from '../db/keys.ts';
 import { listAgents } from '../db/repos/agents.ts';
-import { eventSnippet, listEvents, searchEventSessions } from '../db/repos/events.ts';
+import {
+  eventSnippet,
+  eventTextByRowid,
+  ftsPrefixCardinality,
+  listEvents,
+  searchEventSessions,
+} from '../db/repos/events.ts';
 import { searchHistoryPrompts } from '../db/repos/history.ts';
 import { insertPtySession, markPtyExited } from '../db/repos/pty-sessions.ts';
 import { getSessionByPk, querySessions, type SessionRow, searchSessionText } from '../db/repos/sessions.ts';
@@ -187,6 +194,15 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     if (s) bus.emit({ type: 'session.updated', session: s });
   }
 
+  // Above this many distinct dictionary terms, FTS5's snippet() cost (which scales with term
+  // cardinality, not row count — see events.ts's `ftsPrefixCardinality` doc comment) is no
+  // longer safe to pay per result row. Chosen from direct measurement: a ~1,111-term fan-out
+  // cost ~80 ms/row (a page of 50 would be seconds); this cap keeps the worst realistic case
+  // measured in task-19-report.md's "Fix round 2" comfortably inside the 150 ms budget while
+  // leaving every common-word/short-prefix shape untouched (their cardinality is in the single
+  // digits to low tens).
+  const FTS_PREFIX_CARDINALITY_CAP = 40;
+
   function toItem(
     row: SessionRow,
     pinned: boolean,
@@ -275,10 +291,28 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       const pagePks = page.map((r) => r.pk);
       const pinned = pinnedSet(db, pagePks);
       const labels = labelsFor(db, pagePks);
+      // Decided once per search, not once per result row: a query's prefix term either is or
+      // isn't a wide-cardinality fan-out risk regardless of how many rows end up on the page.
+      const prefixToken = match ? ftsPrefixToken(text) : null;
+      const wideFanout =
+        prefixToken !== null && ftsPrefixCardinality(db, prefixToken) > FTS_PREFIX_CARDINALITY_CAP;
       const items = page.map((r) => {
         const rid = hits.get(r.pk);
-        const snippet =
-          match && rid !== undefined ? eventSnippet(db, match, rid) : (fallback.get(r.pk) ?? null);
+        let snippet: string | null;
+        if (match && rid !== undefined) {
+          if (wideFanout) {
+            // Skip FTS5's snippet() (its cost scales with the prefix's term cardinality) and
+            // highlight the already-fetched raw text in application code instead — same
+            // redaction guarantee, bounded cost regardless of how wide the prefix fans out.
+            const row = eventTextByRowid(db, rid);
+            const raw = row?.text ?? row?.searchInput ?? null;
+            snippet = raw === null ? null : redact(highlight(raw, prefixToken ?? text));
+          } else {
+            snippet = eventSnippet(db, match, rid);
+          }
+        } else {
+          snippet = fallback.get(r.pk) ?? null;
+        }
         return toItem(r, pinned.has(r.pk), labels.get(r.pk) ?? [], snippet);
       });
       const last = page.at(-1);

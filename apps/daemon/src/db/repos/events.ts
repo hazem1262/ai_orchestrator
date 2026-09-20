@@ -129,3 +129,34 @@ export function eventSnippet(db: OrcDb, match: string, rowid: number): string | 
   );
   return row?.snip === undefined ? null : redact(row.snip);
 }
+
+/**
+ * Cheap (~1 ms) check of how many distinct terms in `events_fts`'s dictionary a prefix would
+ * match, via the `temp.events_vocab` fts5vocab shadow table created once per connection
+ * (`db/client.ts`). `sessions.ts`'s `list()` uses this to decide, once per search (not once per
+ * result row), whether it's safe to pay FTS5 `snippet()`'s cost — which scales with this count,
+ * not with the number of matching rows — or whether to fall back to a manual highlight instead.
+ * See task-19-report.md's "Fix round 2" for the numbers behind the threshold.
+ */
+export function ftsPrefixCardinality(db: OrcDb, prefixToken: string): number {
+  return (
+    db.get<{ n: number }>(
+      sql`SELECT count(*) AS n FROM temp.events_vocab WHERE term GLOB ${`${prefixToken}*`}`,
+    )?.n ?? 0
+  );
+}
+
+/** Raw text for the manual-highlight fallback `sessions.ts` uses when `ftsPrefixCardinality`
+ * says FTS5's `snippet()` would be too expensive for the current query's prefix term. */
+export function eventTextByRowid(
+  db: OrcDb,
+  rowid: number,
+): { text: string | null; searchInput: string | null } | null {
+  return (
+    db
+      .select({ text: events.text, searchInput: events.searchInput })
+      .from(events)
+      .where(eq(events.id, rowid))
+      .get() ?? null
+  );
+}

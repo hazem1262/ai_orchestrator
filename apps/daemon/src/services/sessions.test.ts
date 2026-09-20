@@ -84,6 +84,24 @@ describe('session service', () => {
     expect(ctx.sessions.list({ q: 'weekends', projectId: 'forza' }).items).toEqual([]);
   });
 
+  it('preserves search-as-you-type quality after Fix round 2 (last-token-only prefixing)', async () => {
+    await setup();
+    // A partial final token — still being typed — must still find results via prefix match.
+    const partial = ctx.sessions.list({ q: 'notif' });
+    expect(partial.items.map((i) => i.pk)).toEqual(['claude:s-basic']);
+    expect(partial.items[0]?.snippet?.toLowerCase()).toContain('notification');
+
+    // A second, still-partial token narrows the match further while the first (already typed)
+    // token still filters as an exact term.
+    const twoToken = ctx.sessions.list({ q: 'notification serv' });
+    expect(twoToken.items.map((i) => i.pk)).toEqual(['claude:s-basic']);
+
+    // An earlier token is matched exactly, not as a prefix: 'notif' here is not the last token,
+    // so it must NOT match 'notification' — proving earlier tokens genuinely filter rather than
+    // silently falling back to prefix behavior everywhere.
+    expect(ctx.sessions.list({ q: 'notif service' }).items).toEqual([]);
+  });
+
   it('hides automated codex sessions unless asked', async () => {
     await setup();
     expect(ctx.sessions.list({ projectId: 'hackathon' }).items).toEqual([]);
