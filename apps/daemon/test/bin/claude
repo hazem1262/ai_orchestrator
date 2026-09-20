@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake `claude` for tests: prints its arguments and cwd, then echoes stdin until killed.
+echo "fake-claude $*"
+echo "cwd=$(pwd -P)"
+exec cat
