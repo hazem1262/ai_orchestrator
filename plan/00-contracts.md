@@ -267,7 +267,12 @@ export interface TimelineEvent {
   kind: EventKind;
   turn: number;                  // increments at each human prompt
   text: string | null;           // redacted at display time, stored raw
-  tool: string | null;           // e.g. 'Bash', 'mcp__claude_ai_Linear__save_issue'
+  tool: string | null;           // e.g. 'Bash', 'mcp__claude_ai_Linear__save_issue'; for kind:'system' events
+                                  // synthesized from `command`/`compact_summary` Claude records, `tool` is
+                                  // the literal string 'command' or 'compact_summary' (P1, Task 2 ruling —
+                                  // these are NOT human prompts: they never increment promptCount and never
+                                  // seed firstPrompt/lastPrompt/name, but they render distinctly in the
+                                  // timeline via this tool value)
   toolUseId: string | null;
   mcpServer: string | null;
   input: unknown | null;         // tool_use input (JSON)
@@ -350,17 +355,29 @@ export function openDb(file: string): { db: OrcDb; raw: Database.Database; close
 - **Validation:** every request and response schema lives in `@orc/api-contract/src/routes/<area>.ts` as zod. The client is `createApiClient({ baseUrl, token })` in `@orc/api-contract/src/client.ts` and exposes typed methods named `<area><Verb>`, e.g. `sessionsList`, `sessionsGet`, `sessionsResume`.
 
 ### Routes (grouped by the phase that adds them)
+
+P1's route table below is the **as-built** shape (reconciled at the phase 1 exit — the code is
+authoritative over the plan text it was written against):
+
 ```
 P1  GET    /api/health                               → { ok, version, uptimeS }
 P1  GET    /api/projects                             → Project[]
-P1  PATCH  /api/projects/:id                         body Partial<ProjectConfig>
-P1  GET    /api/sessions?q&projectId&source&ticket&pr&from&to&model&minCost&maxCost&skill&hasSubagents&touchedProd&availability&limit&cursor
+P1  GET    /api/projects/:id                          → ProjectConfig                          (Task 15 addition — was missing from the original table)
+P1  PATCH  /api/projects/:id                         body ProjectUpdate (Partial<ProjectConfig> minus `features`, which is itself Partial)
+P1  GET    /api/sessions?q&projectId&source&ticket&pr&from&to&model&minCost&maxCost&skill&hasSubagents&touchedProd&availability&label&pinned&includeHidden&includeAutomated&limit&cursor
                                                      → { items: SessionListItem[]; nextCursor: string | null }
+                                                     (SessionListQuery gained `label`, `pinned`, `includeHidden`, `includeAutomated` beyond the original plan — all brief-mandated, additive)
 P1  GET    /api/sessions/:source/:id                 → Session
 P1  GET    /api/sessions/:source/:id/events?agentId&afterSeq&limit → { items: TimelineEvent[]; nextSeq: number | null }
 P1  GET    /api/sessions/:source/:id/agents          → AgentNode[]
-P1  POST   /api/sessions/:source/:id/resume          body { mode: 'embedded'|'external'; fork?: boolean } → { ptyId } | { launched: 'external' }
-P1  POST   /api/sessions/:source/:id/pin | /label    …
+P1  POST   /api/sessions/:source/:id/resume          body ResumeRequest { mode: 'embedded'|'external'; fork?; popOut?; cols?; rows? } → ResumeResponse ({ ptyId } | { launched: 'external'; command: string })
+                                                     (ResumeRequest gained `popOut`, `cols`, `rows` beyond the original plan — all brief-mandated, additive; all four write-body schemas are `z.strictObject`, see §13)
+P1  POST   /api/sessions/:source/:id/pin             body { pinned: boolean } → { pinned: boolean }
+P1  POST   /api/sessions/:source/:id/label           body { labels: string[] } → { labels: string[] }
+P1  GET    /api/labels                               → string[]                                (not in the original route table)
+P1  GET    /api/views                                → SavedView[]                              (not in the original route table)
+P1  POST   /api/views                                body { name; query: Record<string,string> } → SavedView
+P1  DELETE /api/views/:id                            → { ok: true }
 P1  GET    /api/pty                                  → PtyInfo[]
 P1  DELETE /api/pty/:ptyId                           body { confirm: true }
 P1  WS     /pty/:ptyId                               binary out; client msgs: { t:'in', d:string } | { t:'resize', cols, rows }
@@ -402,6 +419,7 @@ export type BusEvent = LiveEvent
   | { type: 'hook.received'; payload: unknown }
   | { type: 'session.statusChanged'; pk: string; from: LiveStatus | null; to: LiveStatus }
   | { type: 'session.turnEnded'; pk: string; turn: number }
+  | { type: 'session.indexed'; pk: string }   // P1: emitted by the indexer whenever a session's rows change (new file, append, truncation-recovery re-read); daemon-internal only, not on the /ws LiveEvent wire
   | { type: 'tests.recorded'; pk: string; result: TestResult };
 export interface EventBus { emit(e: BusEvent): void; on<T extends BusEvent['type']>(type: T, fn: (e: Extract<BusEvent, { type: T }>) => void): () => void }
 export function createEventBus(): EventBus
@@ -420,6 +438,8 @@ export interface PtyManager {
   attach(id: string, onData: (chunk: string) => void): { scrollback: string; detach(): void };
   list(): PtyInfo[];
   get(id: string): PtyInfo | undefined;
+  remove(id: string): void;        // P1 addition: drops a PTY's entry (e.g. after DELETE /api/pty/:ptyId once exited)
+  disposeAll(): void;              // P1 addition: kills every live PTY, used on daemon shutdown (close())
 }
 export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number }): PtyManager
 ```
@@ -478,6 +498,11 @@ Later phases call these services. The **owning phase** implements the exact sign
 
 ```ts
 // apps/daemon/src/context.ts  (Phase 1 creates; later phases add optional fields)
+// As-built P1 note: there is NO `sessions.owned_by_app` column anywhere in the schema (§5's
+// `sessions` table has no such column) — ownership ('observed' | 'owned', see §4's `Ownership`
+// type) is a route/service-level concept computed from whether a live PtyInfo exists for the
+// session's pk, not a persisted column. §11's DaemonContext note that implied a column was wrong;
+// reconciled at the phase 1 exit (Task 6/20 ruling).
 export interface DaemonContext {
   paths: OrcPaths;
   config: () => OrcConfig;                 // live getter (config can change at runtime)
@@ -486,7 +511,8 @@ export interface DaemonContext {
   log: import('pino').Logger;
   pty: PtyManager;                         // P1
   sessions: SessionService;                // P1
-  projects: ProjectService;                // P1
+  projects: ProjectServiceImpl;            // P1 — as-built name; ProjectService is the narrower public interface it extends (see below)
+  userMeta: UserMetaService;               // P1 — pins/labels/saved views; not anticipated by the original §11 draft
   inbox?: InboxEngine;                     // P2
   notifier?: Notifier;                     // P2
   templates?: TemplateRegistry;            // P2
@@ -511,8 +537,8 @@ export interface DaemonContext {
 Once its phase has shipped, code must treat an optional service as present. Tests build a context with `createTestContext(overrides)` from `apps/daemon/test/helpers.ts` (created in P1 and extended by each phase).
 
 ```ts
-// P1 — apps/daemon/src/services/sessions.ts
-export interface SessionListQuery { q?: string; projectId?: string; source?: Source; ticket?: string; pr?: string; from?: string; to?: string; model?: string; minCost?: number; maxCost?: number; skill?: string; hasSubagents?: boolean; touchedProd?: boolean; availability?: Availability; limit?: number; cursor?: string }
+// P1 — apps/daemon/src/services/sessions.ts (as-built; SessionListQuery/ResumeRequest gained fields beyond the original plan — see §6)
+export interface SessionListQuery { q?: string; projectId?: string; source?: Source; ticket?: string; pr?: string; from?: string; to?: string; model?: string; minCost?: number; maxCost?: number; skill?: string; hasSubagents?: boolean; touchedProd?: boolean; availability?: Availability; label?: string; pinned?: boolean; includeHidden?: boolean; includeAutomated?: boolean; limit?: number; cursor?: string }
 export interface SessionListItem { pk: string; source: Source; id: string; projectId: string | null; name: string | null; firstPrompt: string | null; lastPrompt: string | null; recap: string | null; startedAt: string; lastActivityAt: string; durationMs: number; costUsd: number | null; tickets: string[]; prs: PrRef[]; availability: Availability; pinned: boolean; labels: string[]; live: LiveState | null; snippet: string | null }
 export interface SessionService {
   list(q: SessionListQuery): { items: SessionListItem[]; nextCursor: string | null };
@@ -521,12 +547,53 @@ export interface SessionService {
   events(source: Source, id: string, opts: { agentId?: string | null; afterSeq?: number; limit?: number }): { items: TimelineEvent[]; nextSeq: number | null };
   agents(source: Source, id: string): AgentNode[];
   setLive(pk: string, live: LiveState | null): void;      // emits session.updated
-  resume(source: Source, id: string, opts: { mode: 'embedded' | 'external'; fork?: boolean }): Promise<{ ptyId: string } | { launched: 'external' }>;
+  resume(source: Source, id: string, opts: { mode: 'embedded' | 'external'; fork?: boolean; popOut?: boolean; cols?: number; rows?: number }): Promise<{ ptyId: string } | { launched: 'external'; command: string }>;
 }
 export const sessionPk = (source: Source, id: string) => `${source}:${id}`;
 
-// P1 — apps/daemon/src/services/projects.ts
-export interface ProjectService { list(): Project[]; resolve(cwd: string): string | null; get(id: string): ProjectConfig | null; update(id: string, patch: Partial<ProjectConfig>): ProjectConfig }
+// P1 — apps/daemon/src/services/user-meta.ts (as-built; not anticipated by the original plan)
+export interface UserMetaService {
+  setPinned(pk: string, pinned: boolean): boolean;
+  setLabels(pk: string, labels: string[]): string[];
+  labels(): string[];
+  views(): SavedView[];
+  saveView(i: { name: string; query: Record<string, string> }): SavedView;
+  deleteView(id: string): boolean;
+}
+
+// P1 — apps/daemon/src/services/external.ts (as-built home for the resume/launch external-process helpers; §13's `shellQuote`/`resumeCommandLine` entries point here)
+export type ExternalLauncher = (i: { cwd: string; command: string; args: string[]; openIn: 'vscode' | 'terminal' | 'finder' }) => Promise<void>;
+export function createExternalLauncher(run?: CommandRunner): ExternalLauncher
+
+// P1 — apps/daemon/src/indexer/indexer.ts (as-built; not in the original §11 draft)
+export interface Indexer {
+  scanAll(): Promise<{ files: number; sessions: number; ms: number }>;
+  indexFile(path: string): Promise<void>;
+  watch(): Promise<void>;
+  close(): Promise<void>;
+  unknownTypes(): Record<string, number>;
+  reconcile(): Promise<{ swept: number; skipped: number }>;   // periodic reconciliation backstop against a dropped chokidar event, see Task 10's "Flake fix"
+}
+export function createIndexer(deps: { db: OrcDb; raw: Database.Database; paths: OrcPaths; projects: ProjectServiceImpl; bus: EventBus; log: Logger; debounceMs?: number; reconcileMs?: number }): Indexer
+
+// P1 — apps/daemon/src/context.ts (as-built)
+export function buildContext(o: { paths: OrcPaths; log?: Logger; launchExternal?: ExternalLauncher; isPidAlive?: (pid: number) => boolean }): { ctx: DaemonContext; raw: Database.Database; saveConfig(cfg: OrcConfig): void; close(): void }
+
+// P1 — apps/daemon/src/main.ts (as-built)
+export const DEFAULT_WEB_DIST: string;   // apps/web/dist, resolved relative to the daemon package; serveStatic mounts it at '/' iff it exists and o.webDist isn't explicitly overridden
+export interface Daemon { ctx: DaemonContext; indexer: Indexer; token: string; start(o: { port: number; watch?: boolean }): Promise<{ port: number; close(): Promise<void> }> }
+export function createDaemon(o?: { paths?: OrcPaths; log?: Logger; launchExternal?: ExternalLauncher; webDist?: string | null }): Promise<Daemon>
+
+// P1 — apps/daemon/src/services/projects.ts (as-built)
+/** Partial<ProjectConfig> is assignable; `features` is itself Partial for PATCH semantics. */
+export type ProjectUpdate = Omit<Partial<ProjectConfig>, 'features'> & { features?: Partial<ProjectConfig['features']> };
+export interface ProjectService { list(): Project[]; resolve(cwd: string): string | null; get(id: string): ProjectConfig | null; update(id: string, patch: ProjectUpdate): ProjectConfig }
+export interface ProjectServiceImpl extends ProjectService {
+  ensureDefaults(): void;
+  ensureDetected(): { added: string[] };
+  deriveConfigFor(cwd: string | null): DeriveConfig;
+  syncTable(): void;
+}   // DaemonContext.projects is typed as ProjectServiceImpl, not the narrower ProjectService — the indexer and other P1-internal callers need the extra methods
 
 // P2 — apps/daemon/src/inbox/engine.ts
 export interface InboxUpsert { kind: InboxKind; dedupeKey: string; sessionId?: string | null; projectId?: string | null; ticket?: string | null; reason: string; payload?: Record<string, unknown> }
@@ -611,8 +678,17 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   - a resizable bottom/right terminal dock (`features/terminal/TerminalDock.tsx`)
 - **Stores:**
   - `stores/project.ts` → `useProjectStore` `{ projectId, setProjectId }`, persisted in localStorage
-  - `stores/terminals.ts` → `useTerminalStore` `{ tabs: {ptyId,title}[], active, open(ptyId,title), close(ptyId) }`
+  - `stores/terminals.ts` → `useTerminalStore` `{ tabs: {ptyId,title}[], active, open(ptyId,title), close(ptyId), setActive(ptyId) }` — `setActive` is a P1 addition over the original draft (switches the focused terminal tab without opening/closing one); persisted to **sessionStorage** (not localStorage — tabs are meant to outlive a reload within the same browser tab, not follow the user across tabs/devices)
 - **API access** only through hooks in `api/queries/*.ts`: `useSessions(filters)`, `useSession(source,id)`, `useSessionEvents(...)`, `useLive()`, `useInbox(filters)`, etc. The WS hook `useLiveEvents()` is mounted once in `AppShell` and applies cache updates.
+- **PTY transport (P1, as-built — `api/pty-socket.ts`, not in the original §12 draft):**
+  ```ts
+  export function ptySocketUrl(ptyId: string, token: string, loc: { protocol: string; host: string }): string
+  export function connectPty(ptyId: string, h: PtySocketHandlers, o?: { token?: string; WebSocketImpl?: WebSocketCtor; location?: { protocol: string; host: string }; maxDelayMs?: number }): PtySocket
+  // PtySocketHandlers: onData(Uint8Array), onExit(code), onStatus?(status), onReset?()
+  // PtySocket: send(msg: PtyClientMessage), close()
+  ```
+  `connectPty` owns reconnect/backoff and realm-safe binary-frame decoding (a plain `instanceof ArrayBuffer`/`DataView` check fails across a jsdom-vs-Node realm boundary — Task 18's fix round; see the tag-based `toBytes()` helper).
+- **P1 web feature directories (as-built):** `features/history/` (F3), `features/session-detail/` (F2), `features/terminal/` (F4 — `TerminalDock.tsx`, `TerminalView.tsx`, `ResumeActions.tsx`), `features/settings/` (F13 project settings), `features/shell/` (`AppShell.tsx`, `ProjectSelector.tsx`).
 - **Tests:** component tests with Testing Library and an MSW-free fake client (`api/client.ts` exports `setApiClientForTests`). E2E runs with Playwright against the daemon started on fixtures (`apps/web/e2e/*.spec.ts`, via `pnpm --filter @orc/web e2e`).
 
 ## 13. Symbol ownership & de-duplication
@@ -654,6 +730,12 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `DEFAULT_TICKET_REGEX` | **P1** `packages/core/src/derive/tickets.ts` | P4 imports it. |
 | `resumeCommand`, `resumeCommandLine` | **P1** `apps/daemon/src/services/sessions/external.ts` | P2 and P7 import; P7's compare/automation launches go through `spawnClaudeSession`. |
 
+| `Indexer`, `createIndexer` | **P1** `apps/daemon/src/indexer/indexer.ts` | Not in the original §11 draft. Later phases that need indexing hooks modify this file rather than creating a parallel indexer. |
+| `UserMetaService`, `createUserMetaService` | **P1** `apps/daemon/src/services/user-meta.ts` | Owns pins/labels/saved views (F3). Not anticipated by the original plan; later phases extend by modifying this file. |
+| `ExternalLauncher`, `createExternalLauncher`, `resumeCommandLine`, `appleScriptString` | **P1** `apps/daemon/src/services/external.ts` | `resumeCommandLine`/`shellQuote` were originally drafted under `services/sessions/external.ts`; the as-built path is `services/external.ts` (no `sessions/` subdirectory). P2/P7 import from this path. |
+
+**Unknown request-body keys → HTTP 422 everywhere (P1, Task 12 ruling, reconciled at the phase exit).** Every write-body schema (`ResumeRequestSchema`, `PinRequestSchema`, `LabelRequestSchema`, `SaveViewRequestSchema`, `ProjectPatchSchema`) is a `z.strictObject`. `apps/daemon/src/http/json.ts`'s `readJson()` inspects the Zod error: an `unrecognized_keys` issue (a typo'd or extra key) returns **422** `validation_failed`; every other validation failure (wrong type, failed refinement, malformed JSON) returns **400** `validation_failed`. Query-string schemas stay permissive (unknown query params are silently ignored, never 422) — only request bodies are strict. This single rule replaced an earlier inconsistent 400-for-everything convention found during Task 12's review.
+
 **Execution rule:** when a task says "Create" for a file that an earlier phase already created, the executor changes it to "Modify", keeps the existing exports, and adapts the surrounding code. If the two shapes genuinely conflict, the **later** phase adapts to the earlier one unless this table says otherwise, and the change is noted in the task's review note.
 
 ## 14. Spike outcomes that bind later phases
@@ -667,4 +749,7 @@ Phase 0's spikes settled several questions the phase plans left open. These over
 | **S5** codex | Rollouts parse cleanly; originators observed: `codex_exec`, `codex_sdk_ts`, `codex-tui`, `Codex Desktop`. | Phase 1's Codex aggregate filters `codex_sdk_ts` by default (decision 3). The `automated` flag keys on originator. The report's actual decision also carries: read the Codex SQLite read-only as well; the rollout-mtime<10s process-matching rule is untested under load; and the originator list came from a 5.2% recency-biased sample. |
 | **S7** quota | **official** source found. | `LimitsConfig.quotaSource` defaults to `'official'`, with `officialFieldPaths` defaulting to `rate_limits.five_hour.used_percentage`, `rate_limits.five_hour.resets_at`, `rate_limits.seven_day.used_percentage`, `rate_limits.seven_day.resets_at`. These arrive on the **statusline command's stdin JSON**, so Phase 5's `POST /api/usage/official` is fed by the orchestrator statusline wrapper. The ccusage-style estimator stays as the labelled-"estimated" fallback for when no statusline is installed. Phase 5 must not overwrite a user's existing statusline — it merges or wraps. Caveats: n=1 on one Max account; `/usage` parity was never checked; and `rate_limits` may be absent on some plan tiers or before the first API response, so Phase 5 must fall back to the estimator when the field is missing. |
 | ~~**S6** Wakecore~~ | **Dropped by the user (2026-09-21):** this is a personal project, so it uses open-source shadcn/ui outright instead of a private work package. The spike's blocked-on-`read:packages` finding is moot. | `@/components/ui/*` is the permanent home of the primitives, not a fallback. |
+| **P1 Task 19, redaction boundary** | Not a Phase-0 spike, but binds later phases the same way. Five fix rounds (3, 4, 5, 5b — round 1-2 were the perf fix, unrelated) found and closed **12 distinct raw (unredacted) transcript-text paths** that the original §8/route-layer redaction design believed were already covered: (1) the wide-fan-out `eventSnippet` fallback, (2) the `history_prompts` search-fallback highlight, then five more found by an explicit sweep (`TimelineEvent.tool`, `TimelineEvent.mcpServer`, `AgentNode.agentType`, `Session.cwds`, `Session.mcpServers`), then five more found by an *adversarial* re-verification of that sweep (`Session.startCwd`, `Session.skills[]`, `Session.filesTouched[]`, `Session.live.waitingFor`, `Session.tickets[]`/`SessionListItem.tickets[]`). The final boundary is `apps/daemon/src/http/redact-out.ts`'s `redactSession`/`redactListItem`/`redactEvent`/`redactAgent`/`redactSnippet` — every field either routes through `redact()` (a no-op on ordinary values, so tickets/paths/skill names stay matchable) or is deliberately excluded with a stated reason (`transcriptPath` — daemon-derived; `labels`/saved-view/project names — user-authored in-app; `models`/`permissionMode` — fixed vocabularies; `prs` — extraction unimplemented this phase). **Two of the 12 were a redact/truncate ORDER bug** (`highlight()` truncates by raw character offset, so a naive `redact(highlight(text))` can bisect a secret pattern across the truncation boundary and let it survive) — fixed once via a shared `redactedHighlight(text, needle, radius) = highlight(redact(text), needle, radius)` helper in `services/snippet.ts`. **The lesson recorded for later phases:** each round's manual sweep table missed fields the next round's exhaustive guard test found — the guard test (one seeded secret-bearing session + subagent + history-prompt row, checked against all four session-returning routes at once) is what actually holds this boundary, not the sweep table. Any new fallback path added to `sessions.ts`'s `list()` must default to `redactedHighlight()` rather than assuming the route-layer pass will catch it. |
+| **P1 Task 14, browser type-import boundary** | Not a spike — a deliberate P1 tradeoff recorded here per the ledger's explicit instruction. `apps/web/tsconfig.json` keeps `types: ["vite/client", "node"]` rather than rewriting every `apps/web` and `api-contract` type-only import to a `@orc/core/browser` subpath entry point. This means `apps/web`'s **typecheck** can see `@types/node` (TS type-checks the whole transitive graph reached by any `import type` from the full `@orc/core` barrel, and contracts §11 sanctions importing types from that barrel), so a careless future `import { readFile } from 'node:fs'` in a web component would typecheck — it is only the Vite **build** that would catch it (verified: the built `apps/web/dist` bundle greps clean for `node:` imports). If a later phase wants strict per-file browser/Node isolation enforced at typecheck time, that is a phase-level decision to point `api-contract` and `apps/web` at `@orc/core/browser` everywhere — a five-site change across two packages (three in `api-contract`, two in brief-authored `apps/web` files), not attempted in P1. |
+| **P1 Task 19, search-perf cardinality cap** | A synthetic-then-real two-stage tuning exercise, not a spike, but the empirical constant it produced binds the search-quality/perf tradeoff for later phases. `toFtsQuery` prefix-matches only the *last* (still-being-typed) token of a query, 3+ characters; every earlier token becomes an exact term. FTS5's native `snippet()` cost scales with the prefixed token's *matched-term cardinality*, not row count — a synthetic worst case (a numbered vocabulary where one 4-char prefix matched ~1,111 of 3,000 terms) took ~4s per search before this was found. Above `FTS_PREFIX_CARDINALITY_CAP = 250` (`apps/daemon/src/services/sessions.ts`), a search skips native `snippet()` and highlights the raw row text in application code instead (via `redactedHighlight`, so the secret-leak fix applies uniformly). **250 is empirical, not derived**: measured directly against the real `~/.claude`/`~/.codex` corpus's actual term cardinality and `snippet()` cost per common English 3-character prefix (`con`→489 terms/188ms was the one real-world case that exceeded the 150ms budget; every measured case ≤244 terms stayed under ~75ms). Real-text cost is **not monotonic in cardinality alone** (`con` cost 4-6x more than `get` at nearly the same cardinality) — a future corpus with different vocabulary characteristics could still occasionally exceed the cap's safety margin; the perf suite's gated per-shape assertions (not this cap alone) are the regression backstop. Phase 2+ should re-measure this cap if the indexed corpus's vocabulary shape changes materially (e.g. adding a new source with very different token distributions). |
 | **S2/S8** PTY | Scripted input **50/50** complete and in order; send-while-busy is queued by Claude's own TUI (not garbled); multi-line arrives as one prompt. `submitDelayMs` 120 ms works, and no idle detection is needed before sending. Browser render, typing, resize and scrollback replay all verified in headless Chrome. **GO.** | `encodePaste`/`sendText` live in `packages/core/src/pty/paste.ts`; Phase 1's `apps/daemon/src/pty/input.ts` wraps that module. **Two Phase 1 setup gotchas:** (1) node-pty 1.1.0's darwin-arm64 prebuild ships `spawn-helper` without the executable bit, and every `pty.spawn()` fails until it is `chmod +x`'d — the daemon package needs a postinstall step. (2) **A child session inherits `CLAUDE_CODE_CHILD_SESSION` and then writes NO transcript.** `PtyManager.spawn()` must delete that marker from the child env and set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, with a test asserting it; otherwise every session the app launches is invisible to its own indexer. |
