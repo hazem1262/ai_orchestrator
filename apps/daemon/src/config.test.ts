@@ -1,9 +1,22 @@
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OrcConfig } from '@orc/api-contract';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { ensureToken, loadConfig, resolvePaths, saveConfig } from './config.ts';
+
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
 
 describe('resolvePaths', () => {
   it('uses defaults under the home directory', () => {
@@ -35,7 +48,7 @@ describe('resolvePaths', () => {
 });
 
 describe('config and token files', () => {
-  const paths = () => resolvePaths({ ORC_HOME: mkdtempSync(join(tmpdir(), 'orc-cfg-')) });
+  const paths = () => resolvePaths({ ORC_HOME: tmpDir('orc-cfg-') });
 
   it('creates a default config on first load and round-trips saves', () => {
     const p = paths();

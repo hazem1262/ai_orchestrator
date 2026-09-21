@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeEvent, makeSession } from '../../../test/factories.ts';
 import { type OrcDb, openDb } from '../client.ts';
 import { toFtsQuery } from '../fts.ts';
@@ -18,6 +18,20 @@ import {
 import { deleteFileOffset, getFileOffset, putFileOffset } from './file-offsets.ts';
 import { historyPromptsFor, insertHistoryPrompts, searchHistoryPrompts } from './history.ts';
 import { listProjectRows, replaceProjects } from './projects.ts';
+
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
+
 import {
   getSessionByPk,
   getSessionOrigin,
@@ -45,7 +59,7 @@ let db: OrcDb;
 let raw: Database.Database;
 let close: () => void;
 beforeEach(() => {
-  const opened = openDb(join(mkdtempSync(join(tmpdir(), 'orc-repo-')), 'index.db'));
+  const opened = openDb(join(tmpDir('orc-repo-'), 'index.db'));
   db = opened.db;
   raw = opened.raw;
   close = opened.close;

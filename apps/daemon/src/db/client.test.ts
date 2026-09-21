@@ -1,13 +1,26 @@
-import { mkdtempSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { openDb } from './client.ts';
 import { sessionPk, splitPk } from './keys.ts';
 
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
+
 describe('openDb', () => {
   it('migrates, sets pragmas and chmods the file', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'orc-db-')), 'index.db');
+    const file = join(tmpDir('orc-db-'), 'index.db');
     const { raw, close } = openDb(file);
     const tables = (
       raw.prepare("select name from sqlite_master where type in ('table') order by name").all() as {
@@ -39,7 +52,7 @@ describe('openDb', () => {
   });
 
   it('indexes prompt text in FTS but not tool results', () => {
-    const file = join(mkdtempSync(join(tmpdir(), 'orc-db-')), 'index.db');
+    const file = join(tmpDir('orc-db-'), 'index.db');
     const { raw, close } = openDb(file);
     const ins = raw.prepare(
       "insert into events (session_pk, agent_id, seq, uuid, ts, kind, turn, text, search_input) values ('claude:s', '', ?, ?, 't', ?, 1, ?, ?)",

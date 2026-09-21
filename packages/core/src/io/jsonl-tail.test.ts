@@ -1,9 +1,22 @@
-import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { FIXTURES_DIR } from '../test-utils/fixtures.ts';
 import { parseJsonLine, readJsonlFrom } from './jsonl-tail.ts';
+
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
 
 describe('readJsonlFrom', () => {
   it('reads complete lines and reports a partial trailing line', async () => {
@@ -23,7 +36,7 @@ describe('readJsonlFrom', () => {
   });
 
   it('resumes from an offset and only returns new lines', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const dir = tmpDir('orc-tail-');
     const f = join(dir, 'a.jsonl');
     writeFileSync(f, '{"n":1}\n{"n":2}\n');
     const first = await readJsonlFrom(f, 0);
@@ -39,7 +52,7 @@ describe('readJsonlFrom', () => {
   });
 
   it('handles multi-byte characters across chunk boundaries', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const dir = tmpDir('orc-tail-');
     const f = join(dir, 'u.jsonl');
     const line = JSON.stringify({ t: 'مرحبا'.repeat(50) });
     writeFileSync(f, `${line}\n${line}\n`);
@@ -48,7 +61,7 @@ describe('readJsonlFrom', () => {
   });
 
   it('recovers from truncation/replacement instead of silently returning nothing forever', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const dir = tmpDir('orc-tail-');
     const f = join(dir, 'trunc.jsonl');
     writeFileSync(f, '{"n":1}\n{"n":2}\n{"n":3}\n');
     const first = await readJsonlFrom(f, 0);
@@ -63,7 +76,7 @@ describe('readJsonlFrom', () => {
   });
 
   it('rejects a negative offset with a clear error instead of the raw fs error', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orc-tail-'));
+    const dir = tmpDir('orc-tail-');
     const f = join(dir, 'neg.jsonl');
     writeFileSync(f, '{"n":1}\n');
     await expect(readJsonlFrom(f, -1)).rejects.toThrow(RangeError);

@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InboxItem } from '@orc/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb } from '../client.ts';
 import {
   archivedSessionPks,
@@ -21,9 +21,22 @@ import {
 } from './inbox.ts';
 import { insertTestResult, latestTestResult, previousTestResult } from './test-results.ts';
 
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
+
 let handle: ReturnType<typeof openDb>;
 beforeEach(() => {
-  handle = openDb(join(mkdtempSync(join(tmpdir(), 'orc-p2db-')), 'index.db'));
+  handle = openDb(join(tmpDir('orc-p2db-'), 'index.db'));
 });
 afterEach(() => handle.close());
 

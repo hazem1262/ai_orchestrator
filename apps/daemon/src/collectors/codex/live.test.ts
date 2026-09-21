@@ -3,9 +3,22 @@ import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecFn } from '../../live/liveness.ts';
 import { createCodexLiveDetector, isCodexCommand, parsePsLine, readRolloutMeta } from './live.ts';
+
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
 
 // `vi.spyOn` cannot redefine a live ESM export ("Module namespace is not configurable"), so
 // `readdir` is wrapped through `vi.mock` instead. By default it's a transparent pass-through to
@@ -38,7 +51,7 @@ let home: string;
 let dayDir: string;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'orc-codex-'));
+  home = tmpDir('orc-codex-');
   const d = new Date(NOW);
   dayDir = join(home, 'sessions', String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()));
   mkdirSync(dayDir, { recursive: true });

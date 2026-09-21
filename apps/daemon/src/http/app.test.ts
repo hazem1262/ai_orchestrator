@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -8,7 +8,7 @@ import {
   SessionListResponseSchema,
   SessionSchema,
 } from '@orc/api-contract';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   createTestContext,
@@ -20,6 +20,19 @@ import { insertHistoryPrompts } from '../db/repos/history.ts';
 import type { Indexer } from '../indexer/indexer.ts';
 import { createApp } from './app.ts';
 import type { OrcApp } from './types.ts';
+
+// Every temp dir this file makes is tracked and removed when the file's tests finish. Without
+// this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
+// disk and produced dozens of failures that looked like flaky tests.
+const tmpDirs: string[] = [];
+const tmpDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  tmpDirs.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
+});
 
 const TOKEN = 'a'.repeat(64);
 const BASE = 'http://127.0.0.1:4317';
@@ -519,7 +532,7 @@ describe('strict request bodies', () => {
 
 describe('static web app', () => {
   it('serves files with SPA fallback', async () => {
-    const dist = mkdtempSync(join(tmpdir(), 'orc-web-'));
+    const dist = tmpDir('orc-web-');
     mkdirSync(join(dist, 'assets'));
     writeFileSync(join(dist, 'index.html'), '<!doctype html><title>Orchestrator</title>');
     writeFileSync(join(dist, 'assets', 'app.js'), 'console.log(1)');
