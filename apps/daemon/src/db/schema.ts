@@ -1,3 +1,5 @@
+import type { InboxKind, InboxState } from '@orc/core';
+import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** Mirror of config projects (the config file is the source of truth). */
@@ -157,3 +159,56 @@ export const ptySessions = sqliteTable('pty_sessions', {
   exitedAt: text('exited_at'),
   exitCode: integer('exit_code'),
 });
+
+export const inboxItems = sqliteTable(
+  'inbox_items',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').$type<InboxKind>().notNull(),
+    sessionId: text('session_id'),
+    projectId: text('project_id'),
+    ticket: text('ticket'),
+    reason: text('reason').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    state: text('state').$type<InboxState>().notNull(),
+    snoozeUntil: text('snooze_until'),
+    payloadJson: text('payload_json').notNull().default('{}'),
+  },
+  (t) => [
+    uniqueIndex('inbox_items_active_dedupe').on(t.dedupeKey).where(sql`state in ('open', 'snoozed')`),
+    index('inbox_items_state_idx').on(t.state, t.updatedAt),
+  ],
+);
+
+export const testResults = sqliteTable(
+  'test_results',
+  {
+    sessionPk: text('session_pk').notNull(),
+    ts: text('ts').notNull(),
+    command: text('command').notNull(),
+    passed: integer('passed').notNull(),
+    failed: integer('failed').notNull(),
+    skipped: integer('skipped').notNull(),
+    durationMs: integer('duration_ms'),
+  },
+  (t) => [primaryKey({ columns: [t.sessionPk, t.ts] })],
+);
+
+export const archiveEntries = sqliteTable(
+  'archive_entries',
+  {
+    path: text('path').primaryKey(),
+    sessionPk: text('session_pk').notNull(),
+    agentId: text('agent_id'),
+    projectId: text('project_id').notNull(),
+    archivePath: text('archive_path').notNull(),
+    codec: text('codec').$type<'zstd' | 'gzip'>().notNull(),
+    sourceSize: integer('source_size').notNull(),
+    sourceMtimeMs: integer('source_mtime_ms').notNull(),
+    bytes: integer('bytes').notNull(),
+    archivedAt: text('archived_at').notNull(),
+  },
+  (t) => [index('archive_entries_session_idx').on(t.sessionPk)],
+);

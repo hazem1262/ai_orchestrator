@@ -22,6 +22,13 @@
       "when": 1789920005427,
       "tag": "0002_file_offsets_head_fingerprint",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789997894301,
+      "tag": "0003_familiar_redwing",
+      "breakpoints": true
     }
   ]
 }
