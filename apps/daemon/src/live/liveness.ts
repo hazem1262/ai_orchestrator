@@ -103,10 +103,14 @@ function clockParts(text: string): ClockParts | null {
   };
 }
 
-/** Parses one `ps -axo pid=,ppid=,lstart=,command=` line. `lstart` is always in LOCAL time. */
+/**
+ * Parses one `ps -axo pid=,ppid=,lstart=,command=` line. `lstart` is always in LOCAL time, and is
+ * also returned raw (`lstart`) because a wall-clock comparison — not an epoch comparison — is the
+ * only DST-safe way to match it against a `procStart`. See `isAlive`.
+ */
 export function parsePsLine(
   line: string,
-): { pid: number; ppid: number; startedAtMs: number; command: string } | null {
+): { pid: number; ppid: number; startedAtMs: number; lstart: string; command: string } | null {
   const m = PS_LINE.exec(line);
   if (!m) return null;
   const [, pidTok, ppidTok, clockTok, commandTok] = m;
@@ -119,8 +123,44 @@ export function parsePsLine(
     pid: Number(pidTok),
     ppid: Number(ppidTok),
     startedAtMs,
+    lstart: clockTok,
     command: commandTok.trim(),
   };
+}
+
+/** The local wall-clock `ps` would print for an instant — the same shape `clockParts` yields. */
+function localPartsOf(ms: number): ClockParts {
+  const d = new Date(ms);
+  return {
+    year: d.getFullYear(),
+    month: d.getMonth(),
+    day: d.getDate(),
+    hh: d.getHours(),
+    mm: d.getMinutes(),
+    ss: d.getSeconds(),
+  };
+}
+
+const samePartsAs = (a: ClockParts, b: ClockParts): boolean =>
+  a.year === b.year &&
+  a.month === b.month &&
+  a.day === b.day &&
+  a.hh === b.hh &&
+  a.mm === b.mm &&
+  a.ss === b.ss;
+
+const FIFTEEN_MIN_MS = 15 * 60_000;
+const MAX_UTC_OFFSET_MS = 26 * 3_600_000; // widest real offsets are ±14h; ±26h covers any date skew
+
+/**
+ * True when a mismatch has the fingerprint of a timezone/format change rather than a recycled pid:
+ * the two instants differ by exactly a plausible UTC offset (every real offset is a 15-minute
+ * multiple). A recycled pid trips this only if the replacement process started at an instant
+ * exactly the host offset away from the dead one, to the second.
+ */
+function looksLikeOffsetSkew(deltaMs: number): boolean {
+  const abs = Math.abs(deltaMs);
+  return abs !== 0 && abs <= MAX_UTC_OFFSET_MS && abs % FIFTEEN_MIN_MS === 0;
 }
 
 /**
@@ -152,8 +192,10 @@ export function parseLstart(lstart: string): number | null {
  * ```
  *
  * ...all six registry files off by exactly the host offset; the sibling `startedAt` epoch-millis
- * field (which carries no timezone ambiguity at all) renders in UTC to within one second of
- * `procStart` for every entry; and the project's own captured spike fixture pairs
+ * field (which carries no timezone ambiguity at all) renders in UTC within a few seconds of
+ * `procStart` for every entry (measured: +1.36s, +1.51s, +1.75s, +1.79s, +2.87s, +3.69s — the two
+ * are written at slightly different moments, so seconds rather than hours is the whole point);
+ * and the project's own captured spike fixture pairs
  * `startedAt: 1788253200000` (= 2026-09-01T09:00:00Z) with `procStart: "Mon Sep  1 09:00:00 2026"`.
  *
  * A fixture that writes both sides of this comparison cannot falsify it. The regression test for
@@ -185,6 +227,29 @@ export interface LivenessCheckerOptions {
   now?: () => number;
   /** How long a verified (pid, procStart) verdict is reused before re-running `ps`. */
   cacheMs?: number;
+  /**
+   * Called when a mismatch looks like an upstream timezone/format change rather than a recycled
+   * pid — i.e. the two instants differ by exactly a plausible UTC offset (see `looksLikeOffsetSkew`).
+   *
+   * This exists because the `procStart`-is-UTC assumption is load-bearing in both directions: if a
+   * future Claude Code version wrote it in local time, every session would silently read dead and
+   * the whole board would empty, and the regression test only catches that if someone re-derives
+   * its pairs from fresh real data. On this machine a format flip would show up as all six entries
+   * mismatching by exactly 3h.
+   *
+   * **Warn only — this never changes the verdict.** Degrading on this signature would weaken the
+   * pid-reuse guard by one delta value, on a signature nobody has ever seen fire.
+   *
+   * No logger is injected: this module has no `DaemonContext`/pino coupling and should not acquire
+   * one. **Task 8 must wire this to `ctx.log.warn` at the daemon's construction site** — there is
+   * no production construction site yet, so today it is only exercised by tests.
+   */
+  onSuspectedFormatChange?: (info: {
+    pid: number;
+    procStart: string;
+    psStartMs: number;
+    wantMs: number;
+  }) => void;
 }
 
 /**
@@ -229,9 +294,24 @@ export function createLivenessChecker(opts: LivenessCheckerOptions = {}): Livene
           .split('\n')
           .map(parsePsLine)
           .find((p): p is NonNullable<typeof p> => p !== null && p.pid === pid);
-        // No parsable line for a pid `ps` exited 0 for means the output shape changed, not that
-        // the process is gone: degrade to the bare check rather than reporting a false death.
-        alive = parsed === undefined ? true : parsed.startedAtMs === want;
+        const got = parsed === undefined ? null : clockParts(parsed.lstart);
+        if (parsed === undefined || got === null) {
+          // No parsable line for a pid `ps` exited 0 for means the output shape changed, not that
+          // the process is gone: degrade to the bare check rather than reporting a false death.
+          alive = true;
+        } else {
+          // Compare WALL CLOCKS, not epochs. On the repeated local hour of a DST fall-back, one
+          // wall-clock string maps to two instants and `new Date(y, m, d, ...)` always resolves it
+          // to the earlier (still-DST) one — so a process that really started in the second pass
+          // of that hour would mismatch by exactly 3_600_000 ms and be declared dead, one hour a
+          // year, on every DST host. Rendering `want` back into local parts and comparing those is
+          // total and needs no tolerance window. The nonexistent spring-forward hour needs no
+          // handling: `ps` can never print a wall clock that did not happen.
+          alive = samePartsAs(localPartsOf(want), got);
+          if (!alive && opts.onSuspectedFormatChange && looksLikeOffsetSkew(parsed.startedAtMs - want)) {
+            opts.onSuspectedFormatChange({ pid, procStart, psStartMs: parsed.startedAtMs, wantMs: want });
+          }
+        }
       }
       cache.set(key, { at: t, alive });
       return alive;

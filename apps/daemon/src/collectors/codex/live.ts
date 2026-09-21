@@ -206,6 +206,8 @@ interface ParsedProc {
   pid: number;
   ppid: number;
   startedAtMs: number;
+  /** Raw `ps` clock column. Unused here; the liveness checker's wall-clock match needs it. */
+  lstart: string;
   command: string;
 }
 

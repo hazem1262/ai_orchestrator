@@ -246,6 +246,59 @@ describe('createLivenessChecker', () => {
     });
   });
 
+  it('matches a process started in the repeated hour of a DST fall-back', async () => {
+    // `ps` prints one wall clock for both passes of the repeated hour, and `new Date(y,m,d,...)`
+    // always resolves it to the earlier (still-DST) instant. Comparing epochs made a process that
+    // really started in the SECOND pass mismatch by exactly 3_600_000ms -> dead -> removed ->
+    // pid-dismissed, one hour a year on every DST host. The match is on wall clocks instead.
+    await withTZ('America/New_York', async () => {
+      const AMBIGUOUS_LOCAL = 'Sun Nov  1 01:30:00 2026';
+      const FIRST_PASS_UTC = 'Sun Nov  1 05:30:00 2026'; // EDT, UTC-4
+      const SECOND_PASS_UTC = 'Sun Nov  1 06:30:00 2026'; // EST, UTC-5
+      expect(new Date(2026, 10, 1, 1, 30, 0).toISOString()).toBe('2026-11-01T05:30:00.000Z');
+      const { exec } = execFor(AMBIGUOUS_LOCAL);
+      const c = createLivenessChecker({ exec, pidAlive: () => true, cacheMs: 0 });
+      expect(await c.isAlive(41001, FIRST_PASS_UTC)).toBe(true);
+      expect(await c.isAlive(41001, SECOND_PASS_UTC)).toBe(true);
+      // And an hour that is genuinely a different wall clock is still rejected.
+      expect(await c.isAlive(41001, 'Sun Nov  1 07:30:00 2026')).toBe(false);
+    });
+  });
+
+  it('warns on a mismatch that looks like a timezone/format change', async () => {
+    // The signature of `procStart` flipping to local time: every entry off by exactly one real UTC
+    // offset. Warn only — the verdict is unchanged, so the pid-reuse guard is not weakened.
+    await withTZ('Asia/Riyadh', async () => {
+      const seen: Array<{ pid: number; procStart: string; psStartMs: number; wantMs: number }> = [];
+      const { exec } = execFor('Mon Sep 21 21:30:14 2026'); // `ps` says 21:30:14 local (= 18:30:14Z)
+      const c = createLivenessChecker({
+        exec,
+        pidAlive: () => true,
+        onSuspectedFormatChange: (i) => seen.push(i),
+      });
+      // procStart read as UTC is 21:30:14Z; the delta is exactly the +3h host offset.
+      expect(await c.isAlive(38030, 'Mon Sep 21 21:30:14 2026')).toBe(false);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ pid: 38030, procStart: 'Mon Sep 21 21:30:14 2026' });
+      expect((seen[0]?.psStartMs ?? 0) - (seen[0]?.wantMs ?? 0)).toBe(-3 * 3_600_000);
+    });
+  });
+
+  it('does not warn on an ordinary recycled-pid mismatch', async () => {
+    await withTZ('Asia/Riyadh', async () => {
+      const seen: unknown[] = [];
+      // 37 minutes and 11 seconds off: not a multiple of 15 minutes, so not an offset.
+      const { exec } = execFor('Mon Sep  1 12:37:11 2026');
+      const c = createLivenessChecker({
+        exec,
+        pidAlive: () => true,
+        onSuspectedFormatChange: (i) => seen.push(i),
+      });
+      expect(await c.isAlive(41001, PROC_START)).toBe(false);
+      expect(seen).toEqual([]);
+    });
+  });
+
   it('defaults to the real process table', async () => {
     const c = createLivenessChecker();
     expect(await c.isAlive(2 ** 22 + 12345, null)).toBe(false);

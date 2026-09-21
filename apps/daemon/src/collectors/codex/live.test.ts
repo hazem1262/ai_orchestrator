@@ -115,6 +115,8 @@ describe('parsePsLine / isCodexCommand', () => {
       pid: 4242,
       ppid: 1,
       startedAtMs: T0.getTime(),
+      // Raw clock column, kept for the liveness checker's DST-safe wall-clock match.
+      lstart: lstart(T0),
       command: '/opt/homebrew/bin/codex --model gpt-5.5',
     });
     expect(parsePsLine('garbage')).toBeNull();
