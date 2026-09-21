@@ -87,9 +87,11 @@ export const CONTEXT_WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
  *   under ladder      2.1ms         2.1ms   (baseline, no refold at all)
  * ```
  *
- * Real transcripts here reach 31 MB, so in exactly the regime this fallback exists to serve, every
- * refresh would otherwise re-read tens of megabytes per record. It is latent today — 0 of ~90k
- * real records exceed 1M — and would fire the day a larger window ships.
+ * The largest real transcript in the corpus above is 31.0 MB, so in exactly the regime this
+ * fallback exists to serve, every refresh would otherwise re-read tens of megabytes per record. It
+ * is latent today — 0 of those 40,012 usage records exceed 1M — and would fire the day a larger
+ * window ships. `live-tracker.perf.ts` pins the mechanism: the `w !== e.contextWindow` gate below
+ * is what makes the rounding pay off, and removing it passes every correctness test.
  */
 export const CONTEXT_WINDOW_STEP = 250_000;
 
@@ -98,17 +100,28 @@ export const CONTEXT_WINDOW_STEP = 250_000;
  * actually reported.
  *
  * **The window is not recorded anywhere in a transcript.** Fix round 1 mapped a `[1m]` suffix on
- * the model id, on the assumption that a 1M-context session says so. It does not: across all 171
- * real transcripts under `~/.claude/projects` (39,993 non-synthetic assistant usage records) the
- * model id is `claude-opus-5` for every single one and no value anywhere contains `1m`. This very
- * session runs a 1M-context model and writes `"model":"claude-opus-5"`. There is no
- * `context_1m`, `contextWindow`, `betas` or `max_context` marker either — zero hits.
+ * the model id, on the assumption that a 1M-context session says so. It does not. One measurement
+ * of `~/.claude/projects`, with every count taken in the same pass so the denominators agree
+ * (a live corpus, so these are a snapshot, not constants):
+ *
+ * ```
+ *   transcripts                                        171   (largest 31.0 MB)
+ *   records, all types                             134,384
+ *   assistant records                               40,073   (every one carries `usage`)
+ *   ...excluding `<synthetic>`                      40,012   <- the denominator used below
+ *   distinct model ids            "claude-opus-5", "<synthetic>"
+ *   model ids containing "1m"                            0
+ *   `context_1m`/`contextWindow`/`betas`/`max_context`   0
+ *   usage records over 200,000 tokens               25,776   (64.4% of 40,012)
+ *   usage records over 1,000,000 tokens                  0   (peak 999,591)
+ * ```
+ *
+ * This very session runs a 1M-context model and writes `"model":"claude-opus-5"`.
  *
  * So the usage numbers are the only evidence that exists, and they are sufficient: a turn cannot
  * consume more context than the window allows, so observed usage is a hard lower bound on the
- * window. In the same corpus, 25,757 of 39,993 records (64.4%) already report
- * `input + cache_read + cache_creation` above 200,000, peaking at 999,591 — so the 200k default
- * was not an edge case, it mis-scaled most real turns, clamping the board's context bar to full.
+ * window. At 64.4% over 200,000, the old default was not mis-scaling an edge case — it was
+ * mis-scaling most real turns, clamping the board's context bar to full.
  *
  * This is self-correcting, needs no configuration, and cannot be wrong in the direction that
  * matters: it never reports a session as fuller than it is. Above the largest known rung the peak
