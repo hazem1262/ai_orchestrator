@@ -8,7 +8,10 @@ export interface TailResult {
   size: number;
   /**
    * True when the stored `offset` was past the end of the file — the file was replaced or
-   * truncated (Claude Code rewrites transcripts on compaction and replaces them on `/clear`).
+   * truncated. No confirmed producer of this is known: measured across 171 real transcripts,
+   * compaction is append-only (every `isCompactSummary` record sits mid-file, none at the start)
+   * and `/clear` begins a new `sessionId` in a new file. It is reported anyway so a tailing caller
+   * can recover instead of sitting on an offset that can never be reached again.
    * When this is true, `nextOffset` is reset to `0` so the caller re-scans from the start.
    */
   truncated: boolean;

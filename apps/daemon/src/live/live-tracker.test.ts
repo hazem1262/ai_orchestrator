@@ -1,14 +1,21 @@
 import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OrcConfig } from '@orc/api-contract';
+import type { LiveState } from '@orc/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakePty } from '../../test/fake-pty.ts';
-import { createTestContext, type TestContext, useTempHomes } from '../../test/helpers.ts';
+import { createTestContext, indexFixtures, type TestContext, useTempHomes } from '../../test/helpers.ts';
 import type { CodexLiveProc } from '../collectors/codex/live.ts';
 import { latestTestResult } from '../db/repos/test-results.ts';
 import type { BusEvent } from './event-bus.ts';
 import { createTranscriptFinder } from './find-transcript.ts';
-import { createLiveTracker, type LiveTracker, mapHookToStatus } from './live-tracker.ts';
+import {
+  contextWindowForUsage,
+  createLiveTracker,
+  type LiveTracker,
+  mapHookToStatus,
+  usedTokensOfRecord,
+} from './live-tracker.ts';
 import { createRegistryWatcher } from './registry-watcher.ts';
 
 const homes = useTempHomes();
@@ -253,6 +260,28 @@ describe('LiveTracker (claude)', () => {
     expect(tracker.get('claude:s-basic')?.live).toMatchObject({ ownership: 'owned', ptyId: 'pty-9' });
   });
 
+  it('marks sessions owned when a live PTY carries the sessionPk but a different pid', async () => {
+    // The ownership rule has two arms and this is the one that matters in practice: `PtyInfo.pid`
+    // is the pid of whatever we spawned, which for a wrapper/shim is not the `claude` process the
+    // registry names. Without this arm the board would show `observed` for a terminal we own and
+    // refuse to send input to it.
+    pty.infos.push({
+      id: 'pty-shim',
+      sessionPk: 'claude:s-basic',
+      command: 'claude',
+      args: [],
+      cwd: '/Users/test/Wakecap',
+      pid: 99999,
+      startedAt: '',
+      exitedAt: null,
+      exitCode: null,
+      cols: 80,
+      rows: 24,
+    });
+    await tracker.refresh();
+    expect(tracker.get('claude:s-basic')?.live).toMatchObject({ ownership: 'owned', ptyId: 'pty-shim' });
+  });
+
   it('ignores an exited PTY when deciding ownership', async () => {
     pty.infos.push({
       id: 'pty-dead',
@@ -376,8 +405,74 @@ describe('LiveTracker (claude)', () => {
   });
 });
 
+/**
+ * The window a session runs with appears NOWHERE in a transcript (see `contextWindowForUsage`), so
+ * these tests deliberately never write a window marker. They drive the inference the only way the
+ * daemon can: through the usage numbers. The headline case is built from a real record.
+ */
+describe('LiveTracker persistence for indexed sessions', () => {
+  const makeTracker = () =>
+    createLiveTracker(ctx, {
+      registry: createRegistryWatcher({
+        dir: join(homes.claudeHome, 'sessions'),
+        watch: false,
+        pollMs: 60_000,
+      }),
+      liveness: { isAlive: async (pid) => alive.has(pid) },
+      codex: { scan: async () => [] },
+      now: () => new Date(nowMs),
+    });
+
+  it('persists live state through sessions.setLive and clears it when the entry is retired', async () => {
+    await indexFixtures(ctx);
+    expect(ctx.sessions.getByPk('claude:s-basic')).not.toBeNull(); // the guard's precondition
+    const calls: Array<[string, LiveState | null]> = [];
+    const real = ctx.sessions;
+    ctx.sessions = {
+      ...real,
+      setLive: (pk, next) => {
+        calls.push([pk, next]);
+        real.setLive(pk, next);
+      },
+    };
+    const t = makeTracker();
+    try {
+      await t.start();
+      expect(calls.some(([pk, l]) => pk === 'claude:s-basic' && l !== null)).toBe(true);
+
+      alive.clear();
+      nowMs = T0 + 1000;
+      await t.refresh();
+      nowMs = T0 + 1000 + 61_000;
+      await t.refresh();
+      // Without this the removed session's live blob stays in the service's map and every list
+      // route keeps rendering a ghost live card for a session the tracker has forgotten.
+      expect(calls.at(-1)).toEqual(['claude:s-basic', null]);
+    } finally {
+      await t.stop();
+      ctx.sessions = real;
+    }
+  });
+});
+
 describe('LiveTracker context window', () => {
-  const usageLine = (uuid: string, model: string, input: number, ts: string) =>
+  /**
+   * Verbatim `message.usage` from the largest real assistant record in this machine's
+   * `~/.claude/projects` (171 transcripts, 39,993 non-synthetic usage records). Note the model id:
+   * plain `claude-opus-5`, no `[1m]`, on a record that consumed 999,591 context tokens.
+   */
+  const REAL_PEAK_USAGE = {
+    input_tokens: 2,
+    cache_read_input_tokens: 999_050,
+    cache_creation_input_tokens: 539,
+    output_tokens: 484,
+  } as const;
+  const REAL_PEAK_USED =
+    REAL_PEAK_USAGE.input_tokens +
+    REAL_PEAK_USAGE.cache_read_input_tokens +
+    REAL_PEAK_USAGE.cache_creation_input_tokens;
+
+  const usageLine = (uuid: string, used: number, ts: string, model = 'claude-opus-5') =>
     line(
       {
         type: 'assistant',
@@ -389,11 +484,27 @@ describe('LiveTracker context window', () => {
           model,
           content: [{ type: 'text', text: 'ok' }],
           usage: {
-            input_tokens: input,
+            input_tokens: used,
             output_tokens: 1,
             cache_read_input_tokens: 0,
             cache_creation_input_tokens: 0,
           },
+        },
+      },
+      's-ctx',
+    );
+  const realUsageLine = (uuid: string, ts: string) =>
+    line(
+      {
+        type: 'assistant',
+        uuid,
+        timestamp: ts,
+        message: {
+          id: `m-${uuid}`,
+          role: 'assistant',
+          model: 'claude-opus-5',
+          content: [{ type: 'text', text: 'ok' }],
+          usage: REAL_PEAK_USAGE,
         },
       },
       's-ctx',
@@ -416,47 +527,74 @@ describe('LiveTracker context window', () => {
     return tracker.get('claude:s-ctx');
   };
 
-  it('computes contextFill against 1M for a [1m] model id', async () => {
-    const s = await startCtxSession([
-      prompt,
-      usageLine('c1', 'claude-opus-5[1m]', 100_000, '2026-09-01T09:10:02.000Z'),
-    ]);
-    expect(s?.live?.contextFill).toBeCloseTo(0.1, 10);
+  it('scales a real 999,591-token record against 1M instead of pinning the bar to full', async () => {
+    // The regression test for fix round 1: with the window pinned at 200k this record computes
+    // 999_591/200_000 = 5.0 and clamps to 1.0 — the board reads "out of context" on a session
+    // that is 99.96% of the way through a 1M window, and read full for 64.4% of all real records.
+    const s = await startCtxSession([prompt, realUsageLine('c1', '2026-09-01T09:10:02.000Z')]);
+    expect(s?.live?.contextFill).toBeCloseTo(REAL_PEAK_USED / 1_000_000, 6);
+    expect(s?.live?.contextFill).toBeLessThan(1);
   });
 
-  it('computes contextFill against 200k for an ordinary model id', async () => {
-    const s = await startCtxSession([
-      prompt,
-      usageLine('c1', 'claude-opus-5', 100_000, '2026-09-01T09:10:02.000Z'),
-    ]);
-    expect(s?.live?.contextFill).toBeCloseTo(0.5, 10);
+  it('uses the 200k rung while usage stays under it', async () => {
+    const s = await startCtxSession([prompt, usageLine('c1', 150_000, '2026-09-01T09:10:02.000Z')]);
+    expect(s?.live?.contextFill).toBeCloseTo(0.75, 10);
   });
 
-  it('re-folds carried state when the model changes mid-session', async () => {
-    const s1 = await startCtxSession([
-      prompt,
-      usageLine('c1', 'claude-opus-5', 100_000, '2026-09-01T09:10:02.000Z'),
-    ]);
-    expect(s1?.live?.contextFill).toBeCloseTo(0.5, 10);
-    appendFileSync(
-      transcriptFor('s-ctx'),
-      usageLine('c2', 'claude-sonnet-5[1m]', 100_000, '2026-09-01T09:10:03.000Z'),
-    );
+  it('widens to the next rung on the very record that outgrows the current one', async () => {
+    const s1 = await startCtxSession([prompt, usageLine('c1', 100_000, '2026-09-01T09:10:02.000Z')]);
+    expect(s1?.live?.contextFill).toBeCloseTo(0.5, 10); // 100k / 200k
+    appendFileSync(transcriptFor('s-ctx'), usageLine('c2', 300_000, '2026-09-01T09:10:03.000Z'));
     await tracker.refresh();
     const s2 = tracker.get('claude:s-ctx');
-    expect(s2?.live?.contextFill).toBeCloseTo(0.1, 10);
+    expect(s2?.live?.contextFill).toBeCloseTo(0.3, 10); // 300k / 1M, not clamped to 1
     // The reducer was rebuilt, not reset: state folded before the switch survives.
     expect(s2?.lastPrompt).toBe('measure me');
   });
 
-  it('ignores a <synthetic> model id when choosing the window', async () => {
+  it('never narrows the window when a later turn uses less', async () => {
     const s = await startCtxSession([
       prompt,
-      usageLine('c1', 'claude-opus-5[1m]', 100_000, '2026-09-01T09:10:02.000Z'),
-      usageLine('c2', '<synthetic>', 100_000, '2026-09-01T09:10:03.000Z'),
+      usageLine('c1', 300_000, '2026-09-01T09:10:02.000Z'),
+      usageLine('c2', 50_000, '2026-09-01T09:10:03.000Z'),
     ]);
-    // `<synthetic>` carries no real usage and must not drag the window back to 200k.
-    expect(s?.live?.contextFill).toBeCloseTo(0.1, 10);
+    // Peak is sticky: 50k against the 1M window the session has proved it has, not against 200k.
+    expect(s?.live?.contextFill).toBeCloseTo(0.05, 10);
+  });
+
+  it('uses the observed peak itself, and warns, above the largest known window', async () => {
+    const warnings: object[] = [];
+    ctx.log = { ...ctx.log, warn: (o: object) => warnings.push(o) } as typeof ctx.log;
+    const s = await startCtxSession([prompt, usageLine('c1', 2_500_000, '2026-09-01T09:10:02.000Z')]);
+    // Honest saturation (it really is at the top of everything we know about), not a silent clamp.
+    expect(s?.live?.contextFill).toBe(1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ pk: 'claude:s-ctx', peakUsed: 2_500_000 });
+  });
+
+  it('ignores a <synthetic> record when sizing the window', async () => {
+    const s = await startCtxSession([
+      prompt,
+      usageLine('c1', 100_000, '2026-09-01T09:10:02.000Z'),
+      usageLine('c2', 900_000, '2026-09-01T09:10:03.000Z', '<synthetic>'),
+    ]);
+    // `<synthetic>` usage is not real context, and `createLiveReducer` ignores it too.
+    expect(s?.live?.contextFill).toBeCloseTo(0.5, 10);
+  });
+
+  it('maps peak usage onto the ladder', () => {
+    expect(contextWindowForUsage(0)).toBe(200_000);
+    expect(contextWindowForUsage(200_000)).toBe(200_000);
+    expect(contextWindowForUsage(200_001)).toBe(1_000_000);
+    expect(contextWindowForUsage(999_591)).toBe(1_000_000);
+    expect(contextWindowForUsage(1_000_001)).toBe(1_000_001);
+  });
+
+  it('reads context tokens off a record the same way the reducer does', () => {
+    expect(usedTokensOfRecord(JSON.parse(realUsageLine('x', 'T')))).toBe(REAL_PEAK_USED);
+    expect(usedTokensOfRecord(JSON.parse(usageLine('x', 5, 'T', '<synthetic>')))).toBeNull();
+    expect(usedTokensOfRecord(JSON.parse(prompt))).toBeNull();
+    expect(usedTokensOfRecord(undefined)).toBeNull();
   });
 });
 
@@ -507,6 +645,29 @@ describe('LiveTracker (codex)', () => {
     expect(tracker.get('codex:c0dex000-0000-0000-0000-000000000001')?.live?.status).toBe('ended');
   });
 
+  it('warns once per unresolved codex process, at a level the daemon actually logs', async () => {
+    // The stated mitigation for "skipped, so it renders as nothing" is a log line. At `debug` it
+    // is invisible at the daemon's default level (`ORC_LOG_LEVEL ?? 'info'`), i.e. not a
+    // mitigation at all.
+    const warnings: object[] = [];
+    ctx.log = { ...ctx.log, warn: (o: object) => warnings.push(o) } as typeof ctx.log;
+    codexProcs = [
+      {
+        pid: 702,
+        cwd: '/Users/test/Wakecap',
+        startedAtMs: T0,
+        rolloutPath: null,
+        sessionId: null,
+        originator: null,
+        lastWriteMs: null,
+      },
+    ];
+    await tracker.refresh();
+    await tracker.refresh();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ pid: 702, cwd: '/Users/test/Wakecap' });
+  });
+
   it('shows an automated codex session when codex.showAutomated is on', async () => {
     cfg = { ...cfg, codex: { ...cfg.codex, showAutomated: true } };
     codexProcs = [
@@ -552,20 +713,24 @@ describe('LiveTracker (codex)', () => {
  * `session.statusChanged`. The upstream half (Claude deciding it is waiting, then writing the
  * file) is NOT measured and cannot be from fixtures alone.
  *
- * The tracker's own poll is left at 60s so it cannot satisfy this, while the registry watcher
- * keeps its production 2000ms poll backstop so the test degrades into a slow pass rather than a
- * hang. The <1500ms bound is therefore also an assertion that the *push* path delivered: the
- * backstop alone could not have answered in that time.
+ * Both tests below pin exactly one delivery path by disabling the other, so each one's bound means
+ * something on its own. The previous version ran both paths at once and claimed a `< 1500ms` bound
+ * proved the push path had delivered; it did not — the 2000ms poll is free-running, so a tick
+ * landing early in the window could satisfy that bound too, and the test would have passed for the
+ * wrong reason.
  *
  * The 100ms gap before the measured write is load-bearing and is itself a finding: chokidar v5
- * (fs.watch, no fsevents) coalesces two writes to the same path ~1ms apart into a single event,
- * so a transition written immediately after another is delivered only by the poll backstop.
- * Real transitions are seconds apart; back-to-back ones only happen in a test.
+ * (fs.watch, no fsevents) coalesces two writes to the same path ~1ms apart into a single event, so
+ * a transition written immediately after another is delivered only by the poll backstop. Real
+ * transitions are seconds apart; back-to-back ones only happen in a test.
  */
-describe('LiveTracker waiting-transition latency (push path)', () => {
-  it('detects a registry busy -> waiting transition through the fs watcher', async () => {
+describe('LiveTracker waiting-transition latency', () => {
+  const driveToBusyThenMeasureWaiting = async (
+    watcherOpts: { watch?: boolean; pollMs?: number },
+    assertElapsed: (ms: number) => void,
+  ) => {
     const watched = createLiveTracker(ctx, {
-      registry: createRegistryWatcher({ dir: join(homes.claudeHome, 'sessions') }),
+      registry: createRegistryWatcher({ dir: join(homes.claudeHome, 'sessions'), ...watcherOpts }),
       liveness: { isAlive: async (pid) => alive.has(pid) },
       codex: { scan: async () => [] },
     });
@@ -586,8 +751,8 @@ describe('LiveTracker waiting-transition latency (push path)', () => {
       });
     try {
       await watched.start();
-      // Seeded as `waiting` from the fixture and announced to nobody, so drive it to `busy`
-      // first; the measured edge is busy -> waiting, the one the product actually cares about.
+      // Seeded as `waiting` from the fixture and announced to nobody, so drive it to `busy` first;
+      // the measured edge is busy -> waiting, the one the product actually cares about.
       const toBusy = nextStatus('busy');
       reg(41001, 's-basic', 'busy', Date.now());
       await toBusy;
@@ -602,7 +767,7 @@ describe('LiveTracker waiting-transition latency (push path)', () => {
         status: 'waiting',
         waitingFor: 'input needed',
       });
-      expect(elapsedMs).toBeLessThan(1500);
+      assertElapsed(elapsedMs);
       if (process.env.ORC_MEASURE) {
         process.stdout.write(`[measure] busy->waiting detected in ${elapsedMs.toFixed(1)}ms\n`);
       }
@@ -610,6 +775,22 @@ describe('LiveTracker waiting-transition latency (push path)', () => {
       offEdges();
       await watched.stop();
     }
+  };
+
+  it('detects the transition through the fs watcher with the poll backstop disabled', async () => {
+    // `pollMs: 60_000` removes the backstop entirely, so nothing but chokidar can answer inside
+    // the bound. Measured repeatedly on this machine at 0.7-1.6ms; 500ms is ~300x headroom.
+    await driveToBusyThenMeasureWaiting({ pollMs: 60_000 }, (ms) => expect(ms).toBeLessThan(500));
+  });
+
+  it('detects the transition through the poll backstop with the fs watcher disabled', async () => {
+    // The mirror image, and the one that matters when chokidar coalesces or drops an event:
+    // `watch: false` means there is no push path at all. Bounded below as well as above, so a
+    // stray push path sneaking back in would fail this rather than silently satisfy it.
+    await driveToBusyThenMeasureWaiting({ watch: false, pollMs: 250 }, (ms) => {
+      expect(ms).toBeGreaterThan(1);
+      expect(ms).toBeLessThan(2000);
+    });
   });
 });
 

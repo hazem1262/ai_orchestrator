@@ -63,34 +63,57 @@ export function mapHookToStatus(event: string): RegistryStatus | null {
 
 /** Claude's standard context window. `createLiveReducer` assumes this when told nothing. */
 export const CONTEXT_WINDOW_DEFAULT = 200_000;
-/** The window a `[1m]` model id selects. */
-export const CONTEXT_WINDOW_1M = 1_000_000;
 
 /**
- * `contextFill` is a ratio, so the denominator decides what the board's context bar shows. Models
- * whose id ends in `[1m]` run a 1M-token window; everything else gets Claude's 200k default. Get
- * this wrong for a 1M session and the bar reads 5x too full — a session 20% through its context
- * renders as nearly exhausted, which is exactly the signal the board exists to raise.
+ * Known context windows, ascending. The window is picked as the smallest rung that is at least
+ * the session's observed peak usage.
  */
-export function contextWindowForModel(model: string | null): number {
-  return model !== null && /\[1m\]$/i.test(model.trim()) ? CONTEXT_WINDOW_1M : CONTEXT_WINDOW_DEFAULT;
+export const CONTEXT_WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
+
+/**
+ * The context window a session must be running, inferred from the largest token usage it has
+ * actually reported.
+ *
+ * **The window is not recorded anywhere in a transcript.** Fix round 1 mapped a `[1m]` suffix on
+ * the model id, on the assumption that a 1M-context session says so. It does not: across all 171
+ * real transcripts under `~/.claude/projects` (39,993 non-synthetic assistant usage records) the
+ * model id is `claude-opus-5` for every single one and no value anywhere contains `1m`. This very
+ * session runs a 1M-context model and writes `"model":"claude-opus-5"`. There is no
+ * `context_1m`, `contextWindow`, `betas` or `max_context` marker either — zero hits.
+ *
+ * So the usage numbers are the only evidence that exists, and they are sufficient: a turn cannot
+ * consume more context than the window allows, so observed usage is a hard lower bound on the
+ * window. In the same corpus, 25,757 of 39,993 records (64.4%) already report
+ * `input + cache_read + cache_creation` above 200,000, peaking at 999,591 — so the 200k default
+ * was not an edge case, it mis-scaled most real turns, clamping the board's context bar to full.
+ *
+ * This is self-correcting, needs no configuration, and cannot be wrong in the direction that
+ * matters: it never reports a session as fuller than it is. Above the largest known rung the peak
+ * itself becomes the window (and `tail` logs it once per session), so a future larger context
+ * reads full-but-honest instead of being silently clamped at 1.0.
+ */
+export function contextWindowForUsage(peakUsedTokens: number): number {
+  for (const rung of CONTEXT_WINDOW_LADDER) if (peakUsedTokens <= rung) return rung;
+  return peakUsedTokens;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+const numOf = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /**
- * The model id on an assistant record, or null. `<synthetic>` is excluded to match
- * `createLiveReducer`, which ignores the usage on synthetic records — a synthetic record must not
- * be allowed to swing the context window either.
+ * Context tokens an assistant record reports consuming, or null when it reports none. Mirrors
+ * `createLiveReducer`'s own arithmetic exactly (`input + cache_read + cache_creation`, skipping
+ * `<synthetic>`), because this number is the denominator's lower bound for the very ratio that
+ * reducer computes — if the two disagreed, `contextFill` could still exceed 1.
  */
-export function modelOfRecord(value: unknown): string | null {
+export function usedTokensOfRecord(value: unknown): number | null {
   if (!isObj(value) || value.type !== 'assistant') return null;
   const msg = value.message;
-  if (!isObj(msg)) return null;
-  const model = msg.model;
-  if (typeof model !== 'string' || model === '' || model === '<synthetic>') return null;
-  return model;
+  if (!isObj(msg) || msg.model === '<synthetic>') return null;
+  const u = msg.usage;
+  if (!isObj(u)) return null;
+  return numOf(u.input_tokens) + numOf(u.cache_read_input_tokens) + numOf(u.cache_creation_input_tokens);
 }
 
 interface Entry {
@@ -109,6 +132,7 @@ interface Entry {
   offset: number;
   reducer: LiveReducer;
   contextWindow: number;
+  peakUsed: number;
   primed: boolean;
   status: LiveStatus | null;
   since: string;
@@ -125,6 +149,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
   const entries = new Map<string, Entry>();
   const dismissed = new Map<string, number>(); // pk -> pid of a removed ended entry
   const unresolvedCodexLogged = new Set<string>();
+  const overLadderLogged = new Set<string>();
   let initialPassDone = false;
   let running: Promise<void> | null = null;
   let rerun = false;
@@ -155,6 +180,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       offset: 0,
       reducer: createLiveReducer({ contextWindow: CONTEXT_WINDOW_DEFAULT }),
       contextWindow: CONTEXT_WINDOW_DEFAULT,
+      peakUsed: 0,
       primed: initialPassDone,
       status: null,
       since: now().toISOString(),
@@ -227,12 +253,18 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       return;
     }
     if (res.truncated) {
-      // Claude rewrites a transcript on compaction and replaces it on `/clear`. The carried
-      // reducer describes a file that no longer exists, so it is dropped and the replacement is
-      // re-read from the start as catch-up — silently, for the same reason the first pass is
-      // silent: this is old history, not a new turn, and it must not raise inbox items twice.
+      // The carried offset is past EOF, so the file on disk is not the one it describes. Measured
+      // across 171 real transcripts, neither compaction nor `/clear` actually produces this:
+      // compaction is append-only (all 9 `isCompactSummary` records sit mid-file, thousands of
+      // lines from either end, and no transcript begins with one) and `/clear` starts a new
+      // sessionId in a new file. So this is defensive, not a path with a known trigger — it is
+      // kept because the recovery is cheap and the alternative is a permanently stuck offset.
+      // The replacement is re-read from the start as catch-up, silently, for the same reason the
+      // first pass is silent: it is history, not a new turn, and must not raise inbox items.
       e.offset = 0;
-      e.reducer = createLiveReducer({ contextWindow: e.contextWindow });
+      e.reducer = createLiveReducer({ contextWindow: CONTEXT_WINDOW_DEFAULT });
+      e.contextWindow = CONTEXT_WINDOW_DEFAULT;
+      e.peakUsed = 0; // a different file's peak says nothing about this one
       e.primed = false;
       try {
         res = await readJsonlFrom(path, 0);
@@ -242,10 +274,20 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     }
     for (const l of res.lines) {
       const value = parseJsonLine(l.text);
-      const model = modelOfRecord(value);
-      if (model !== null) {
-        const w = contextWindowForModel(model);
+      // Widen the window *before* the record that proves it is too narrow reaches the reducer,
+      // so the very turn that broke 200k is the first one scaled correctly.
+      const used = usedTokensOfRecord(value);
+      if (used !== null && used > e.peakUsed) {
+        e.peakUsed = used;
+        const w = contextWindowForUsage(used);
         if (w !== e.contextWindow) {
+          if (w > (CONTEXT_WINDOW_LADDER.at(-1) ?? CONTEXT_WINDOW_DEFAULT) && !overLadderLogged.has(e.pk)) {
+            overLadderLogged.add(e.pk);
+            ctx.log.warn(
+              { pk: e.pk, peakUsed: used, largestKnownWindow: CONTEXT_WINDOW_LADDER.at(-1) },
+              'session usage exceeds every known context window; using observed peak as the window',
+            );
+          }
           e.contextWindow = w;
           e.reducer = await refold(path, l.offset, w);
         }
@@ -339,6 +381,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
         fresh.offset = e.offset;
         fresh.reducer = e.reducer;
         fresh.contextWindow = e.contextWindow;
+        fresh.peakUsed = e.peakUsed;
         fresh.primed = e.primed;
         fresh.status = e.status;
       }
@@ -386,11 +429,12 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
         // stand-in would have to be replaced (card disappears, different card appears) the moment
         // the rollout resolves. The detector re-searches unbound processes on every sweep and
         // re-reads meta it cached as null, so this state is normally transient; it is logged once
-        // per process so a permanently-unresolved one is diagnosable rather than silent.
+        // per process, at `warn` so it is visible at the daemon's default level (`info`) — a
+        // `debug` here would make the stated mitigation invisible in practice.
         const key = `${p.pid}:${p.startedAtMs}`;
         if (!unresolvedCodexLogged.has(key)) {
           unresolvedCodexLogged.add(key);
-          ctx.log.debug({ pid: p.pid, cwd: p.cwd }, 'codex process has no matched rollout; not shown');
+          ctx.log.warn({ pid: p.pid, cwd: p.cwd }, 'codex process has no matched rollout; not shown');
         }
         continue;
       }

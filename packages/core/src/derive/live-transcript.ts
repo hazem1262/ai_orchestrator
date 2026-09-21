@@ -77,8 +77,13 @@ interface Pending {
  * `TranscriptLive`. Cheap by design — O(1) per call, no re-scanning — because the daemon calls
  * `apply` once per new line on every tail read of a live transcript.
  *
- * `opts.contextWindow` defaults to 200_000 (Claude's default context window). The LiveTracker
- * (Task 7) passes 1_000_000 when the model id ends with `[1m]`.
+ * `opts.contextWindow` defaults to 200_000 (Claude's default context window). A transcript does
+ * NOT record the window it was run with — measured across 171 real transcripts, every model id is
+ * plain `claude-opus-5` with no `1m`/`context_1m`/`betas`/`max_context` marker anywhere, including
+ * for sessions that demonstrably had a 1M window. The LiveTracker therefore infers the window from
+ * the largest usage the session has reported (`contextWindowForUsage`) and reconstructs the reducer
+ * when that inference widens; callers that construct a reducer directly get the 200k default and
+ * should expect `contextFill` to saturate for a long session.
  */
 export function createLiveReducer(opts: { contextWindow?: number } = {}): LiveReducer {
   const contextWindow = opts.contextWindow ?? 200_000;
@@ -131,6 +136,9 @@ export function createLiveReducer(opts: { contextWindow?: number } = {}): LiveRe
             const u = msg.usage;
             const used =
               num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
+            // Clamped as a last-resort floor only. `used > contextWindow` is not a value to round
+            // off, it is evidence the window is wrong — which is why the LiveTracker sizes the
+            // window from observed usage so this clamp never fires in the daemon.
             s.contextFill = Math.min(1, used / contextWindow);
           }
           const content = msg?.content;
