@@ -72,11 +72,35 @@ export function parsePsLine(
 // live "session" worth surfacing on the board.
 const NON_SESSION_SUBCOMMANDS = new Set(['app-server', 'mcp-server', 'mcp', 'login', 'logout', 'completion']);
 
+// Every subcommand name we know about, session-owning or not. Used as defense #2 below: a token
+// that names a known subcommand is never consumed as some earlier flag's value, regardless of
+// whether that flag is on the value-less allow-list.
+const KNOWN_SUBCOMMANDS = new Set([...NON_SESSION_SUBCOMMANDS, 'exec', 'resume']);
+
+// Real global flags on the installed `codex` binary that take no value. Without this, the
+// generic "a `-`-flag with no `=` consumes the next token" rule swallows the subcommand right
+// after it (`codex --yolo app-server` would misread `app-server` as `--yolo`'s value instead of
+// the subcommand). This is defense #1: cheap, but it rots the moment upstream adds a new
+// value-less flag we don't know about — defense #2 (KNOWN_SUBCOMMANDS, below) is what survives
+// that.
+const VALUE_LESS_FLAGS = new Set([
+  '--yolo',
+  '--search',
+  '--full-auto',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '-h',
+  '--help',
+  '-V',
+  '--version',
+]);
+
 /**
  * True when `command` (the `ps` command column) is a `codex` invocation that owns a session.
- * Global options between the executable and the subcommand (`--cd DIR`, `-c key=val`, ...) are
- * skipped so `codex --cd /tmp mcp-server` is still correctly recognized as `mcp-server`, not
- * misread as a session because the subcommand token wasn't the very next one.
+ * Global options between the executable and the subcommand (`--cd DIR`, `-c key=val`, `--yolo`,
+ * ...) are skipped so `codex --cd /tmp mcp-server` and `codex --yolo app-server` are both still
+ * correctly recognized as their non-session subcommand, not misread as a session because a flag
+ * ate the subcommand token. `codex -- mcp-server` is a session: `--` ends option parsing, so
+ * nothing after it is ever read as a subcommand.
  */
 export function isCodexCommand(command: string): boolean {
   const tokens = command.trim().split(/\s+/);
@@ -87,20 +111,33 @@ export function isCodexCommand(command: string): boolean {
   if (exe !== 'codex' && exe !== 'codex.js') return false;
 
   // Skip leading `-`-prefixed global options. A flag with no `=` in its own token is assumed to
-  // take the following token as its value (e.g. `--cd /tmp`, `-c model=x`) unless that following
-  // token is itself another flag; a flag containing `=` (e.g. `--model=gpt-5.5`) is self-contained.
+  // take the following token as its value (e.g. `--cd /tmp`, `-c model=x`) *unless* that
+  // following token is itself another flag, a known subcommand name, or the flag is on the
+  // value-less allow-list; a flag containing `=` (e.g. `--model=gpt-5.5`) is always self-contained.
   let j = i + 1;
+  let terminated = false;
   for (;;) {
     const tok = tokens[j];
-    if (tok === undefined || !tok.startsWith('-')) break;
+    if (tok === undefined) break;
+    if (tok === '--') {
+      terminated = true;
+      j += 1;
+      break;
+    }
+    if (!tok.startsWith('-')) break;
     if (tok.includes('=')) {
       j += 1;
       continue;
     }
+    if (VALUE_LESS_FLAGS.has(tok)) {
+      j += 1;
+      continue;
+    }
     const next = tokens[j + 1];
-    j += next !== undefined && !next.startsWith('-') ? 2 : 1;
+    const nextConsumable = next !== undefined && !next.startsWith('-') && !KNOWN_SUBCOMMANDS.has(next);
+    j += nextConsumable ? 2 : 1;
   }
-  const sub = tokens[j] ?? '';
+  const sub = terminated ? '' : (tokens[j] ?? '');
   return !NON_SESSION_SUBCOMMANDS.has(sub);
 }
 
@@ -120,6 +157,16 @@ function extractField(text: string, name: string): string | null {
   const m = new RegExp(`"${name}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(text);
   const raw = m?.[1];
   return raw === undefined ? null : unescapeJsonString(raw);
+}
+
+// `payload.timestamp` (when present) is when the session actually started; the envelope's own
+// outer `timestamp` is when this line was *flushed to disk*, which on a real machine trails the
+// payload's own timestamp by tens of seconds — enough to push a legitimately-fresh session out of
+// the detector's fresh-rollout window. `payload` is nested inside the envelope, so the envelope's
+// own `timestamp` key (which appears earlier in the line) is never mistaken for it.
+function payloadSlice(text: string): string {
+  const idx = text.indexOf('"payload"');
+  return idx >= 0 ? text.slice(idx) : text;
 }
 
 // A rollout's first line is read at 64 KB first (real first lines on a dev machine top out
@@ -171,8 +218,9 @@ export async function readRolloutMeta(path: string): Promise<RolloutMeta> {
     const envelope = parseCodexEnvelope(JSON.parse(line));
     if (envelope) {
       if (envelope.type !== 'session_meta') return NO_META;
-      const { id, cwd, originator } = envelope.payload;
-      const startedAtMs = Date.parse(envelope.timestamp);
+      const { id, cwd, originator, timestamp: payloadTimestamp } = envelope.payload;
+      const ts = typeof payloadTimestamp === 'string' ? payloadTimestamp : envelope.timestamp;
+      const startedAtMs = Date.parse(ts);
       return {
         id: typeof id === 'string' ? id : null,
         cwd: typeof cwd === 'string' ? cwd : null,
@@ -184,12 +232,13 @@ export async function readRolloutMeta(path: string): Promise<RolloutMeta> {
     // fall through: the line was truncated by the read cap and isn't valid JSON
   }
   if (extractField(line, 'type') !== 'session_meta') return NO_META;
-  const ts = extractField(line, 'timestamp');
+  const payloadText = payloadSlice(line);
+  const ts = extractField(payloadText, 'timestamp') ?? extractField(line, 'timestamp');
   const startedAtMs = ts === null ? null : Date.parse(ts);
   return {
-    id: extractField(line, 'id'),
-    cwd: extractField(line, 'cwd'),
-    originator: extractField(line, 'originator'),
+    id: extractField(payloadText, 'id'),
+    cwd: extractField(payloadText, 'cwd'),
+    originator: extractField(payloadText, 'originator'),
     startedAtMs: startedAtMs === null || Number.isFinite(startedAtMs) ? startedAtMs : null,
   };
 }
@@ -224,14 +273,40 @@ function dedupeParents(procs: ParsedProc[]): ParsedProc[] {
   return procs.filter((p) => !hasMatchedChild.has(p.pid));
 }
 
-/** Calendar-day start timestamps (ms) covering `[fromMs, toMs]` inclusive, in whichever order given. */
-function dayRangeStarts(fromMs: number, toMs: number): number[] {
+type DayKey = readonly [year: number, month: number, day: number];
+
+const localDayKey = (d: Date): DayKey => [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+const localDayStart = (y: number, m: number, d: number): Date => new Date(y, m - 1, d);
+const utcDayKey = (d: Date): DayKey => [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
+const utcDayStart = (y: number, m: number, d: number): Date => new Date(Date.UTC(y, m - 1, d));
+
+/**
+ * Calendar days covering `[fromMs, toMs]` inclusive, in whichever order given, stepped one
+ * *calendar date* at a time rather than by a fixed 86_400_000 ms — a DST transition changes how
+ * many real milliseconds are in a day, so fixed-ms stepping can drift past (and entirely skip) an
+ * interior day over a long enough range. Constructing the next day via `make(y, m, d + 1)` lets
+ * `Date` itself normalize month/year rollover and any DST offset change, so no day is ever
+ * skipped or double-counted regardless of the host's timezone.
+ */
+function calendarDaysBetween(
+  fromMs: number,
+  toMs: number,
+  key: (d: Date) => DayKey,
+  make: (y: number, m: number, d: number) => Date,
+): DayKey[] {
   const start = Math.min(fromMs, toMs);
   const end = Math.max(fromMs, toMs);
-  const days = Math.min(Math.floor((end - start) / 86_400_000) + 1, 3650); // sanity cap
-  const out: number[] = [];
-  for (let i = 0; i < days; i++) out.push(start + i * 86_400_000);
-  out.push(end); // guarantee the end day itself is present even if rounding stepped past it
+  const endDayMs = make(...key(new Date(end))).getTime();
+  const out: DayKey[] = [];
+  let cursor = make(...key(new Date(start)));
+  let guard = 0;
+  const GUARD_MAX = 3700; // sanity cap (~10 years), guards against bogus/garbage timestamps
+  while (cursor.getTime() <= endDayMs && guard < GUARD_MAX) {
+    const [y, m, d] = key(cursor);
+    out.push([y, m, d]);
+    cursor = make(y, m, d + 1);
+    guard += 1;
+  }
   return out;
 }
 
@@ -265,20 +340,11 @@ export function createCodexLiveDetector(opts: {
 
   function dateDirs(startMs: number, endMs: number): string[] {
     const dirs = new Set<string>();
-    for (const t of dayRangeStarts(startMs, endMs)) {
-      const d = new Date(t);
-      dirs.add(
-        join(opts.codexHome, 'sessions', String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate())),
-      );
-      dirs.add(
-        join(
-          opts.codexHome,
-          'sessions',
-          String(d.getUTCFullYear()),
-          pad(d.getUTCMonth() + 1),
-          pad(d.getUTCDate()),
-        ),
-      );
+    for (const [y, m, d] of calendarDaysBetween(startMs, endMs, localDayKey, localDayStart)) {
+      dirs.add(join(opts.codexHome, 'sessions', String(y), pad(m), pad(d)));
+    }
+    for (const [y, m, d] of calendarDaysBetween(startMs, endMs, utcDayKey, utcDayStart)) {
+      dirs.add(join(opts.codexHome, 'sessions', String(y), pad(m), pad(d)));
     }
     return [...dirs];
   }
@@ -336,11 +402,16 @@ export function createCodexLiveDetector(opts: {
       const procs = dedupeParents(allProcs).sort((a, b) => a.startedAtMs - b.startedAtMs || a.pid - b.pid);
       if (procs.length === 0) return [];
 
-      // Forget bindings for pids no longer running.
-      const livePids = new Set(procs.map((p) => p.pid));
+      // Forget bindings for (pid, startedAtMs) pairs that are no longer running. Evicting by the
+      // full key (not just the bare pid) matters when a pid is recycled by the OS: a new process
+      // reusing pid 100 has a different startedAtMs, so its own key is absent from `liveKeys` and
+      // its binding correctly starts unbound, while the *old* 100:<oldStart> entry — which would
+      // otherwise survive forever, permanently holding its rollout in `claimed` and denying it to
+      // the new process — is evicted here. The same key mismatch (and same fix) also covers a
+      // host TZ/DST offset changing between scans, since `startedAtMs` is computed in local time.
+      const liveKeys = new Set(procs.map((p) => bindingKey(p.pid, p.startedAtMs)));
       for (const key of [...bindings.keys()]) {
-        const pid = Number(key.split(':')[0]);
-        if (!livePids.has(pid)) bindings.delete(key);
+        if (!liveKeys.has(key)) bindings.delete(key);
       }
 
       // cwd is required output for every process every scan (and is what a *new* binding search
@@ -429,13 +500,27 @@ export function createCodexLiveDetector(opts: {
           });
           continue;
         }
+        // A binding made while the rollout's first line was still being written can cache a null
+        // sessionId/originator forever, since a bound path is normally never re-read. Before the
+        // binding cache existed this self-healed automatically (meta was re-read every sweep), so
+        // targeted re-reads here (only when something is still missing, reusing metaFor's own
+        // mtime-keyed cache) restore that self-healing without giving up the cache's benefit for
+        // the normal, fully-written case.
+        let sessionId = binding.sessionId;
+        let originator = binding.originator;
+        if (sessionId === null || originator === null) {
+          const meta = await metaFor(binding.rolloutPath, lastWriteMs);
+          sessionId = meta.id;
+          originator = meta.originator;
+          bindings.set(key, { rolloutPath: binding.rolloutPath, sessionId, originator });
+        }
         out.push({
           pid: p.pid,
           cwd,
           startedAtMs: p.startedAtMs,
           rolloutPath: binding.rolloutPath,
-          sessionId: binding.sessionId,
-          originator: binding.originator,
+          sessionId,
+          originator,
           lastWriteMs,
         });
       }
