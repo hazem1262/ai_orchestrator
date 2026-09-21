@@ -197,6 +197,24 @@ describe('createLivenessChecker', () => {
     });
   });
 
+  it('rejects a pid that differs by a single second', async () => {
+    // Pid reuse is fast: the replacement can start in the same minute as the process that died.
+    // Every other mismatch in this file differs by a minute or more, so without this the seconds
+    // comparison could be dropped entirely and the whole suite would still pass — while the guard
+    // that actually protects the board silently lost its precision.
+    await withTZ('Asia/Riyadh', async () => {
+      for (const lstart of ['Mon Sep  1 12:00:01 2026', 'Mon Sep  1 11:59:59 2026']) {
+        const { exec } = execFor(lstart);
+        const c = createLivenessChecker({ exec, pidAlive: () => true, cacheMs: 0 });
+        expect(await c.isAlive(41001, PROC_START)).toBe(false);
+      }
+      // ...and the exact second still matches.
+      const { exec } = execFor(PS_LSTART_PLUS_3);
+      const c = createLivenessChecker({ exec, pidAlive: () => true, cacheMs: 0 });
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+    });
+  });
+
   it('degrades to the bare pid check when procStart is null', async () => {
     const { exec, calls } = execFor(PS_LSTART_OTHER_PROCESS);
     const c = createLivenessChecker({ exec, pidAlive: () => true });
@@ -284,6 +302,74 @@ describe('createLivenessChecker', () => {
     });
   });
 
+  it('warns at 15-minute offset granularity, not just whole hours', async () => {
+    // India (+5:30), Nepal (+5:45), Chatham (+12:45), Lord Howe (+10:30). The existing warn test
+    // uses 3h, which is also a 60-minute multiple, so narrowing the rule to whole hours would
+    // survive it — and would make exactly these zones undetectable, which is the property the
+    // implementation comment claims.
+    await withTZ('UTC', async () => {
+      const cases: Array<{ label: string; lstart: string; procStart: string }> = [
+        { label: '+5:30 Kolkata', lstart: 'Mon Sep  1 14:30:00 2026', procStart: 'Mon Sep  1 09:00:00 2026' },
+        {
+          label: '+5:45 Kathmandu',
+          lstart: 'Mon Sep  1 14:45:00 2026',
+          procStart: 'Mon Sep  1 09:00:00 2026',
+        },
+        {
+          label: '+12:45 Chatham',
+          lstart: 'Mon Sep  1 21:45:00 2026',
+          procStart: 'Mon Sep  1 09:00:00 2026',
+        },
+        {
+          label: '+10:30 Lord Howe',
+          lstart: 'Mon Sep  1 19:30:00 2026',
+          procStart: 'Mon Sep  1 09:00:00 2026',
+        },
+      ];
+      for (const { label, lstart, procStart } of cases) {
+        const seen: unknown[] = [];
+        const { exec } = execFor(lstart);
+        const c = createLivenessChecker({
+          exec,
+          pidAlive: () => true,
+          cacheMs: 0,
+          onSuspectedFormatChange: (i) => seen.push(i),
+        });
+        expect(await c.isAlive(41001, procStart)).toBe(false);
+        expect(seen, label).toHaveLength(1);
+      }
+      // A 7-minute skew is no timezone at all.
+      const seen: unknown[] = [];
+      const { exec } = execFor('Mon Sep  1 09:07:00 2026');
+      const c = createLivenessChecker({
+        exec,
+        pidAlive: () => true,
+        cacheMs: 0,
+        onSuspectedFormatChange: (i) => seen.push(i),
+      });
+      expect(await c.isAlive(41001, 'Mon Sep  1 09:00:00 2026')).toBe(false);
+      expect(seen).toEqual([]);
+    });
+  });
+
+  it('never lets a throwing callback change the verdict or escape', async () => {
+    // Zero behaviour change must be unconditional. An escaping throw would reject this promise,
+    // skip the cache write, and abort the tracker's whole sweep as an unhandled rejection.
+    await withTZ('Asia/Riyadh', async () => {
+      const { exec } = execFor('Mon Sep 21 21:30:14 2026');
+      const c = createLivenessChecker({
+        exec,
+        pidAlive: () => true,
+        onSuspectedFormatChange: () => {
+          throw new Error('logger exploded');
+        },
+      });
+      await expect(c.isAlive(38030, 'Mon Sep 21 21:30:14 2026')).resolves.toBe(false);
+      // The verdict was still cached: a second call inside the TTL does not re-run `ps`.
+      await expect(c.isAlive(38030, 'Mon Sep 21 21:30:14 2026')).resolves.toBe(false);
+    });
+  });
+
   it('does not warn on an ordinary recycled-pid mismatch', async () => {
     await withTZ('Asia/Riyadh', async () => {
       const seen: unknown[] = [];
@@ -296,6 +382,50 @@ describe('createLivenessChecker', () => {
       });
       expect(await c.isAlive(41001, PROC_START)).toBe(false);
       expect(seen).toEqual([]);
+    });
+  });
+
+  it('does not warn on a mismatch too large to be any UTC offset', async () => {
+    // Exactly +48h: a 15-minute multiple, so the granularity rule alone would call it an offset.
+    // A pid restarted by a daily job at the same wall-clock second lands here; the widest real
+    // offset is ±14h. (The weekday token is not parsed, so its value is irrelevant.)
+    await withTZ('Asia/Riyadh', async () => {
+      const seen: unknown[] = [];
+      const { exec } = execFor('Mon Sep  3 12:00:00 2026');
+      const c = createLivenessChecker({
+        exec,
+        pidAlive: () => true,
+        cacheMs: 0,
+        onSuspectedFormatChange: (i) => seen.push(i),
+      });
+      expect(await c.isAlive(41001, PROC_START)).toBe(false);
+      expect(seen).toEqual([]);
+    });
+  });
+
+  it('caches a negative verdict, not just a positive one', async () => {
+    // The cache must store the verdict it computed. Storing `true` unconditionally would serve a
+    // stale "alive" for a dead, already-verified pid for the whole TTL — and the existing cache
+    // test only ever exercises an alive path, so it cannot see that.
+    await withTZ('Asia/Riyadh', async () => {
+      let lstart = PS_LSTART_OTHER_PROCESS;
+      const calls: string[][] = [];
+      const exec: ExecFn = async (cmd, args) => {
+        calls.push([cmd, ...args]);
+        return { stdout: `  41001     1 ${lstart} claude\n`, exitCode: 0 };
+      };
+      let t = 1000;
+      const c = createLivenessChecker({ exec, pidAlive: () => true, now: () => t, cacheMs: 2000 });
+      expect(await c.isAlive(41001, PROC_START)).toBe(false);
+      // Within the TTL the cached `false` is served, even though `ps` would now say otherwise.
+      lstart = PS_LSTART_PLUS_3;
+      t = 2500;
+      expect(await c.isAlive(41001, PROC_START)).toBe(false);
+      expect(calls).toHaveLength(1);
+      // Past the TTL it re-runs and flips.
+      t = 3001;
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+      expect(calls).toHaveLength(2);
     });
   });
 

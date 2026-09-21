@@ -162,6 +162,39 @@ describe('createLiveReducer', () => {
     expect(r.snapshot()).toMatchObject({ turnPrs: 1, turnEnded: true, stage: 'test' });
   });
 
+  /**
+   * The daemon's `refoldUpTo` (LiveTracker) replays history into a rebuilt reducer up to — and
+   * excluding — the record that triggered the rebuild, then applies that record itself. Its
+   * off-by-one is invisible through that caller *because* re-applying one assistant record is a
+   * no-op here: every write in the assistant branch is either a scalar assignment or a Set/Map
+   * insert, and the one array append (`categories`) is collapsed by `inferStage` taking a max.
+   * That is a property of THIS file, and nothing in this package pinned it — so the daemon's
+   * argument for why its boundary is safe rested on an untested assumption. It is tested here.
+   */
+  it('is idempotent when the same assistant record is applied twice', () => {
+    const rich = a('a1', [
+      { type: 'text', text: 'working' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/w/a.ts' } },
+      { type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: '/w/b.ts' } },
+      { type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'pnpm vitest run' } },
+      { type: 'tool_use', id: 't4', name: 'Task', input: { description: 'sub' } },
+      { type: 'tool_use', id: 't5', name: 'Bash', input: { command: 'sleep 9', run_in_background: true } },
+    ]);
+    const prompt = u('u1', 'go');
+
+    const once = createLiveReducer();
+    once.apply(prompt);
+    once.apply(rich);
+
+    const twice = createLiveReducer();
+    twice.apply(prompt);
+    twice.apply(rich);
+    const secondEffects = twice.apply(rich);
+
+    expect(secondEffects).toEqual({ testRecorded: null, turnEnded: null });
+    expect(twice.snapshot()).toEqual(once.snapshot());
+  });
+
   it('uses the configured context window', () => {
     const r = createLiveReducer({ contextWindow: 1000 });
     r.apply(a('a1', [{ type: 'text', text: 'hi' }], {}));

@@ -154,9 +154,11 @@ const MAX_UTC_OFFSET_MS = 26 * 3_600_000; // widest real offsets are ±14h; ±26
 
 /**
  * True when a mismatch has the fingerprint of a timezone/format change rather than a recycled pid:
- * the two instants differ by exactly a plausible UTC offset (every real offset is a 15-minute
- * multiple). A recycled pid trips this only if the replacement process started at an instant
- * exactly the host offset away from the dead one, to the second.
+ * the two instants differ by exactly a plausible UTC offset. The 15-minute granularity is what
+ * makes the non-hour zones detectable — India (+5:30), Nepal (+5:45), Chatham (+12:45), Lord Howe
+ * (+10:30) — so it is deliberately not 60 minutes, and a test pins that. A recycled pid trips this
+ * only if the replacement process started at an instant exactly the host offset away from the dead
+ * one, to the second.
  */
 function looksLikeOffsetSkew(deltaMs: number): boolean {
   const abs = Math.abs(deltaMs);
@@ -305,11 +307,32 @@ export function createLivenessChecker(opts: LivenessCheckerOptions = {}): Livene
           // to the earlier (still-DST) one — so a process that really started in the second pass
           // of that hour would mismatch by exactly 3_600_000 ms and be declared dead, one hour a
           // year, on every DST host. Rendering `want` back into local parts and comparing those is
-          // total and needs no tolerance window. The nonexistent spring-forward hour needs no
-          // handling: `ps` can never print a wall clock that did not happen.
+          // total and needs no tolerance window.
+          //
+          // The two DST edges are NOT symmetric, and only one of them is free:
+          //
+          // - Spring forward (the skipped hour) needs no handling. `ps` can never print a wall
+          //   clock that did not happen, so no real process has such an `lstart`.
+          // - Fall back (the repeated hour) leaves a real matching hole. Wall-clock equality is
+          //   strictly weaker than instant equality: a `procStart` from the FIRST pass of 01:30
+          //   and a `ps lstart` from the SECOND are genuinely different instants — genuinely a
+          //   different process — and are accepted as alive. The format-change guard below cannot
+          //   surface it either, since it sits behind `!alive`.
+          //
+          // That is a deliberate trade, not an oversight: the cost is a stale card for one
+          // recycled pid during one repeated hour per year, against the cost of the alternative,
+          // which is the entire board emptying permanently for everyone in that hour's timezone.
           alive = samePartsAs(localPartsOf(want), got);
           if (!alive && opts.onSuspectedFormatChange && looksLikeOffsetSkew(parsed.startedAtMs - want)) {
-            opts.onSuspectedFormatChange({ pid, procStart, psStartMs: parsed.startedAtMs, wantMs: want });
+            try {
+              opts.onSuspectedFormatChange({ pid, procStart, psStartMs: parsed.startedAtMs, wantMs: want });
+            } catch {
+              // "Warn only, zero behaviour change" has to be unconditional, not contingent on the
+              // callback behaving. An escaping throw would reject this promise, skip `cache.set`,
+              // and — since `pass()` does not wrap `liveness.isAlive` and runs as `void refresh()`
+              // — abort the whole sweep mid-registry-loop as an unhandled rejection. A guard that
+              // exists to make a silent failure visible must not become a new way to fail.
+            }
           }
         }
       }
