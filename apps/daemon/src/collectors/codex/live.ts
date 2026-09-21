@@ -1,7 +1,12 @@
 import { open, readdir, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { parseCodexEnvelope } from '@orc/core';
-import { defaultExec, type ExecFn } from '../../live/liveness.ts';
+import { defaultExec, type ExecFn, parsePsLine } from '../../live/liveness.ts';
+
+// `parsePsLine` lives in `live/liveness.ts`: the same `ps` `lstart` column is what the Claude
+// registry's `procStart` holds, so one parser serves both the Codex process sweep and the
+// pid-reuse guard. Re-exported here because this module is its original home.
+export { parsePsLine } from '../../live/liveness.ts';
 
 export interface CodexLiveProc {
   pid: number;
@@ -15,57 +20,6 @@ export interface CodexLiveProc {
 
 export interface CodexLiveDetector {
   scan(): Promise<CodexLiveProc[]>;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-// `ps -axo pid=,ppid=,lstart=,command=` output, e.g.
-// "  4242     1 Tue Sep  1 09:00:00 2026 codex --model x". `ppid` is required (not optional in the
-// brief's original format) so the npm-shim/native-binary pair can be told apart below.
-const PS_LINE = /^\s*(\d+)\s+(\d+)\s+\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})\s+(.+)$/;
-
-/** Parses one `ps -axo pid=,ppid=,lstart=,command=` line. `lstart` is always in local time. */
-export function parsePsLine(
-  line: string,
-): { pid: number; ppid: number; startedAtMs: number; command: string } | null {
-  const m = PS_LINE.exec(line);
-  if (!m) return null;
-  const monthTok = m[3];
-  const month = monthTok === undefined ? -1 : MONTHS.indexOf(monthTok);
-  if (month < 0) return null;
-  const pidTok = m[1];
-  const ppidTok = m[2];
-  const dayTok = m[4];
-  const hhTok = m[5];
-  const mmTok = m[6];
-  const ssTok = m[7];
-  const yearTok = m[8];
-  const commandTok = m[9];
-  if (
-    pidTok === undefined ||
-    ppidTok === undefined ||
-    dayTok === undefined ||
-    hhTok === undefined ||
-    mmTok === undefined ||
-    ssTok === undefined ||
-    yearTok === undefined ||
-    commandTok === undefined
-  ) {
-    return null;
-  }
-  const started = new Date(
-    Number(yearTok),
-    month,
-    Number(dayTok),
-    Number(hhTok),
-    Number(mmTok),
-    Number(ssTok),
-  );
-  return {
-    pid: Number(pidTok),
-    ppid: Number(ppidTok),
-    startedAtMs: started.getTime(),
-    command: commandTok.trim(),
-  };
 }
 
 // Codex subcommands that never write a session rollout, so a process running one is never a
