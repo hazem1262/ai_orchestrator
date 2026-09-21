@@ -59,64 +59,109 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // `ps -axo pid=,ppid=,lstart=,command=` output, e.g.
 // "  4242     1 Tue Sep  1 09:00:00 2026 codex --model x". `ppid` is required (not optional in the
 // brief's original format) so the npm-shim/native-binary pair can be told apart by the Codex
-// detector. Lives here rather than next to that detector because the same `lstart` column is what
-// `RegistryEntry.procStart` stores, and `isAlive` below has to parse it too.
-const PS_LINE = /^\s*(\d+)\s+(\d+)\s+\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})\s+(.+)$/;
+// detector. Lives here rather than next to that detector because `RegistryEntry.procStart` uses the
+// same calendar grammar (in a different timezone — see `parseProcStart`), so both readers share the
+// grammar below while deliberately NOT sharing the timezone they resolve it in.
+const PS_LINE = /^\s*(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/;
+// The `lstart`/`procStart` calendar grammar on its own: "Mon Sep  1 09:00:00 2026" (the day is
+// space-padded to two columns). Deliberately shared by both readers below, while the *timezone*
+// each one resolves it in is deliberately NOT shared — see `parseLstart` / `parseProcStart`.
+const CLOCK = /^(\w{3})\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})$/;
 
-/** Parses one `ps -axo pid=,ppid=,lstart=,command=` line. `lstart` is always in local time. */
+interface ClockParts {
+  year: number;
+  month: number;
+  day: number;
+  hh: number;
+  mm: number;
+  ss: number;
+}
+
+/** Splits the calendar grammar into numeric parts, with no timezone interpretation at all. */
+function clockParts(text: string): ClockParts | null {
+  const m = CLOCK.exec(text.trim().replace(/\s+/g, ' '));
+  if (!m) return null;
+  const [, , monthTok, dayTok, hhTok, mmTok, ssTok, yearTok] = m;
+  const month = monthTok === undefined ? -1 : MONTHS.indexOf(monthTok);
+  if (month < 0) return null;
+  if (
+    dayTok === undefined ||
+    hhTok === undefined ||
+    mmTok === undefined ||
+    ssTok === undefined ||
+    yearTok === undefined
+  ) {
+    return null;
+  }
+  return {
+    year: Number(yearTok),
+    month,
+    day: Number(dayTok),
+    hh: Number(hhTok),
+    mm: Number(mmTok),
+    ss: Number(ssTok),
+  };
+}
+
+/** Parses one `ps -axo pid=,ppid=,lstart=,command=` line. `lstart` is always in LOCAL time. */
 export function parsePsLine(
   line: string,
 ): { pid: number; ppid: number; startedAtMs: number; command: string } | null {
   const m = PS_LINE.exec(line);
   if (!m) return null;
-  const monthTok = m[3];
-  const month = monthTok === undefined ? -1 : MONTHS.indexOf(monthTok);
-  if (month < 0) return null;
-  const pidTok = m[1];
-  const ppidTok = m[2];
-  const dayTok = m[4];
-  const hhTok = m[5];
-  const mmTok = m[6];
-  const ssTok = m[7];
-  const yearTok = m[8];
-  const commandTok = m[9];
-  if (
-    pidTok === undefined ||
-    ppidTok === undefined ||
-    dayTok === undefined ||
-    hhTok === undefined ||
-    mmTok === undefined ||
-    ssTok === undefined ||
-    yearTok === undefined ||
-    commandTok === undefined
-  ) {
+  const [, pidTok, ppidTok, clockTok, commandTok] = m;
+  if (pidTok === undefined || ppidTok === undefined || clockTok === undefined || commandTok === undefined) {
     return null;
   }
-  const started = new Date(
-    Number(yearTok),
-    month,
-    Number(dayTok),
-    Number(hhTok),
-    Number(mmTok),
-    Number(ssTok),
-  );
+  const startedAtMs = parseLstart(clockTok);
+  if (startedAtMs === null) return null;
   return {
     pid: Number(pidTok),
     ppid: Number(ppidTok),
-    startedAtMs: started.getTime(),
+    startedAtMs,
     command: commandTok.trim(),
   };
 }
 
 /**
- * Epoch millis for a bare `ps` `lstart` column ("Mon Sep  1 09:00:00 2026"), which is exactly
- * what `RegistryEntry.procStart` holds. Reuses `parsePsLine` by feeding it synthetic pid/ppid
- * and command columns rather than repeating the date grammar: both sides of the comparison in
- * `isAlive` then go through one parser in one process, so the host timezone cancels out.
+ * Epoch millis for a `ps` `lstart` column, resolved in the host's LOCAL timezone — that is what
+ * `ps` prints. `new Date(y, m, d, ...)` resolves the wall-clock time using whichever UTC offset
+ * was in effect on that date, so a DST boundary between the process start and now is handled by
+ * `Date` itself.
  */
 export function parseLstart(lstart: string): number | null {
-  const p = parsePsLine(`0 0 ${lstart.trim().replace(/\s+/g, ' ')} -`);
-  return p === null ? null : p.startedAtMs;
+  const p = clockParts(lstart);
+  return p === null ? null : new Date(p.year, p.month, p.day, p.hh, p.mm, p.ss).getTime();
+}
+
+/**
+ * Epoch millis for `RegistryEntry.procStart`, resolved in UTC.
+ *
+ * **This is deliberately a different function from `parseLstart` even though the two strings look
+ * identical.** `procStart` is rendered by Claude Code in UTC; `ps` renders `lstart` in local time.
+ * Fix round 1 shipped a single shared parser on the reasoning that "the host timezone cancels out
+ * because both sides go through one parser in one process" — that reasoning was wrong, only the
+ * `ps` side is local, and the result was that on any host with a non-zero UTC offset EVERY live
+ * session compared unequal, reported `ended`, and was then retired off the board entirely.
+ *
+ * Measured on this host (UTC+3), three independent confirmations:
+ *
+ * ```
+ * pid 38030  procStart "Mon Sep 21 21:30:14 2026"   ps lstart "Tue Sep 22 00:30:14 2026"
+ * pid 12621  procStart "Tue Sep 15 06:52:37 2026"   ps lstart "Tue Sep 15 09:52:37 2026"
+ * ```
+ *
+ * ...all six registry files off by exactly the host offset; the sibling `startedAt` epoch-millis
+ * field (which carries no timezone ambiguity at all) renders in UTC to within one second of
+ * `procStart` for every entry; and the project's own captured spike fixture pairs
+ * `startedAt: 1788253200000` (= 2026-09-01T09:00:00Z) with `procStart: "Mon Sep  1 09:00:00 2026"`.
+ *
+ * A fixture that writes both sides of this comparison cannot falsify it. The regression test for
+ * this pins a real observed (procStart, lstart) pair and the real host offset.
+ */
+export function parseProcStart(procStart: string): number | null {
+  const p = clockParts(procStart);
+  return p === null ? null : Date.UTC(p.year, p.month, p.day, p.hh, p.mm, p.ss);
 }
 
 /**
@@ -125,9 +170,9 @@ export function parseLstart(lstart: string): number | null {
  * A registry file outlives the process that wrote it — the app never deletes `~/.claude/sessions/
  * <pid>.json`, by design (see the LiveTracker's ended-entry rule). A bare `process.kill(pid, 0)`
  * therefore reports "alive" the moment the OS recycles that pid for some unrelated program, and a
- * long-dead session keeps rendering as live. `procStart` is the discriminator: it is the `ps`
- * `lstart` of the process that wrote the file, so a pid whose current start time differs is a
- * different process.
+ * long-dead session keeps rendering as live. `procStart` is the discriminator: it is the start
+ * time of the process that wrote the file (rendered in UTC), so a pid whose current `ps` start
+ * time is a different instant is a different process.
  */
 export interface LivenessChecker {
   isAlive(pid: number, procStart?: string | null): Promise<boolean>;
@@ -165,7 +210,8 @@ export function createLivenessChecker(opts: LivenessCheckerOptions = {}): Livene
       // for pids that are actually in use.
       if (!pidAlive(pid)) return false;
       if (procStart === undefined || procStart === null) return true;
-      const want = parseLstart(procStart);
+      // UTC: `procStart` is written by Claude Code, not by `ps`. See `parseProcStart`.
+      const want = parseProcStart(procStart);
       if (want === null) return true; // unrecognised format: degrade, never blank the board
 
       const key = `${pid}|${procStart}`;

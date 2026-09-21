@@ -9,6 +9,7 @@ import {
   findRegistryEntry,
   isPidAlive,
   parseLstart,
+  parseProcStart,
   readClaudeRegistry,
 } from './liveness.ts';
 
@@ -61,23 +62,75 @@ describe('defaultExec', () => {
   });
 });
 
-describe('parseLstart', () => {
-  it('parses the `ps` lstart column, including its double-space day padding', () => {
-    // The registry writes exactly what `ps` prints, which pads single-digit days with a space.
-    expect(parseLstart('Mon Sep  1 09:00:00 2026')).toBe(new Date(2026, 8, 1, 9, 0, 0).getTime());
-    expect(parseLstart('Tue Sep 15 23:59:59 2026')).toBe(new Date(2026, 8, 15, 23, 59, 59).getTime());
+/**
+ * Runs `fn` with the process timezone pinned, so a TZ-sensitive assertion means the same thing on
+ * a UTC CI runner as on a developer laptop. Node re-reads `process.env.TZ` on assignment, and the
+ * previous value is restored even when `fn` throws. (Same idiom as `collectors/codex/live.test.ts`.)
+ */
+const withTZ = async <T>(tz: string, fn: () => Promise<T> | T): Promise<T> => {
+  const prev = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env.TZ;
+    else process.env.TZ = prev;
+  }
+};
+
+/**
+ * Real `(procStart, ps lstart)` pairs captured on 2026-09-22 from this machine's own
+ * `~/.claude/sessions/<pid>.json` and `ps -o lstart= -p <pid>`, on a host at UTC+3. They are
+ * written down verbatim, from two different producers, precisely so that this file cannot supply
+ * both sides of the comparison from one constant — which is what made the previous version of
+ * these tests pass under every timezone while the real board showed every session as dead.
+ *
+ * The first pair crosses both midnight and the calendar date, so a "same wall clock, different
+ * zone" bug cannot hide in it.
+ */
+const REAL_PAIRS_UTC_PLUS_3 = [
+  { pid: 38030, procStart: 'Mon Sep 21 21:30:14 2026', lstart: 'Tue Sep 22 00:30:14 2026' },
+  { pid: 12621, procStart: 'Tue Sep 15 06:52:37 2026', lstart: 'Tue Sep 15 09:52:37 2026' },
+] as const;
+
+describe('parseLstart / parseProcStart', () => {
+  it('reads a `ps` lstart column in local time', async () => {
+    await withTZ('UTC', () => {
+      expect(parseLstart('Mon Sep  1 09:00:00 2026')).toBe(Date.UTC(2026, 8, 1, 9, 0, 0));
+    });
+    await withTZ('Asia/Riyadh', () => {
+      // UTC+3 year-round: 09:00 local is 06:00Z.
+      expect(parseLstart('Mon Sep  1 09:00:00 2026')).toBe(Date.UTC(2026, 8, 1, 6, 0, 0));
+    });
   });
 
-  it('returns null for anything that is not an lstart', () => {
-    expect(parseLstart('')).toBeNull();
-    expect(parseLstart('2026-09-01T09:00:00Z')).toBeNull();
-    expect(parseLstart('Mon Zzz  1 09:00:00 2026')).toBeNull();
+  it('reads a registry procStart in UTC regardless of the host timezone', async () => {
+    for (const tz of ['UTC', 'Asia/Riyadh', 'America/New_York']) {
+      await withTZ(tz, () => {
+        expect(parseProcStart('Mon Sep  1 09:00:00 2026')).toBe(Date.UTC(2026, 8, 1, 9, 0, 0));
+      });
+    }
+  });
+
+  it('resolves a real procStart/lstart pair to the same instant on its own host', async () => {
+    await withTZ('Asia/Riyadh', () => {
+      for (const r of REAL_PAIRS_UTC_PLUS_3) {
+        expect(parseProcStart(r.procStart)).toBe(parseLstart(r.lstart));
+      }
+    });
+  });
+
+  it('handles the double-space day padding and rejects non-clock input', () => {
+    expect(parseProcStart('Tue Sep 15 23:59:59 2026')).toBe(Date.UTC(2026, 8, 15, 23, 59, 59));
+    expect(parseProcStart('Mon Sep  1 09:00:00 2026')).toBe(Date.UTC(2026, 8, 1, 9, 0, 0));
+    for (const bad of ['', '2026-09-01T09:00:00Z', 'Mon Zzz  1 09:00:00 2026']) {
+      expect(parseProcStart(bad)).toBeNull();
+      expect(parseLstart(bad)).toBeNull();
+    }
   });
 });
 
 describe('createLivenessChecker', () => {
-  const START = 'Mon Sep  1 09:00:00 2026';
-  const OTHER = 'Tue Sep  2 11:22:33 2026';
   const psLine = (pid: number, lstart: string) => `  ${pid}     1 ${lstart} claude\n`;
   const execFor = (lstart: string | null): { exec: ExecFn; calls: string[][] } => {
     const calls: string[][] = [];
@@ -88,24 +141,64 @@ describe('createLivenessChecker', () => {
     };
     return { exec, calls };
   };
+  // Hand-paired, never derived from each other: 09:00Z written by Claude Code, 12:00 local as
+  // `ps` would print it on a UTC+3 host.
+  const PROC_START = 'Mon Sep  1 09:00:00 2026';
+  const PS_LSTART_PLUS_3 = 'Mon Sep  1 12:00:00 2026';
+  const PS_LSTART_OTHER_PROCESS = 'Tue Sep  2 11:22:33 2026';
+
+  it('keeps every real running session alive on a UTC+3 host', async () => {
+    // The regression test for fix round 1: with one shared local-time parser, all six of this
+    // machine's genuinely-running sessions compared unequal and the whole board went `ended`.
+    await withTZ('Asia/Riyadh', async () => {
+      for (const r of REAL_PAIRS_UTC_PLUS_3) {
+        const { exec } = execFor(r.lstart);
+        const c = createLivenessChecker({ exec, pidAlive: () => true });
+        expect(await c.isAlive(r.pid, r.procStart)).toBe(true);
+      }
+    });
+  });
+
+  it('keeps a real running session alive on a DST host at a negative offset', async () => {
+    // 2026-09-21T21:30:14Z is 17:30:14 EDT (UTC-4) the same day.
+    await withTZ('America/New_York', async () => {
+      const { exec } = execFor('Mon Sep 21 17:30:14 2026');
+      const c = createLivenessChecker({ exec, pidAlive: () => true });
+      expect(await c.isAlive(38030, 'Mon Sep 21 21:30:14 2026')).toBe(true);
+    });
+  });
+
+  it('rejects a `ps` start time that could not have come from this host', async () => {
+    // The same real UTC+3 pair, replayed on a UTC host: 00:30 local there is not 21:30Z, so this
+    // is a different process wearing a recycled pid. The guard must still bite after the fix.
+    await withTZ('UTC', async () => {
+      const { exec } = execFor('Tue Sep 22 00:30:14 2026');
+      const c = createLivenessChecker({ exec, pidAlive: () => true });
+      expect(await c.isAlive(38030, 'Mon Sep 21 21:30:14 2026')).toBe(false);
+    });
+  });
 
   it('accepts a pid whose start time matches procStart', async () => {
-    const { exec, calls } = execFor(START);
-    const c = createLivenessChecker({ exec, pidAlive: () => true });
-    expect(await c.isAlive(41001, START)).toBe(true);
-    expect(calls).toEqual([['ps', '-o', 'pid=,ppid=,lstart=,command=', '-p', '41001']]);
+    await withTZ('Asia/Riyadh', async () => {
+      const { exec, calls } = execFor(PS_LSTART_PLUS_3);
+      const c = createLivenessChecker({ exec, pidAlive: () => true });
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+      expect(calls).toEqual([['ps', '-o', 'pid=,ppid=,lstart=,command=', '-p', '41001']]);
+    });
   });
 
   it('rejects a recycled pid whose start time does not match procStart', async () => {
     // The whole point of the second argument: the registry file outlives its process, so an
     // unrelated program that inherits the pid must not keep a dead session on the board.
-    const { exec } = execFor(OTHER);
-    const c = createLivenessChecker({ exec, pidAlive: () => true });
-    expect(await c.isAlive(41001, START)).toBe(false);
+    await withTZ('Asia/Riyadh', async () => {
+      const { exec } = execFor(PS_LSTART_OTHER_PROCESS);
+      const c = createLivenessChecker({ exec, pidAlive: () => true });
+      expect(await c.isAlive(41001, PROC_START)).toBe(false);
+    });
   });
 
   it('degrades to the bare pid check when procStart is null', async () => {
-    const { exec, calls } = execFor(OTHER);
+    const { exec, calls } = execFor(PS_LSTART_OTHER_PROCESS);
     const c = createLivenessChecker({ exec, pidAlive: () => true });
     expect(await c.isAlive(41001, null)).toBe(true);
     expect(await c.isAlive(41001)).toBe(true);
@@ -113,7 +206,7 @@ describe('createLivenessChecker', () => {
   });
 
   it('degrades to the bare pid check when procStart is in an unrecognised format', async () => {
-    const { exec, calls } = execFor(OTHER);
+    const { exec, calls } = execFor(PS_LSTART_OTHER_PROCESS);
     const c = createLivenessChecker({ exec, pidAlive: () => true });
     expect(await c.isAlive(41001, '2026-09-01T09:00:00Z')).toBe(true);
     expect(calls).toEqual([]);
@@ -122,33 +215,35 @@ describe('createLivenessChecker', () => {
   it('degrades to the bare pid check when `ps` succeeds but its output does not parse', async () => {
     const exec: ExecFn = async () => ({ stdout: 'PID  STARTED\nnot a ps line\n', exitCode: 0 });
     const c = createLivenessChecker({ exec, pidAlive: () => true });
-    expect(await c.isAlive(41001, START)).toBe(true);
+    expect(await c.isAlive(41001, PROC_START)).toBe(true);
   });
 
   it('reports a dead pid without running `ps`', async () => {
-    const { exec, calls } = execFor(START);
+    const { exec, calls } = execFor(PS_LSTART_PLUS_3);
     const c = createLivenessChecker({ exec, pidAlive: () => false });
-    expect(await c.isAlive(41001, START)).toBe(false);
+    expect(await c.isAlive(41001, PROC_START)).toBe(false);
     expect(calls).toEqual([]);
   });
 
   it('treats a non-zero `ps` exit as dead', async () => {
     const { exec } = execFor(null);
     const c = createLivenessChecker({ exec, pidAlive: () => true });
-    expect(await c.isAlive(41001, START)).toBe(false);
+    expect(await c.isAlive(41001, PROC_START)).toBe(false);
   });
 
   it('caches a verdict for cacheMs and re-runs `ps` once it expires', async () => {
-    const { exec, calls } = execFor(START);
-    let t = 1000;
-    const c = createLivenessChecker({ exec, pidAlive: () => true, now: () => t, cacheMs: 2000 });
-    expect(await c.isAlive(41001, START)).toBe(true);
-    t = 2500;
-    expect(await c.isAlive(41001, START)).toBe(true);
-    expect(calls).toHaveLength(1);
-    t = 3001;
-    expect(await c.isAlive(41001, START)).toBe(true);
-    expect(calls).toHaveLength(2);
+    await withTZ('Asia/Riyadh', async () => {
+      const { exec, calls } = execFor(PS_LSTART_PLUS_3);
+      let t = 1000;
+      const c = createLivenessChecker({ exec, pidAlive: () => true, now: () => t, cacheMs: 2000 });
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+      t = 2500;
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+      expect(calls).toHaveLength(1);
+      t = 3001;
+      expect(await c.isAlive(41001, PROC_START)).toBe(true);
+      expect(calls).toHaveLength(2);
+    });
   });
 
   it('defaults to the real process table', async () => {
