@@ -63,6 +63,43 @@ describe('createRegistryWatcher (rescan)', () => {
     expect(w.current()[0]?.entry.status).toBe('busy');
   });
 
+  it('logs a permanently unparseable file once, not on every rescan', async () => {
+    // A session killed mid-write leaves a truncated <pid>.json that nobody will ever complete.
+    // The 2 s reconciliation poll re-reads it forever, so deduping must survive a failed parse.
+    writeFileSync(join(dir, '41002.json'), '{"pid":41002,"sessionId":"s-tw');
+    const log = { debug: vi.fn() };
+    w = createRegistryWatcher({ dir, watch: false, log });
+    await w.rescan();
+    for (let i = 0; i < 9; i++) await w.rescan();
+    expect(log.debug).toHaveBeenCalledTimes(1);
+
+    // Changed bytes that still don't parse are new information: worth exactly one more line.
+    writeFileSync(join(dir, '41002.json'), '{"pid":41002,"sessionId":"s-two');
+    await w.rescan();
+    await w.rescan();
+    expect(log.debug).toHaveBeenCalledTimes(2);
+
+    // ...and the file completing is still delivered normally.
+    writeFileSync(join(dir, '41002.json'), entry('busy'));
+    await w.rescan();
+    expect(w.current()[0]?.entry.status).toBe('busy');
+  });
+
+  it('re-emits a removed file recreated with identical bytes', async () => {
+    // Guards the dedupe fix above: forgetting to clear the seen-bytes map on removal would make
+    // a pid that restarts with an identical registry file invisible to the board.
+    writeFileSync(join(dir, '41002.json'), entry('busy'));
+    w = createRegistryWatcher({ dir, watch: false });
+    const changes: RegistryChange[] = [];
+    w.onChange((c) => changes.push(c));
+    await w.rescan();
+    rmSync(join(dir, '41002.json'));
+    await w.rescan();
+    writeFileSync(join(dir, '41002.json'), entry('busy'));
+    await w.rescan();
+    expect(changes.map((c) => c.kind)).toEqual(['upsert', 'remove', 'upsert']);
+  });
+
   it('treats a missing directory as empty', async () => {
     w = createRegistryWatcher({ dir: join(dir, 'missing'), watch: false });
     await w.start();

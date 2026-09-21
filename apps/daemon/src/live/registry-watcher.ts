@@ -52,10 +52,16 @@ export function createRegistryWatcher(opts: {
   pollMs?: number;
   watch?: boolean;
   readText?: (path: string) => Promise<string>;
-  log?: { debug(o: object, msg?: string): void };
+  log?: { debug(o: object, msg?: string): void; warn?(o: object, msg?: string): void };
 }): RegistryWatcher {
   const readText = opts.readText ?? ((p: string) => readFile(p, 'utf8'));
   const snaps = new Map<string, { snap: RegistrySnapshot; raw: string }>();
+  // Last bytes *seen* per file, recorded whether or not they parsed. `snaps` only remembers bytes
+  // that parsed, so deduping against it would re-attempt — and re-log — an unchanged unparseable
+  // file on every single rescan. A session that dies mid-write leaves exactly that: a truncated
+  // `<pid>.json` nobody will ever complete, which at the default 2s poll is an endless debug-log
+  // loop. Keyed identically to `snaps` and cleared alongside it.
+  const lastRaw = new Map<string, string>();
   const listeners = new Set<(c: RegistryChange) => void>();
   let fsw: FSWatcher | null = null;
   let timer: NodeJS.Timeout | null = null;
@@ -73,7 +79,8 @@ export function createRegistryWatcher(opts: {
     } catch {
       return; // vanished between listing and reading (ENOENT); the next scan reports the removal
     }
-    if (snaps.get(file)?.raw === raw) return;
+    if (lastRaw.get(file) === raw) return;
+    lastRaw.set(file, raw);
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -89,7 +96,11 @@ export function createRegistryWatcher(opts: {
   }
 
   function removeOne(file: string): void {
-    if (snaps.delete(file)) emit({ kind: 'remove', file });
+    const had = snaps.delete(file);
+    // Always forget the bytes, even for a file that never parsed — otherwise a pid whose file is
+    // deleted and recreated with identical content would be deduped away and never re-emitted.
+    lastRaw.delete(file);
+    if (had) emit({ kind: 'remove', file });
   }
 
   async function rescan(): Promise<void> {
@@ -120,7 +131,14 @@ export function createRegistryWatcher(opts: {
         w.on('add', (p: string) => void readOne(p, false));
         w.on('change', (p: string) => void readOne(p, false));
         w.on('unlink', (p: string) => removeOne(p));
-        w.on('error', (err: unknown) => opts.log?.debug({ err: String(err) }, 'registry watcher error'));
+        // Watcher-level failure (EMFILE, permissions) is a different class from routine
+        // partial-write noise: it means the push path is degraded and the poll backstop is now
+        // carrying liveness alone. Warn, don't bury it at debug next to expected races.
+        w.on('error', (err: unknown) => {
+          const o = { err: String(err) };
+          if (opts.log?.warn) opts.log.warn(o, 'registry watcher error');
+          else opts.log?.debug(o, 'registry watcher error');
+        });
         // Written files must never race chokidar's own initial directory scan: with
         // `ignoreInitial: true`, a write that lands before `ready` can be folded into that scan
         // and silently swallowed rather than reported as an `add`.
