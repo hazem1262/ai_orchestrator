@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { useTempHomes } from '../../test/helpers.ts';
-import { findRegistryEntry, isPidAlive, readClaudeRegistry } from './liveness.ts';
+import { defaultExec, findRegistryEntry, isPidAlive, readClaudeRegistry } from './liveness.ts';
 
 describe('liveness', () => {
   const homes = useTempHomes();
@@ -32,5 +32,23 @@ describe('liveness', () => {
       alive: false,
     });
     expect(findRegistryEntry(homes.claudeHome, 's-drift', () => true)).toBeNull();
+  });
+});
+
+describe('defaultExec', () => {
+  it('runs a harmless command and captures stdout', async () => {
+    const r = await defaultExec('echo', ['hello']);
+    expect(r).toEqual({ stdout: 'hello\n', exitCode: 0 });
+  });
+
+  it('reports a non-zero exit instead of rejecting', async () => {
+    const r = await defaultExec('sh', ['-c', 'exit 3']);
+    expect(r.exitCode).toBe(3);
+  });
+
+  it('reports a missing binary instead of rejecting', async () => {
+    const r = await defaultExec('orc-definitely-not-a-real-binary', []);
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stdout).toBe('');
   });
 });

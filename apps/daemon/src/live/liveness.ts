@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseRegistryFile, type RegistryEntry } from '@orc/core';
@@ -32,6 +33,27 @@ export function readClaudeRegistry(claudeHome: string): RegistryEntry[] {
   }
   return out;
 }
+
+/**
+ * Injectable seam over shelling out to a read-only table/lookup command (`ps`, `lsof`, ...).
+ * Never rejects: a non-zero exit or a missing binary is reported as `exitCode !== 0` with
+ * whatever `stdout` was captured, never as a thrown/rejected error, so a caller sweeping process
+ * tables can treat a failed lookup as "nothing found" rather than an unhandled rejection.
+ */
+export type ExecFn = (cmd: string, args: string[]) => Promise<{ stdout: string; exitCode: number }>;
+
+/** Real `ExecFn` over `node:child_process`. Used in production; tests inject a fake instead. */
+export const defaultExec: ExecFn = (cmd, args) =>
+  new Promise((resolve) => {
+    execFile(cmd, args, { maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      if (!err) {
+        resolve({ stdout, exitCode: 0 });
+        return;
+      }
+      const code = (err as NodeJS.ErrnoException & { code?: number | string }).code;
+      resolve({ stdout: stdout || '', exitCode: typeof code === 'number' ? code : 1 });
+    });
+  });
 
 /** Phase 2 adds the procStart check against pid reuse. */
 export function findRegistryEntry(
