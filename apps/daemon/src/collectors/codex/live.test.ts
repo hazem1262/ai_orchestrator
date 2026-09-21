@@ -1,11 +1,19 @@
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecFn } from '../../live/liveness.ts';
-import { createCodexLiveDetector, isCodexCommand, parsePsLine, readRolloutMeta } from './live.ts';
+import {
+  calendarDaysBetween,
+  createCodexLiveDetector,
+  isCodexCommand,
+  localDayKey,
+  localDayStart,
+  parsePsLine,
+  readRolloutMeta,
+} from './live.ts';
 
 // Every temp dir this file makes is tracked and removed when the file's tests finish. Without
 // this the suite leaked ~100 directories per `pnpm test` run; 10,870 of them once filled the
@@ -21,13 +29,35 @@ afterAll(() => {
 });
 
 // `vi.spyOn` cannot redefine a live ESM export ("Module namespace is not configurable"), so
-// `readdir` is wrapped through `vi.mock` instead. By default it's a transparent pass-through to
-// the real implementation (every other test in this file relies on that); only the
-// `names.sort()` test below swaps in a reversing implementation, then restores the pass-through.
+// `readdir` and `open` are wrapped through `vi.mock` instead. By default both are transparent
+// pass-throughs to the real implementation (every other test in this file relies on that); only
+// the `names.sort()` test below swaps in a reversing `readdir`, then restores the pass-through.
+// The call logs are what the binding-cache tests assert on: a directory search *is* a `readdir`
+// plus an `open` per candidate, so "did not re-search" is literally "made neither call".
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, readdir: vi.fn(actual.readdir) };
+  return { ...actual, readdir: vi.fn(actual.readdir), open: vi.fn(actual.open) };
 });
+
+type CallLog = { mock: { calls: unknown[][] }; mockClear: () => void };
+const readdirCalls = fsPromises.readdir as unknown as CallLog;
+const openCalls = fsPromises.open as unknown as CallLog;
+
+/**
+ * Runs `fn` with the process timezone pinned, so a TZ-sensitive test asserts the same thing on a
+ * UTC CI runner as on a developer laptop. Node re-reads `process.env.TZ` on assignment, and the
+ * helper restores the previous value even when `fn` throws.
+ */
+const withTZ = async <T>(tz: string, fn: () => Promise<T> | T): Promise<T> => {
+  const prev = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    return await fn();
+  } finally {
+    if (prev === undefined) delete process.env.TZ;
+    else process.env.TZ = prev;
+  }
+};
 
 const FIXTURE = fileURLToPath(
   new URL(
@@ -95,6 +125,10 @@ describe('parsePsLine / isCodexCommand', () => {
     ['/opt/homebrew/bin/codex', true],
     ['codex resume abc', true],
     ['node /usr/local/lib/node_modules/@openai/codex/bin/codex.js exec "hi"', true],
+    // The `bun` shim is skipped exactly like the `node` one; without that, `bun` itself would be
+    // read as the executable and no codex invocation launched through it would ever be seen.
+    ['bun /usr/local/lib/node_modules/@openai/codex/bin/codex.js exec "hi"', true],
+    ['bun /usr/local/lib/node_modules/@openai/codex/bin/codex.js app-server', false],
     ['/Applications/Codex.app/codex app-server', false],
     ['codex mcp-server', false],
     ['/usr/bin/vim codex.md', false],
@@ -116,6 +150,12 @@ describe('parsePsLine / isCodexCommand', () => {
     ['codex --help mcp-server', false],
     ['codex -V app-server', false],
     ['codex --version mcp-server', false],
+    // The only shape where the allow-list itself is load-bearing: *two* plain tokens after a
+    // value-less flag. This is how `codex --yolo "fix app-server"` renders in `ps`, which joins
+    // argv and drops the quotes. Without the allow-list `--yolo` eats `fix`, leaving `app-server`
+    // as the apparent subcommand and the session wrongly filtered out. Defense #2 cannot help
+    // here: `fix` is not a known subcommand name.
+    ['codex --yolo fix app-server', true],
     // Value-less flags ahead of a session subcommand (or nothing) must not consume it either.
     ['codex --yolo exec "hi"', true],
     ['codex --yolo resume abc', true],
@@ -186,6 +226,42 @@ describe('readRolloutMeta', () => {
     });
   });
 
+  it('prefers payload.timestamp on the regex path too, for a first line past the 1 MB cap', async () => {
+    // The JSON-parse path is covered above, but the regex fallback has its own timestamp
+    // resolution (`payloadSlice` + two `extractField` calls) and the only existing huge-line
+    // fixture carries no `payload.timestamp`, so it cannot tell the two apart. This line is
+    // deliberately past the 1 MB read cap, so it is *truncated* — `JSON.parse` must fail and the
+    // regex fallback must be what answers.
+    //
+    // Two distinct behaviours ride on this: (a) the regex path consulting `payload.timestamp` at
+    // all, and (b) `payloadSlice` actually slicing. The envelope's own `timestamp` appears first
+    // in the line, so if `payloadSlice` returned the whole line the very first `"timestamp"`
+    // match would be the envelope's and the wrong instant would win.
+    const p = join(dayDir, 'rollout-huge-payload-ts.jsonl');
+    const payloadTs = new Date(T0.getTime() - 30_000); // session really started 30s before flush
+    writeFileSync(
+      p,
+      `${JSON.stringify({
+        timestamp: T0.toISOString(),
+        type: 'session_meta',
+        payload: {
+          timestamp: payloadTs.toISOString(),
+          id: 'c0dex-huge-ts',
+          cwd: '/Users/test/HugeTs',
+          originator: 'codex_exec',
+          base_instructions: 'x'.repeat(1_500_000),
+        },
+      })}\n`,
+    );
+    expect(statSync(p).size).toBeGreaterThan(1 << 20); // past the cap, so the read really truncates
+    expect(await readRolloutMeta(p)).toEqual({
+      id: 'c0dex-huge-ts',
+      cwd: '/Users/test/HugeTs',
+      originator: 'codex_exec',
+      startedAtMs: payloadTs.getTime(),
+    });
+  });
+
   it('falls back to the envelope timestamp when payload has none', async () => {
     const p = join(dayDir, 'rollout-no-payload-ts.jsonl');
     writeFileSync(
@@ -211,6 +287,60 @@ describe('readRolloutMeta', () => {
       cwd: '/Users/test/Escalate',
       originator: 'codex_exec',
       startedAtMs: T1.getTime(),
+    });
+  });
+});
+
+describe('calendarDaysBetween', () => {
+  // These pin `TZ` themselves rather than reading the host's, so they assert the same thing on a
+  // UTC CI runner as on a developer laptop — a DST-stepping test that only bites in one timezone
+  // protects nothing where it actually runs. The offset assertions below fail loudly (rather
+  // than going quietly vacuous) if a host ever ignores a runtime `TZ` change.
+
+  it('steps one calendar day at a time across a spring-forward transition, skipping no day', async () => {
+    await withTZ('America/New_York', () => {
+      // The offsets of the two local midnights the stepping actually starts and ends on.
+      expect(new Date(2026, 2, 7).getTimezoneOffset()).toBe(300); // EST, before the jump
+      expect(new Date(2026, 2, 9).getTimezoneOffset()).toBe(240); // EDT, after it
+      // Sun 2026-03-08 loses an hour locally. A fixed 86_400_000 ms step starting from local
+      // midnight on 03-07 lands an hour *past* local midnight on 03-09, overshoots the end-of-
+      // range comparison and drops 03-09 entirely — the session directory for the day the
+      // process is running in.
+      const from = new Date(2026, 2, 7, 12, 0, 0).getTime();
+      const to = new Date(2026, 2, 9, 12, 0, 0).getTime();
+      expect(calendarDaysBetween(from, to, localDayKey, localDayStart)).toEqual([
+        [2026, 3, 7],
+        [2026, 3, 8],
+        [2026, 3, 9],
+      ]);
+    });
+  });
+
+  it('steps one calendar day at a time across a fall-back transition, double-counting no day', async () => {
+    await withTZ('America/New_York', () => {
+      expect(new Date(2026, 10, 1).getTimezoneOffset()).toBe(240); // EDT, before the repeat
+      expect(new Date(2026, 10, 3).getTimezoneOffset()).toBe(300); // EST, after it
+      // Sun 2026-11-01 gains an hour locally, so a fixed-ms step from local midnight on 11-01
+      // lands back inside 11-01, yielding 11-01, 11-01, 11-02: one day enumerated twice and the
+      // last day of the range never reached.
+      const from = new Date(2026, 10, 1, 12, 0, 0).getTime();
+      const to = new Date(2026, 10, 3, 12, 0, 0).getTime();
+      expect(calendarDaysBetween(from, to, localDayKey, localDayStart)).toEqual([
+        [2026, 11, 1],
+        [2026, 11, 2],
+        [2026, 11, 3],
+      ]);
+    });
+  });
+
+  it('accepts its endpoints in either order and covers a single-day range once', async () => {
+    await withTZ('America/New_York', () => {
+      const from = new Date(2026, 2, 7, 12, 0, 0).getTime();
+      const to = new Date(2026, 2, 9, 12, 0, 0).getTime();
+      expect(calendarDaysBetween(to, from, localDayKey, localDayStart)).toEqual(
+        calendarDaysBetween(from, to, localDayKey, localDayStart),
+      );
+      expect(calendarDaysBetween(from, from, localDayKey, localDayStart)).toEqual([[2026, 3, 7]]);
     });
   });
 });
@@ -308,33 +438,73 @@ describe('createCodexLiveDetector', () => {
   });
 
   it('finds a rollout under the UTC date directory when it differs from the local one', async () => {
-    // Fixed instant chosen so local (this machine, UTC+3) and UTC calendar days diverge: UTC is
-    // still Sep 1, local is already Sep 2. The rollout lives only under the UTC-dated directory;
-    // a local-date-only lookup would miss it entirely.
-    const crossMidnight = new Date('2026-09-01T22:30:00.000Z');
-    const utcDir = join(
-      home,
-      'sessions',
-      String(crossMidnight.getUTCFullYear()),
-      pad(crossMidnight.getUTCMonth() + 1),
-      pad(crossMidnight.getUTCDate()),
-    );
-    mkdirSync(utcDir, { recursive: true });
-    const rUtc = join(utcDir, 'rollout-utc-c0dex000-0000-0000-0000-000000000099.jsonl');
-    writeFileSync(
-      rUtc,
-      `${JSON.stringify({ timestamp: crossMidnight.toISOString(), type: 'session_meta', payload: { id: 'c0dex-utc', cwd: '/Users/test/Utc', originator: 'codex_exec' } })}\n`,
-    );
-    utimesSync(rUtc, crossMidnight, crossMidnight);
+    // `TZ` is pinned rather than inherited: this test is only meaningful where the local and UTC
+    // calendar days actually diverge at the chosen instant, and on a UTC host (i.e. CI) an
+    // inherited timezone makes the two date directories identical and the whole UTC enumeration
+    // deletable with the suite still green. Asia/Dubai is UTC+4 year-round, so 22:30Z is already
+    // Sep 2 locally while UTC is still Sep 1. The rollout lives only under the UTC-dated
+    // directory; a local-date-only lookup would miss it entirely.
+    await withTZ('Asia/Dubai', async () => {
+      const crossMidnight = new Date('2026-09-01T22:30:00.000Z');
+      expect(crossMidnight.getDate()).not.toBe(crossMidnight.getUTCDate()); // the divergence itself
+      const utcDir = join(
+        home,
+        'sessions',
+        String(crossMidnight.getUTCFullYear()),
+        pad(crossMidnight.getUTCMonth() + 1),
+        pad(crossMidnight.getUTCDate()),
+      );
+      mkdirSync(utcDir, { recursive: true });
+      const rUtc = join(utcDir, 'rollout-utc-c0dex000-0000-0000-0000-000000000099.jsonl');
+      writeFileSync(
+        rUtc,
+        `${JSON.stringify({ timestamp: crossMidnight.toISOString(), type: 'session_meta', payload: { id: 'c0dex-utc', cwd: '/Users/test/Utc', originator: 'codex_exec' } })}\n`,
+      );
+      utimesSync(rUtc, crossMidnight, crossMidnight);
 
-    const d = createCodexLiveDetector({
-      codexHome: home,
-      now: () => crossMidnight.getTime(),
-      lookbackDays: 0,
-      exec: fakeExec(psLine(950, crossMidnight, 'codex'), { '950': '/Users/test/Utc' }),
+      const d = createCodexLiveDetector({
+        codexHome: home,
+        now: () => crossMidnight.getTime(),
+        lookbackDays: 0,
+        exec: fakeExec(psLine(950, crossMidnight, 'codex'), { '950': '/Users/test/Utc' }),
+      });
+      const out = await d.scan();
+      expect(out).toMatchObject([{ pid: 950, sessionId: 'c0dex-utc' }]);
     });
-    const out = await d.scan();
-    expect(out).toMatchObject([{ pid: 950, sessionId: 'c0dex-utc' }]);
+  });
+
+  it('finds a rollout under the local date directory when it differs from the UTC one', async () => {
+    // The mirror of the test above, and the more common half in practice: codex names its
+    // session directories by *local* date, so a rollout started just after local midnight lives
+    // under a date the UTC enumeration never visits. Same pinned Asia/Dubai timezone, an instant
+    // chosen so local is already Sep 3 while UTC is still Sep 2.
+    await withTZ('Asia/Dubai', async () => {
+      const crossMidnight = new Date('2026-09-02T21:00:00.000Z');
+      expect(crossMidnight.getDate()).not.toBe(crossMidnight.getUTCDate());
+      const localDir = join(
+        home,
+        'sessions',
+        String(crossMidnight.getFullYear()),
+        pad(crossMidnight.getMonth() + 1),
+        pad(crossMidnight.getDate()),
+      );
+      mkdirSync(localDir, { recursive: true });
+      const rLocal = join(localDir, 'rollout-local-c0dex000-0000-0000-0000-000000000098.jsonl');
+      writeFileSync(
+        rLocal,
+        `${JSON.stringify({ timestamp: crossMidnight.toISOString(), type: 'session_meta', payload: { id: 'c0dex-local', cwd: '/Users/test/Local', originator: 'codex_exec' } })}\n`,
+      );
+      utimesSync(rLocal, crossMidnight, crossMidnight);
+
+      const d = createCodexLiveDetector({
+        codexHome: home,
+        now: () => crossMidnight.getTime(),
+        lookbackDays: 0,
+        exec: fakeExec(psLine(951, crossMidnight, 'codex'), { '951': '/Users/test/Local' }),
+      });
+      const out = await d.scan();
+      expect(out).toMatchObject([{ pid: 951, sessionId: 'c0dex-local' }]);
+    });
   });
 
   it('derives the search window from the earliest matched process, reaching further back than lookbackDays', async () => {
@@ -441,34 +611,40 @@ describe('createCodexLiveDetector', () => {
     expect(out[0]?.sessionId).toBe('c0dex-farther');
   });
 
-  it('reuses a bound rollout across scans without re-searching, and refreshes lastWriteMs', async () => {
-    const ps = psLine(1200, T0, 'codex');
-    let lsofCalls = 0;
-    const exec: ExecFn = async (cmd, args) => {
-      if (cmd === 'ps') return { stdout: ps, exitCode: 0 };
-      if (cmd === 'lsof') {
-        lsofCalls += 1;
-        const pid = args[args.indexOf('-p') + 1];
-        return pid === '1200'
-          ? { stdout: 'p1200\nfcwd\nn/Users/test/Wakecap\n', exitCode: 0 }
-          : { stdout: '', exitCode: 1 };
-      }
-      throw new Error(`unexpected ${cmd}`);
-    };
-    const d = createCodexLiveDetector({ codexHome: home, now: () => NOW, exec });
+  it('reuses a bound rollout across scans without re-enumerating the session directories, and refreshes lastWriteMs', async () => {
+    // "Does not re-search" is measured where the search actually happens: the directory
+    // enumeration (`readdir`) and the per-candidate first-line read (`open`). Counting `lsof`
+    // calls would prove nothing — cwd is required output for every process on every scan and is
+    // resolved unconditionally, so its count is 2 whether or not the binding cache exists.
+    const d = createCodexLiveDetector({
+      codexHome: home,
+      now: () => NOW,
+      exec: fakeExec(psLine(1200, T0, 'codex'), { '1200': '/Users/test/Wakecap' }),
+    });
+    readdirCalls.mockClear();
+    openCalls.mockClear();
     const first = await d.scan();
     expect(first[0]?.sessionId).toBe('c0dex000-0000-0000-0000-000000000001');
     expect(first[0]?.lastWriteMs).toBe(NOW - 10_000);
+    // The first scan is unbound, so it must genuinely search — otherwise the second scan's zero
+    // counts below would be trivially satisfied by a detector that never searches at all.
+    expect(readdirCalls.mock.calls.length).toBeGreaterThan(0);
+    expect(openCalls.mock.calls.length).toBeGreaterThan(0);
 
+    // The bound rollout is appended to, so its mtime moves and its cached meta is invalidated: a
+    // re-search would be forced to re-`readdir` and re-`open` it, not silently reuse a cache.
     utimesSync(
       join(dayDir, 'rollout-a-c0dex000-0000-0000-0000-000000000001.jsonl'),
       new Date(NOW),
       new Date(NOW),
     );
+    readdirCalls.mockClear();
+    openCalls.mockClear();
     const second = await d.scan();
     expect(second[0]?.sessionId).toBe('c0dex000-0000-0000-0000-000000000001');
     expect(second[0]?.lastWriteMs).toBe(NOW);
-    expect(lsofCalls).toBe(2); // cwd is still resolved each scan; only the rollout search is skipped
+    expect(readdirCalls.mock.calls.length).toBe(0);
+    expect(openCalls.mock.calls.length).toBe(0);
   });
 
   it('returns nothing and does not throw when ps itself fails', async () => {
@@ -535,13 +711,16 @@ describe('createCodexLiveDetector', () => {
   });
 
   it('does not re-search once bound, even when a more "attractive" rollout later appears', async () => {
-    // If the binding cache were skipped, the second scan's fresh search would find and rebind to
-    // the decoy (same cwd/start, much fresher mtime). Because the process is already bound after
-    // the first scan, the second scan must never even look.
+    // The process starts 3s after the incumbent rollout's own session start, so the incumbent
+    // sits at fresh-distance 3000 — deliberately *not* zero. The decoy that appears afterwards
+    // starts at exactly the process's own start (distance 0) and has a newer mtime, so on every
+    // tie-break the search offers it would beat the incumbent outright. Only the binding cache
+    // can explain the incumbent still winning the second scan.
+    const procStart = new Date(T0.getTime() + 3_000);
     const d = createCodexLiveDetector({
       codexHome: home,
       now: () => NOW,
-      exec: fakeExec(psLine(1400, T0, 'codex'), { '1400': '/Users/test/Wakecap' }),
+      exec: fakeExec(psLine(1400, procStart, 'codex'), { '1400': '/Users/test/Wakecap' }),
     });
     const first = await d.scan();
     expect(first[0]?.sessionId).toBe('c0dex000-0000-0000-0000-000000000001');
@@ -549,7 +728,7 @@ describe('createCodexLiveDetector', () => {
     const decoy = join(dayDir, 'rollout-decoy.jsonl');
     writeFileSync(
       decoy,
-      `${JSON.stringify({ timestamp: T0.toISOString(), type: 'session_meta', payload: { id: 'c0dex-decoy', cwd: '/Users/test/Wakecap', originator: 'codex_exec' } })}\n`,
+      `${JSON.stringify({ timestamp: procStart.toISOString(), type: 'session_meta', payload: { id: 'c0dex-decoy', cwd: '/Users/test/Wakecap', originator: 'codex_exec' } })}\n`,
     );
     utimesSync(decoy, new Date(NOW), new Date(NOW));
 
@@ -664,6 +843,19 @@ describe('createCodexLiveDetector', () => {
       originator: null,
       lastWriteMs: null,
     });
+
+    // Reporting nulls once is true whether or not the binding was actually *dropped* — a
+    // detector that kept the dead binding would report nulls too, simply because the `stat`
+    // keeps failing. What discriminates is a third scan after a rollout is back at that path:
+    // only a genuinely dropped binding sends the process back through the search and picks up
+    // the new session's identity, instead of replaying the stale cached one.
+    writeFileSync(
+      path,
+      `${JSON.stringify({ timestamp: T0.toISOString(), type: 'session_meta', payload: { id: 'c0dex-vanish-restored', cwd, originator: 'codex_exec' } })}\n`,
+    );
+    utimesSync(path, new Date(NOW), new Date(NOW));
+    const third = await d.scan();
+    expect(third[0]).toMatchObject({ rolloutPath: path, sessionId: 'c0dex-vanish-restored' });
   });
 
   it('re-reads a bound rollout whose cached sessionId/originator are still null, self-healing a partial-write binding', async () => {
@@ -694,25 +886,129 @@ describe('createCodexLiveDetector', () => {
     expect(second[0]).toMatchObject({ sessionId: 'c0dex-healed', originator: 'codex_exec' });
   });
 
-  it('floors mtimeMs to an integer, both when first picking a rollout and when re-stat-ing a bound one', async () => {
-    // This filesystem stores mtimes with sub-millisecond precision that doesn't always round-trip
-    // exactly through an integer-ms `utimesSync` write (verified independently), so a raw
-    // `stat().mtimeMs` can come back fractional. `mtime_ms` is an INTEGER column downstream, so
-    // both sites that surface it must floor.
+  it('re-reads a bound rollout when only its originator is still null, not just when both fields are', async () => {
+    // The test above truncates before *both* `id` and `originator`, so it passes under either
+    // `sessionId === null || originator === null` or an `&&`. A real first line writes its keys
+    // in the fixture's order (id, session_id, cwd, cli_version, model_provider, originator), so
+    // the much more likely mid-write snapshot is one truncated *after* `cwd` and before
+    // `originator`: sessionId already known, originator not. Only `||` heals that.
+    const cwd = '/Users/test/HealOrTest';
+    const path = join(dayDir, 'rollout-partial-originator.jsonl');
+    const partial =
+      `{"timestamp":"${T0.toISOString()}","type":"session_meta","payload":` +
+      `{"id":"c0dex-half","session_id":"c0dex-half","cwd":"${cwd}","cli_version":"0.152.1","model_provider":"openai"`;
+    writeFileSync(path, `${partial}\n`);
+    utimesSync(path, new Date(NOW - 10_000), new Date(NOW - 10_000));
+
     const d = createCodexLiveDetector({
       codexHome: home,
       now: () => NOW,
-      exec: fakeExec(psLine(2100, T0, 'codex'), { '2100': '/Users/test/Wakecap' }),
+      exec: fakeExec(psLine(2310, T0, 'codex'), { '2310': cwd }),
     });
     const first = await d.scan();
-    expect(Number.isInteger(first[0]?.lastWriteMs)).toBe(true);
+    expect(first[0]).toMatchObject({ rolloutPath: path, sessionId: 'c0dex-half', originator: null });
 
-    utimesSync(
-      join(dayDir, 'rollout-a-c0dex000-0000-0000-0000-000000000001.jsonl'),
-      new Date(NOW),
-      new Date(NOW),
+    writeFileSync(
+      path,
+      `${JSON.stringify({ timestamp: T0.toISOString(), type: 'session_meta', payload: { id: 'c0dex-half', session_id: 'c0dex-half', cwd, cli_version: '0.152.1', model_provider: 'openai', originator: 'codex_exec' } })}\n`,
     );
+    utimesSync(path, new Date(NOW), new Date(NOW));
     const second = await d.scan();
+    expect(second[0]).toMatchObject({ sessionId: 'c0dex-half', originator: 'codex_exec' });
+  });
+
+  it('resolves a contested rollout for the earliest-started process, whatever order ps listed them in', async () => {
+    // One rollout, two same-cwd processes, and `ps` deliberately lists the *later*-started one
+    // first — the opposite of the order `scan` sorts into. The rollout was started at the same
+    // instant as the earlier process, so it is that process's session; the later process can only
+    // reach it through the newest-mtime fallback, and does so if bindings are assigned in raw
+    // `ps` order instead of start-time order.
+    const cwd = '/Users/test/ProcSortTest';
+    const only = join(dayDir, 'rollout-procsort.jsonl');
+    writeFileSync(
+      only,
+      `${JSON.stringify({ timestamp: T0.toISOString(), type: 'session_meta', payload: { id: 'c0dex-procsort', cwd, originator: 'codex_exec' } })}\n`,
+    );
+    utimesSync(only, new Date(NOW - 5_000), new Date(NOW - 5_000));
+
+    const ps = [psLine(2500, T1, 'codex'), psLine(2400, T0, 'codex')].join('\n');
+    const d = createCodexLiveDetector({
+      codexHome: home,
+      now: () => NOW,
+      exec: fakeExec(ps, { '2400': cwd, '2500': cwd }),
+    });
+    const out = await d.scan();
+    const bound = out.filter((p) => p.rolloutPath !== null);
+    expect(bound.map((p) => p.pid)).toEqual([2400]);
+    expect(bound[0]?.sessionId).toBe('c0dex-procsort');
+  });
+
+  it('breaks a same-start-time contest by the lower pid, whatever order ps listed them in', async () => {
+    // Same setup, but both processes started in the same second, so only the `|| a.pid - b.pid`
+    // tie-break decides. `ps` lists the higher pid first; without the tie-break the sort is
+    // stable on equal start times and that raw order would decide instead.
+    const cwd = '/Users/test/PidSortTest';
+    const only = join(dayDir, 'rollout-pidsort.jsonl');
+    writeFileSync(
+      only,
+      `${JSON.stringify({ timestamp: T0.toISOString(), type: 'session_meta', payload: { id: 'c0dex-pidsort', cwd, originator: 'codex_exec' } })}\n`,
+    );
+    utimesSync(only, new Date(NOW - 5_000), new Date(NOW - 5_000));
+
+    const ps = [psLine(2601, T0, 'codex'), psLine(2600, T0, 'codex')].join('\n');
+    const d = createCodexLiveDetector({
+      codexHome: home,
+      now: () => NOW,
+      exec: fakeExec(ps, { '2600': cwd, '2601': cwd }),
+    });
+    const out = await d.scan();
+    const bound = out.filter((p) => p.rolloutPath !== null);
+    expect(bound.map((p) => p.pid)).toEqual([2600]);
+    expect(bound[0]?.sessionId).toBe('c0dex-pidsort');
+  });
+
+  it('floors mtimeMs to an integer, both when first picking a rollout and when re-stat-ing a bound one', async () => {
+    // A whole-millisecond `utimesSync` write round-trips back through `stat` as an exact integer
+    // on this filesystem (measured), so every rollout this file stamps with `utimesSync` has an
+    // integer `mtimeMs` and can never show a missing `Math.floor`. Only a *natural* mtime — the
+    // one the kernel stamps on a plain `writeFileSync` — carries the sub-millisecond precision
+    // that makes `stat().mtimeMs` fractional, so this rollout is deliberately left untouched.
+    // `mtime_ms` is an INTEGER column downstream, so both sites that surface it must floor.
+    const cwd = '/Users/test/FloorTest';
+    const path = join(dayDir, 'rollout-floor.jsonl');
+    // A partial first line (`cwd` flushed, `id`/`originator` not yet) is enough to bind on but
+    // leaves the binding's identity null, which forces the bound-but-null re-read through
+    // `metaFor` below — the only place the candidate-side floor is observable.
+    const partial = `{"timestamp":"${T0.toISOString()}","type":"session_meta","payload":{"cwd":"${cwd}"`;
+    let naturalMtimeMs = 0;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      writeFileSync(path, `${partial}\n`);
+      naturalMtimeMs = statSync(path).mtimeMs;
+      if (!Number.isInteger(naturalMtimeMs)) break;
+    }
+    // Stated as an assertion, not a comment, so the day this stops being true the test fails
+    // loudly instead of quietly passing for no reason.
+    expect(Number.isInteger(naturalMtimeMs)).toBe(false);
+
+    const d = createCodexLiveDetector({
+      codexHome: home,
+      now: () => NOW,
+      exec: fakeExec(psLine(2100, T0, 'codex'), { '2100': cwd }),
+    });
+    openCalls.mockClear();
+    const first = await d.scan();
+    expect(first[0]?.rolloutPath).toBe(path); // it really bound to the fractional-mtime rollout
+    expect(first[0]?.lastWriteMs).toBe(Math.floor(naturalMtimeMs));
+    expect(Number.isInteger(first[0]?.lastWriteMs)).toBe(true);
+    expect(first[0]?.sessionId).toBeNull();
+    // The candidate sweep keys `metaFor`'s cache by the floored mtime and the bound re-read looks
+    // it up by the floored re-`stat` — the same integer, so this rollout is opened exactly once.
+    // Drop either floor and the two keys disagree by a fraction of a millisecond, the cache
+    // misses, and the file is read a second time on this very scan.
+    expect(openCalls.mock.calls.filter((c) => c[0] === path)).toHaveLength(1);
+
+    const second = await d.scan();
+    expect(second[0]?.lastWriteMs).toBe(Math.floor(naturalMtimeMs));
     expect(Number.isInteger(second[0]?.lastWriteMs)).toBe(true);
   });
 

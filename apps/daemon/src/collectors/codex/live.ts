@@ -275,8 +275,8 @@ function dedupeParents(procs: ParsedProc[]): ParsedProc[] {
 
 type DayKey = readonly [year: number, month: number, day: number];
 
-const localDayKey = (d: Date): DayKey => [d.getFullYear(), d.getMonth() + 1, d.getDate()];
-const localDayStart = (y: number, m: number, d: number): Date => new Date(y, m - 1, d);
+export const localDayKey = (d: Date): DayKey => [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+export const localDayStart = (y: number, m: number, d: number): Date => new Date(y, m - 1, d);
 const utcDayKey = (d: Date): DayKey => [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
 const utcDayStart = (y: number, m: number, d: number): Date => new Date(Date.UTC(y, m - 1, d));
 
@@ -288,7 +288,7 @@ const utcDayStart = (y: number, m: number, d: number): Date => new Date(Date.UTC
  * `Date` itself normalize month/year rollover and any DST offset change, so no day is ever
  * skipped or double-counted regardless of the host's timezone.
  */
-function calendarDaysBetween(
+export function calendarDaysBetween(
   fromMs: number,
   toMs: number,
   key: (d: Date) => DayKey,
