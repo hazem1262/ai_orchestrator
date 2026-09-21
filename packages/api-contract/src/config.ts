@@ -73,6 +73,13 @@ export const OrcConfig = z
       )
       .default({}),
     archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
+    live: z
+      .object({
+        pollMs: z.number().int().positive().default(1000),
+        endedRetentionMin: z.number().int().positive().default(10),
+        codexBusyWindowMs: z.number().int().positive().default(10000),
+      })
+      .prefault({}),
   })
   .strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;

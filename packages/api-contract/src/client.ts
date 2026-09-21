@@ -1,5 +1,6 @@
 import type { AgentNode, Project, Session, Source } from '@orc/core';
 import { z } from 'zod';
+import { makeCaller, type P2Methods, p2Methods } from './client-p2.ts';
 import { ProjectConfig } from './config.ts';
 import { AgentNodeSchema, ProjectSchema, SessionSchema } from './domain.ts';
 import { ApiError } from './errors.ts';
@@ -76,7 +77,7 @@ export function toQueryString(params: Record<string, string | number | boolean |
   return s ? `?${s}` : '';
 }
 
-export function createApiClient(o: ApiClientOptions): ApiClient {
+export function createApiClient(o: ApiClientOptions): ApiClient & P2Methods {
   const doFetch: typeof fetch = o.fetch ?? ((input, init) => fetch(input, init));
 
   async function call<T>(schema: z.ZodType<T>, method: string, path: string, body?: unknown): Promise<T> {
@@ -108,7 +109,7 @@ export function createApiClient(o: ApiClientOptions): ApiClient {
   const seg = (source: Source, id: string) =>
     `/api/sessions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`;
 
-  return {
+  const methods: ApiClient = {
     healthGet: () => call(HealthResponseSchema, 'GET', '/api/health'),
     projectsList: () => call(z.array(ProjectSchema), 'GET', '/api/projects'),
     projectsGet: (id) => call(ProjectConfig, 'GET', `/api/projects/${encodeURIComponent(id)}`),
@@ -133,4 +134,5 @@ export function createApiClient(o: ApiClientOptions): ApiClient {
     ptyList: () => call(z.array(PtyInfoSchema), 'GET', '/api/pty'),
     ptyKill: (ptyId) => call(OkSchema, 'DELETE', `/api/pty/${encodeURIComponent(ptyId)}`, { confirm: true }),
   };
+  return { ...methods, ...p2Methods(makeCaller({ baseUrl: o.baseUrl, token: o.token, fetchImpl: doFetch })) };
 }
