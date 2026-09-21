@@ -29,10 +29,17 @@ export function redactSession(s: Session): Session {
     awaySummary: r(s.awaySummary),
     recap: r(s.recap),
     lastTest: s.lastTest === null ? null : { ...s.lastTest, command: redact(s.lastTest.command) },
-    // A cwd is a real path, but it is transcript-derived and a directory can be named anything.
+    // Every field below is transcript-derived: a path, a tool argument or an extracted token can
+    // be named anything. redact() is a no-op on ordinary values, so a real ticket id, skill name
+    // or file path passes through untouched and stays matchable in the UI.
+    startCwd: redact(s.startCwd),
     cwds: s.cwds.map((c) => redact(c)),
-    // Derived from the tool name's server segment, which the user configures freely.
     mcpServers: s.mcpServers.map((m) => redact(m)),
+    skills: s.skills.map((k) => redact(k)),
+    filesTouched: s.filesTouched.map((f) => redact(f)),
+    tickets: s.tickets.map((t) => redact(t)),
+    // waitingFor is copied verbatim out of Claude Code's own live-session file, which we do not control.
+    live: s.live === null ? null : { ...s.live, waitingFor: r(s.live.waitingFor) },
   };
 }
 
@@ -59,5 +66,7 @@ export function redactListItem(i: SessionListItem): SessionListItem {
     lastPrompt: r(i.lastPrompt),
     recap: r(i.recap),
     snippet: i.snippet === null ? null : redactSnippet(i.snippet),
+    tickets: i.tickets.map((t) => redact(t)),
+    live: i.live === null ? null : { ...i.live, waitingFor: r(i.live.waitingFor) },
   };
 }

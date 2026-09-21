@@ -134,6 +134,14 @@ function writeSecretSession(ctx: TestContext): string {
             name: 'mcp__PGPASSWORD=hunter2tool__run',
             input: { note: 'ok' },
           },
+          // skills and filesTouched are transcript-derived too (Fix round 5b).
+          { type: 'tool_use', id: 'sec-tu3', name: 'Skill', input: { skill: 'PGPASSWORD=hunter2skill' } },
+          {
+            type: 'tool_use',
+            id: 'sec-tu4',
+            name: 'Edit',
+            input: { file_path: '/tmp/PGPASSWORD=hunter2file.txt', old_string: 'a', new_string: 'b' },
+          },
         ],
         usage: {
           input_tokens: 1,
@@ -406,13 +414,21 @@ describe('redaction at the boundary', () => {
     expect(eventsText).toContain('mcp__PGPASSWORD=«redacted:secret»');
     expect(secretAgent?.agentType).toContain('«redacted:github»');
     expect(session.cwds.join(' ')).toContain('«redacted:secret»');
+    // Fix round 5b: startCwd (sibling of cwds), skills and filesTouched were still raw.
+    expect(session.skills.join(' ')).toContain('«redacted:secret»');
+    expect(session.filesTouched.join(' ')).toContain('«redacted:secret»');
 
     const everything = [JSON.stringify(session), JSON.stringify(item), eventsText, agentsText].join('\n');
     for (const secret of SECRETS) {
       expect(everything).not.toContain(secret);
     }
     // The drifted cwd and the tool name must not survive anywhere in any response either.
-    for (const raw of ['PGPASSWORD=hunter2cwd', 'PGPASSWORD=hunter2tool']) {
+    for (const raw of [
+      'PGPASSWORD=hunter2cwd',
+      'PGPASSWORD=hunter2tool',
+      'PGPASSWORD=hunter2skill',
+      'PGPASSWORD=hunter2file',
+    ]) {
       expect(everything).not.toContain(raw);
     }
   });
