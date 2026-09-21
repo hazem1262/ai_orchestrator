@@ -3,6 +3,7 @@ export * from './name.ts';
 export * from './prod.ts';
 export * from './projects.ts';
 export * from './skills.ts';
+export * from './stage.ts';
 export * from './tests.ts';
 export * from './tickets.ts';
 export * from './util.ts';
