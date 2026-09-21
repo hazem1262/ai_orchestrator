@@ -4,18 +4,33 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "build": "tsup src/main.ts --format esm --platform node --target node22 --out-dir dist",
+    "dev": "ORC_DEV=1 tsx watch src/main.ts",
+    "build": "tsup src/main.ts --format esm --platform node --target node22 --out-dir dist && rm -rf dist/migrations && cp -R src/db/migrations dist/migrations",
     "start": "node dist/main.js",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate",
+    "perf": "vitest run --config vitest.perf.config.ts",
+    "postinstall": "node -e 'try{const p=require(\"path\"),f=require(\"fs\");let d;try{d=p.dirname(require.resolve(\"node-pty/package.json\",{paths:[__dirname]}))}catch(e){process.exit(0)}const pb=p.join(d,\"prebuilds\");if(f.existsSync(pb)){for(const x of f.readdirSync(pb)){const h=p.join(pb,x,\"spawn-helper\");if(f.existsSync(h))f.chmodSync(h,0o755)}}}catch(e){}'"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "@orc/api-contract": "workspace:*",
     "@orc/core": "workspace:*",
-    "hono": "^4.13.8"
+    "better-sqlite3": "^13.0.3",
+    "chokidar": "^5.0.0",
+    "drizzle-orm": "^0.45.2",
+    "execa": "^10.0.1",
+    "hono": "^4.13.8",
+    "node-pty": "^1.1.0",
+    "pino": "^10.3.1",
+    "ws": "^8.21.3",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.10",
     "tsup": "^8.5.1",
     "tsx": "^4.23.13"
   }

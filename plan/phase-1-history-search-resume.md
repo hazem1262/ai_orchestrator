@@ -8352,7 +8352,7 @@ git commit -m "feat(daemon): boot HTTP server with PTY WebSocket, replay and gra
   export const DEFAULT_PROJECT_ID = 'wakecap';
   export interface ProjectState { projectId: string; setProjectId(projectId: string): void }
   export const useProjectStore: UseBoundStore<StoreApi<ProjectState>>            // persisted as localStorage "orc.project"
-  // components/ui (shadcn-compatible props; see Step 4 for the Wakecore switch)
+  // components/ui (shadcn/ui primitives owned by this repo)
   export function cn(...parts: Array<string | false | null | undefined>): string
   export function Button(p: ButtonProps): JSX.Element            // variant: default|secondary|outline|ghost|destructive; size: default|sm|icon
   export function Badge(p: BadgeProps): JSX.Element              // variant: default|secondary|outline|destructive|success|warning
@@ -8931,7 +8931,7 @@ export function viewQueryToSearch(q: Record<string, string>): HistorySearch {
 - [ ] **Step 4: Implement the UI re-export layer (shadcn fallback)**
 
 This is the fallback path from spike S6 (`plan/spikes/S6.md`). Each file below is a small shadcn-compatible component (same export names and `variant`/`size` props as shadcn/ui).
-- **If S6 = GO (Wakecore):** replace the body of `button.tsx`, `badge.tsx`, `input.tsx`, `tabs.tsx`, `checkbox.tsx`, `card.tsx`, `skeleton.tsx`, `separator.tsx` with a one-line re-export, e.g. `export { Button, type ButtonProps } from '@wakecap/core-ui';` (use the names the S6 report lists), install `@wakecap/core-ui@^0.17.0 @wakecap/core-tokens@^0.8.0`, and add the tokens import from the S6 report at the top of `index.css`. Keep `cn.ts` and `native-select.tsx` local (plain HTML, no Wakecore equivalent). Feature code does not change.
+- **UI kit decision (2026-09-21):** shadcn/ui is the permanent choice; there is no Wakecore switch. These files are the primitives, owned by this repo.
 - **If S6 = NO-GO:** keep the files exactly as below.
 
 `apps/web/src/components/ui/cn.ts`

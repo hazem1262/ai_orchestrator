@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
     "./test-utils/fixtures.ts": "./src/test-utils/fixtures.ts"
   },
   "scripts": {

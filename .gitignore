@@ -8,3 +8,5 @@ spikes/**/out/
 .env.*
 .obsidian/
 .playwright-mcp/
+apps/web/test-results/
+apps/web/playwright-report/

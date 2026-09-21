@@ -38,7 +38,7 @@ orchestrator/
 ├─ packages/
 │  ├─ core/            # source-agnostic domain model + parsers (pure TS, no I/O side effects)
 │  ├─ api-contract/    # zod schemas + typed client shared by daemon and web
-│  └─ ui/              # (optional) thin wrappers over Wakecore / shadcn components
+│  └─ ui/              # (optional) thin wrappers over the shadcn/ui primitives
 ├─ fixtures/           # redacted sample transcripts for parser tests
 ├─ docs/               # these docs
 └─ plan/               # implementation plans
@@ -75,26 +75,26 @@ orchestrator/
 
 | Concern | Choice | Why |
 |---|---|---|
-| Framework | **React 18 + TypeScript + Vite 7** | Same as the Wakecore apps. No SSR is needed. |
-| Styling | **Tailwind v4** (`@tailwindcss/vite`) | Same as Wakecore. |
-| Components | **Wakecore `@wakecap/core-ui`** (shadcn/Radix based), with plain **shadcn/ui** as the fallback if the package is awkward to consume outside the Nx monorepo | Familiar, consistent, and already includes cmdk, resizable panels and TanStack Table. |
+| Framework | **React 19 + TypeScript + Vite 8** | Familiar, no SSR needed. |
+| Styling | **Tailwind v4** (`@tailwindcss/vite`) | Utility-first, no runtime cost. |
+| Components | **shadcn/ui** — components copied into `apps/web/src/components/ui/`, owned by this repo | Open source, MIT, no registry auth or private package to depend on. Everything imports through that one folder, so a different kit is a one-folder swap. |
 | Routing | **TanStack Router** | Typed routes and search params that suit filters. |
 | Server state | **TanStack Query** + WS invalidation | Live board updates are pushed, and history is fetched on demand. |
 | Client state | **Zustand** | Terminal tabs, layout and selection. |
 | Tables | **TanStack Table** + **TanStack Virtual** | 1.5k+ history rows; long timelines. |
 | Terminal | **xterm.js** (`@xterm/xterm` + fit, web-links, search addons) | The standard choice. |
-| Graphs | **@xyflow/react** (agents tree, work-stream flow) | Already in Wakecore. |
-| Charts | **echarts** (`echarts-for-react`) | Already in Wakecore. |
+| Graphs | **@xyflow/react** (agents tree, work-stream flow) | MIT, the standard React node-graph library. |
+| Charts | **echarts** (`echarts-for-react`) | Apache-2.0, handles dense time series well. |
 | Command palette | **cmdk** | ⌘K. |
 | Markdown | `react-markdown` + `shiki` | Assistant text and plans. |
 | Diff viewer | **@git-diff-view/react** (or `react-diff-view`) | Split/unified views, inline comment widgets. |
 | PWA | **vite-plugin-pwa** + responsive layouts | Installable mobile view (F22). |
 | Layout | **react-resizable-panels** (dockable splits) | Side-by-side sessions, terminal and diff panes. |
-| Tests | **Vitest** (+ browser mode with Playwright), **Storybook** for the cards and timeline | Same as Wakecore. |
+| Tests | **Vitest** (+ Playwright for e2e), **Storybook** for the cards and timeline | Vitest matches the rest of the repo. |
 
 ### Tooling
 - **Package manager and tasks:** pnpm workspaces. Turborepo is optional; Nx would be overkill.
-- **Linting and formatting:** Biome, or ESLint + Prettier to match Wakecore.
+- **Linting and formatting:** Biome (one tool for both, fast).
 - **Quality gate:** the existing PostToolUse hook (`~/.claude/hooks/post-edit-check.sh`) already runs prettier + tsc on edited `.ts`/`.tsx` files.
 - **CI (later):** GitHub Actions running typecheck, test and build.
 
