@@ -169,8 +169,6 @@ spikes/**/out/
 
 `.npmrc`
 ```
-@wakecap:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
 auto-install-peers=false
 ```
 
@@ -1622,6 +1620,8 @@ git commit -m "chore(spike): S5 codex rollout and process mapping"
 ---
 
 ### Task 9: Spike S6 — using Wakecore from a standalone Vite app
+
+> **SUPERSEDED (2026-09-21).** The user dropped Wakecore: this is a personal project, so the UI uses open-source shadcn/ui outright. The spike ran and reported BLOCKED (the `gh` token lacked `read:packages`); that finding is now moot. Kept as an executed record — do not re-run.
 
 **Files:**
 - Create: `spikes/s6-wakecore/**` (a throwaway Vite app), `plan/spikes/S6.md`

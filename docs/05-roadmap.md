@@ -10,7 +10,7 @@ Each milestone is meant to be usable on its own. Plans for each milestone go in 
 | S3 Live status | Is watching the `sessions/*.json` registry enough for "waiting" detection, or do we need the hook bridge? | Measured latency; a decision recorded. |
 | S4 AGNC (**optional, lowest priority**) | Can a local app authenticate (MCP OAuth client or API token) and list sessions and events? | A working `list_sessions` call from Node, or a documented blocker. |
 | S5 Codex | Map rollouts ↔ live processes; check whether `state_5.sqlite` gives names and status. | Notes added to doc 04. |
-| S6 Wakecore | Can `@wakecap/core-ui` be consumed from a standalone Vite app (package registry, peer deps, Tailwind v4 preset)? | Yes → use it; no → shadcn/ui with Wakecore tokens copied in. |
+| ~~S6 Wakecore~~ | **Dropped.** This is a personal project, so it uses open-source shadcn/ui outright rather than a private work package. | n/a |
 | S7 Quota data | Is there an official source for 5-hour/7-day limits (statusline input, `/usage`, API headers), or do we estimate from transcripts the way ccusage does? | Chosen data source; estimate within 10% of what Claude shows. |
 | S8 Input to owned sessions | Can text be sent reliably to `claude` running in node-pty (bracketed paste, detecting the idle prompt, multi-line)? | 50/50 scripted replies land correctly, with no stray keystrokes. |
 | S9 Remote | `tailscale serve` + PWA install + Web Push on iOS/Android + passkey step-up. | Phone gets a push and can answer an owned session. |
@@ -115,7 +115,7 @@ Each milestone is meant to be usable on its own. Plans for each milestone go in 
 | Secrets in transcripts | Leak via UI, search snippets or connectors | Display-time redaction, 0600 DB, connectors get redacted text only |
 | AGNC only reachable via MCP OAuth | Integration effort | Lowest priority; spike S4 when its turn comes; fall back to a link-out or leave it out |
 | Index size (hundreds of MB of text) | Disk and memory use | FTS only over prompts, assistant text and tool inputs; tool outputs stay on disk and load lazily |
-| Wakecore not consumable outside the monorepo | UI delay | shadcn fallback (S6) |
+| ~~Wakecore not consumable outside the monorepo~~ | n/a | Resolved by dropping Wakecore for shadcn/ui. |
 | Git actions on real repos (worktrees, rewind, merge) | Lost work or bad merges | Checkpoint before every rewind; refuse to archive dirty worktrees; confirm every merge; audit everything; never force-push |
 | Sending input into a TUI through a PTY | Garbled or misdirected replies | Spike S8; only owned sessions; wait for the idle prompt; bracketed paste |
 | Remote exposure of a local shell | Account takeover means code execution | Tailscale only, token, Tailscale identity check, passkey step-up for actions |

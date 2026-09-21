@@ -46,7 +46,7 @@
 
 | Package | Version |
 |---|---|
-| react / react-dom | `^19.3.0` (`@wakecap/core-ui` peer is `>=18.2.0`) |
+| react / react-dom | `^19.3.0` |
 | vite | `^8.3.0` |
 | @vitejs/plugin-react | latest |
 | tailwindcss + @tailwindcss/vite | `^4.3.3` |
@@ -65,7 +65,7 @@
 | vite-plugin-pwa | `^1.3.0` |
 | @playwright/test | `^1.63.0` (e2e) |
 
-**UI kit:** `@wakecap/core-ui@^0.17.0` + `@wakecap/core-tokens@^0.8.0` from `https://npm.pkg.github.com`, **if spike S6 passes**. Otherwise use shadcn/ui components copied into `apps/web/src/components/ui/`. Throughout the plans, UI code imports from `@/components/ui/*`. That file re-exports either Wakecore or shadcn, so phase code doesn't change whichever one is chosen.
+**UI kit:** **shadcn/ui** — primitives copied into `apps/web/src/components/ui/` and owned by this repo (MIT, no registry auth, no private dependency). All UI code imports from `@/components/ui/*` and never from a vendor path, so swapping kits later touches that one folder and nothing else.
 
 ## 2. Repository layout
 
@@ -76,7 +76,7 @@ orchestrator/
 ├─ tsconfig.base.json           # strict, ES2023, moduleResolution "bundler", verbatimModuleSyntax
 ├─ biome.json
 ├─ vitest.config.ts             # root config; uses `test.projects` to run packages/* and apps/*
-├─ .nvmrc  .gitignore  .npmrc   # .npmrc maps @wakecap to GitHub Packages (token from env)
+├─ .nvmrc  .gitignore  .npmrc
 ├─ fixtures/                    # redacted sample data (see §9)
 ├─ scripts/                     # repo scripts (coverage checks, dry-runs)
 ├─ packages/
@@ -666,5 +666,5 @@ Phase 0's spikes settled several questions the phase plans left open. These over
 | **S3** live status | GO, **watch-only**. Live transitions detected in 3–107 ms (median 27, n=6). | Phase 2 builds the Live Board on the chokidar registry watcher alone; the hook bridge (F10) stays a Phase 5 optimisation. Registry reads must swallow `ENOENT`/parse errors (partial writes are normal). `statusUpdatedAt` is status *age* at first scan, not a detection delay. A `waiting` transition was never observed in the window — Phase 2 must measure that case and record it. |
 | **S5** codex | Rollouts parse cleanly; originators observed: `codex_exec`, `codex_sdk_ts`, `codex-tui`, `Codex Desktop`. | Phase 1's Codex aggregate filters `codex_sdk_ts` by default (decision 3). The `automated` flag keys on originator. The report's actual decision also carries: read the Codex SQLite read-only as well; the rollout-mtime<10s process-matching rule is untested under load; and the originator list came from a 5.2% recency-biased sample. |
 | **S7** quota | **official** source found. | `LimitsConfig.quotaSource` defaults to `'official'`, with `officialFieldPaths` defaulting to `rate_limits.five_hour.used_percentage`, `rate_limits.five_hour.resets_at`, `rate_limits.seven_day.used_percentage`, `rate_limits.seven_day.resets_at`. These arrive on the **statusline command's stdin JSON**, so Phase 5's `POST /api/usage/official` is fed by the orchestrator statusline wrapper. The ccusage-style estimator stays as the labelled-"estimated" fallback for when no statusline is installed. Phase 5 must not overwrite a user's existing statusline — it merges or wraps. Caveats: n=1 on one Max account; `/usage` parity was never checked; and `rate_limits` may be absent on some plan tiers or before the first API response, so Phase 5 must fall back to the estimator when the field is missing. |
-| **S6** Wakecore | **BLOCKED** pending `gh auth refresh -s read:packages`. | Phase 1's `@/components/ui/*` re-export layer starts on the **shadcn/ui fallback** so Phase 1 is not blocked. Swapping to `@wakecap/core-ui` later touches only that layer. |
+| ~~**S6** Wakecore~~ | **Dropped by the user (2026-09-21):** this is a personal project, so it uses open-source shadcn/ui outright instead of a private work package. The spike's blocked-on-`read:packages` finding is moot. | `@/components/ui/*` is the permanent home of the primitives, not a fallback. |
 | **S2/S8** PTY | Scripted input **50/50** complete and in order; send-while-busy is queued by Claude's own TUI (not garbled); multi-line arrives as one prompt. `submitDelayMs` 120 ms works, and no idle detection is needed before sending. Browser render, typing, resize and scrollback replay all verified in headless Chrome. **GO.** | `encodePaste`/`sendText` live in `packages/core/src/pty/paste.ts`; Phase 1's `apps/daemon/src/pty/input.ts` wraps that module. **Two Phase 1 setup gotchas:** (1) node-pty 1.1.0's darwin-arm64 prebuild ships `spawn-helper` without the executable bit, and every `pty.spawn()` fails until it is `chmod +x`'d — the daemon package needs a postinstall step. (2) **A child session inherits `CLAUDE_CODE_CHILD_SESSION` and then writes NO transcript.** `PtyManager.spawn()` must delete that marker from the child env and set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, with a test asserting it; otherwise every session the app launches is invisible to its own indexer. |
