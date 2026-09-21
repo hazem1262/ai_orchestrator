@@ -113,6 +113,36 @@ function writeSecretSession(ctx: TestContext): string {
       cwd,
       message: { role: 'user', content: 'Also rotate the AWS key AKIAABCDEFGHIJKLMNOP while you are at it.' },
     },
+    {
+      // Fix round 5: `tool` carries a user-configured MCP server segment and `cwd` drift is
+      // transcript-derived — both reached the API raw before this round.
+      type: 'assistant',
+      uuid: 'sec-a2',
+      parentUuid: 'sec-u2',
+      isSidechain: false,
+      sessionId,
+      timestamp: '2026-09-05T09:00:15.000Z',
+      cwd: `${cwd}/PGPASSWORD=hunter2cwd`,
+      message: {
+        id: 'msg-sec-2',
+        role: 'assistant',
+        model: 'claude-opus-5',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'sec-tu2',
+            name: 'mcp__PGPASSWORD=hunter2tool__run',
+            input: { note: 'ok' },
+          },
+        ],
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      },
+    },
   ];
   writeFileSync(file, `${records.map((r) => JSON.stringify(r)).join('\n')}\n`);
   return file;
@@ -124,7 +154,8 @@ function writeSecretSubagent(ctx: TestContext): string {
   const subDir = join(dir, SECRET_SESSION_ID, 'subagents');
   mkdirSync(subDir, { recursive: true });
   const meta = {
-    agentType: 'general-purpose',
+    // agentType is transcript-derived too, not a fixed enum (Fix round 5).
+    agentType: 'general-purpose-Ghp_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
     description: 'Rotate PGPASSWORD=hunter2 and revoke ghp_1234567890abcdefghij',
     toolUseId: 'sec-agent-tu1',
     parentAgentId: null,
@@ -147,7 +178,8 @@ function writeSecretSubagent(ctx: TestContext): string {
   return jsonlPath;
 }
 
-const SECRETS = ['hunter2', 'ghp_1234567890abcdefghij', 'AKIAABCDEFGHIJKLMNOP'];
+const MIXED_CASE_TOKEN = `Ghp_${'e'.repeat(36)}`;
+const SECRETS = ['hunter2', 'ghp_1234567890abcdefghij', 'AKIAABCDEFGHIJKLMNOP', MIXED_CASE_TOKEN];
 
 describe('auth and errors', () => {
   it('requires the token, an allowed host and an allowed origin', async () => {
@@ -370,9 +402,18 @@ describe('redaction at the boundary', () => {
     expect(secretAgent?.description).toContain('«redacted:github»');
     const agentsText = JSON.stringify(agents);
 
+    // Fix round 5: tool name, agentType and cwds are transcript-derived too.
+    expect(eventsText).toContain('mcp__PGPASSWORD=«redacted:secret»');
+    expect(secretAgent?.agentType).toContain('«redacted:github»');
+    expect(session.cwds.join(' ')).toContain('«redacted:secret»');
+
     const everything = [JSON.stringify(session), JSON.stringify(item), eventsText, agentsText].join('\n');
     for (const secret of SECRETS) {
       expect(everything).not.toContain(secret);
+    }
+    // The drifted cwd and the tool name must not survive anywhere in any response either.
+    for (const raw of ['PGPASSWORD=hunter2cwd', 'PGPASSWORD=hunter2tool']) {
+      expect(everything).not.toContain(raw);
     }
   });
 

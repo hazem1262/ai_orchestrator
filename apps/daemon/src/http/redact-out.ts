@@ -12,8 +12,12 @@ export function redactValue(v: unknown): unknown {
   return v;
 }
 
+/**
+ * `tool` can carry a user-configured MCP server segment (`mcp__<server>__<name>`), and `mcpServer`
+ * is that same segment extracted — both are free text, not a fixed vocabulary.
+ */
 export function redactEvent(e: TimelineEvent): TimelineEvent {
-  return { ...e, text: r(e.text), input: redactValue(e.input) };
+  return { ...e, text: r(e.text), input: redactValue(e.input), tool: r(e.tool), mcpServer: r(e.mcpServer) };
 }
 
 export function redactSession(s: Session): Session {
@@ -25,12 +29,19 @@ export function redactSession(s: Session): Session {
     awaySummary: r(s.awaySummary),
     recap: r(s.recap),
     lastTest: s.lastTest === null ? null : { ...s.lastTest, command: redact(s.lastTest.command) },
+    // A cwd is a real path, but it is transcript-derived and a directory can be named anything.
+    cwds: s.cwds.map((c) => redact(c)),
+    // Derived from the tool name's server segment, which the user configures freely.
+    mcpServers: s.mcpServers.map((m) => redact(m)),
   };
 }
 
-/** `description` is transcript-derived free text (the parent session's Agent tool-call input). */
+/**
+ * `description` is transcript-derived free text (the parent session's Agent tool-call input), and
+ * `agentType` is likewise attacker-influenced in a transcript rather than a fixed enum.
+ */
 export function redactAgent(a: AgentNode): AgentNode {
-  return { ...a, description: redact(a.description) };
+  return { ...a, description: redact(a.description), agentType: redact(a.agentType) };
 }
 
 /** Highlight markers can split a secret (e.g. "⟦PGPASSWORD⟧=x"), so redaction runs on the plain text first. */
