@@ -23,7 +23,6 @@ describe('inferStage', () => {
     expect(inferStage({ categories: [], turnEnded: false, changedFiles: 0 })).toBeNull();
   });
   it('reports the furthest stage reached in the turn', () => {
-    expect(inferStage({ categories: ['other'], turnEnded: false, changedFiles: 0 })).toBe('understand');
     expect(inferStage({ categories: ['read', 'read'], turnEnded: false, changedFiles: 0 })).toBe(
       'understand',
     );
@@ -33,9 +32,17 @@ describe('inferStage', () => {
     expect(inferStage({ categories: ['edit', 'test', 'edit'], turnEnded: false, changedFiles: 1 })).toBe(
       'test',
     );
+    expect(inferStage({ categories: ['edit', 'read'], turnEnded: false, changedFiles: 1 })).toBe('modify');
   });
   it('is review when the turn ended with changes', () => {
     expect(inferStage({ categories: ['edit'], turnEnded: true, changedFiles: 1 })).toBe('review');
     expect(inferStage({ categories: ['read'], turnEnded: true, changedFiles: 0 })).toBe('understand');
+  });
+  it('is null when no category in the turn is ranked (other-only activity)', () => {
+    expect(inferStage({ categories: ['other'], turnEnded: false, changedFiles: 0 })).toBeNull();
+    expect(inferStage({ categories: ['other', 'other'], turnEnded: true, changedFiles: 0 })).toBeNull();
+  });
+  it('still reports review for other-only activity when the turn changed files', () => {
+    expect(inferStage({ categories: ['other'], turnEnded: true, changedFiles: 2 })).toBe('review');
   });
 });

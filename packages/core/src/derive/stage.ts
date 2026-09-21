@@ -17,7 +17,9 @@ const READ_BASH =
  * `git diff`/`log`/`status`/`show`/`blame`, `gh pr/issue view`, etc.) is `read`, and anything
  * else (installs, builds, git commit/push, arbitrary scripts) is `other`. `Task`/`Agent`, MCP
  * tools (`mcp__<server>__<tool>`) and any unrecognised name are `other` — there isn't enough
- * signal in the name alone to place them on the understand/modify/test bar.
+ * signal in the name alone to place them on the understand/modify/test bar. `other` never
+ * places the bar on its own in `inferStage` below — see there for what a wholly-`other` turn
+ * (e.g. subagent dispatch, MCP-only work) resolves to.
  */
 export function categorizeTool(tool: string, input: unknown): ToolCategory {
   if (READ_TOOLS.has(tool)) return 'read';
@@ -46,11 +48,16 @@ const RANK: Record<Exclude<ToolCategory, 'other'>, { rank: number; stage: Stage 
  * card): reads/searches put the card at `understand`, an edit advances it to `modify`, a test
  * run advances it to `test`, and once the turn has ended with at least one changed file the
  * card moves to `review` regardless of what ran last. `other`-categorised calls (installs, MCP
- * calls, subagent dispatch, ...) never move the bar on their own.
+ * calls, subagent dispatch, ...) never move the bar on their own — a turn made up entirely of
+ * `other` (e.g. a `/conductor` session only dispatching `Task`/`Agent` subagents, a Linear
+ * MCP-only turn, or `TodoWrite` plus an install) shows no stage rather than a false
+ * `understand`, unless the turn also ended having changed files, in which case `review` still
+ * applies.
  *
  * Returns `null` when there isn't enough signal to place the card anywhere: no tool activity at
- * all in the turn. This is a deliberate "don't guess" default — an idle or freshly-started
- * session should show no stage rather than a fabricated one.
+ * all in the turn, or activity that is entirely `other` (nothing ranked as read/edit/test). This
+ * is a deliberate "don't guess" default — an idle, freshly-started, or subagent/MCP-only session
+ * should show no stage rather than a fabricated one.
  */
 export function inferStage(s: {
   categories: ToolCategory[];
@@ -59,11 +66,11 @@ export function inferStage(s: {
 }): Stage | null {
   if (s.categories.length === 0) return null;
   if (s.turnEnded && s.changedFiles > 0) return 'review';
-  let best: { rank: number; stage: Stage } = { rank: 0, stage: 'understand' };
+  let best: { rank: number; stage: Stage } | null = null;
   for (const category of s.categories) {
     if (category === 'other') continue;
     const ranked = RANK[category];
-    if (ranked.rank > best.rank) best = ranked;
+    if (!best || ranked.rank > best.rank) best = ranked;
   }
-  return best.stage;
+  return best?.stage ?? null;
 }
