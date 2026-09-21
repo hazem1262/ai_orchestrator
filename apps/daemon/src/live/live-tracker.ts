@@ -71,6 +71,29 @@ export const CONTEXT_WINDOW_DEFAULT = 200_000;
 export const CONTEXT_WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
 
 /**
+ * Granularity of the above-ladder fallback. Rounding the observed peak *up* to a coarse step keeps
+ * the "never reports a session fuller than it is" guarantee (the window is still >= the peak) while
+ * making the window change rarely instead of continuously.
+ *
+ * Without it, `window = peak` changes on nearly every assistant record above the ladder, because
+ * `cache_read` grows almost monotonically — and each change re-reads and re-parses the entire
+ * transcript via `refoldUpTo`. Measured on this machine, first-pass tail of a synthetic transcript
+ * of ascending above-ladder records:
+ *
+ * ```
+ *              100 records   400 records
+ *   peak==window     30.3ms       237.8ms   (7.8x cost for 4x records: super-linear)
+ *   rounded up        6.3ms         7.1ms   (flat: refolds scale with token growth, not records)
+ *   under ladder      2.1ms         2.1ms   (baseline, no refold at all)
+ * ```
+ *
+ * Real transcripts here reach 31 MB, so in exactly the regime this fallback exists to serve, every
+ * refresh would otherwise re-read tens of megabytes per record. It is latent today — 0 of ~90k
+ * real records exceed 1M — and would fire the day a larger window ships.
+ */
+export const CONTEXT_WINDOW_STEP = 250_000;
+
+/**
  * The context window a session must be running, inferred from the largest token usage it has
  * actually reported.
  *
@@ -89,12 +112,13 @@ export const CONTEXT_WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
  *
  * This is self-correcting, needs no configuration, and cannot be wrong in the direction that
  * matters: it never reports a session as fuller than it is. Above the largest known rung the peak
- * itself becomes the window (and `tail` logs it once per session), so a future larger context
- * reads full-but-honest instead of being silently clamped at 1.0.
+ * is rounded up to `CONTEXT_WINDOW_STEP` and that becomes the window (and `tail` logs it once per
+ * session), so a future larger context reads full-but-honest instead of being silently clamped
+ * at 1.0.
  */
 export function contextWindowForUsage(peakUsedTokens: number): number {
   for (const rung of CONTEXT_WINDOW_LADDER) if (peakUsedTokens <= rung) return rung;
-  return peakUsedTokens;
+  return Math.ceil(peakUsedTokens / CONTEXT_WINDOW_STEP) * CONTEXT_WINDOW_STEP;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -114,6 +138,44 @@ export function usedTokensOfRecord(value: unknown): number | null {
   const u = msg.usage;
   if (!isObj(u)) return null;
   return numOf(u.input_tokens) + numOf(u.cache_read_input_tokens) + numOf(u.cache_creation_input_tokens);
+}
+
+/**
+ * Replays `path` from byte 0 up to — and **excluding** — the line that starts at `upToOffset`,
+ * into a brand-new reducer with a different context window, emitting nothing.
+ *
+ * `createLiveReducer` fixes `contextWindow` at construction, but the window is only *inferred*
+ * while reading lines (from usage: see `contextWindowForUsage`), so widening it means building a
+ * new reducer — and that would lose every bit of carried state (turn count, `lastPrompt`, pending
+ * tool ids, background shells, running subagents) if the history were not replayed into it.
+ *
+ * The exclusive end is the contract: the caller widens the window on the record that proves it is
+ * too narrow and has not applied that record yet, so folding it here would apply it twice. That is
+ * currently unobservable (the reducer's assistant branch is idempotent), which is exactly why it
+ * needs pinning here rather than through a caller.
+ *
+ * Frequency: below the ladder this runs at most once or twice per session. Above it, the window is
+ * rounded up to `CONTEXT_WINDOW_STEP`, so it runs about once per 250k tokens of growth instead of
+ * once per record — `readJsonlFrom(path, 0)` re-reads the whole file, and real transcripts on this
+ * machine reach 31 MB.
+ */
+export async function refoldUpTo(
+  path: string,
+  upToOffset: number,
+  contextWindow: number,
+): Promise<LiveReducer> {
+  const reducer = createLiveReducer({ contextWindow });
+  if (upToOffset <= 0) return reducer;
+  try {
+    const res = await readJsonlFrom(path, 0);
+    for (const l of res.lines) {
+      if (l.offset >= upToOffset) break;
+      reducer.apply(parseJsonLine(l.text));
+    }
+  } catch {
+    // unreadable mid-flight: the caller keeps the fresh reducer and re-converges on the next tail
+  }
+  return reducer;
 }
 
 interface Entry {
@@ -216,30 +278,6 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     };
   }
 
-  /**
-   * Replays `path` from byte 0 up to (not including) `upToOffset` into a brand-new reducer with a
-   * different context window, emitting nothing. This is what makes the window a *per-session,
-   * re-derivable* property: `createLiveReducer` takes `contextWindow` at construction, but the
-   * model id is only discovered while reading lines and `TranscriptLive` never exposes it, so the
-   * only honest way to react to a `[1m]` model (or a mid-run model change) is to rebuild the
-   * reducer and re-fold everything read so far. Model ids appear on the first assistant record,
-   * so in practice this runs once per session, a few lines in.
-   */
-  async function refold(path: string, upToOffset: number, contextWindow: number): Promise<LiveReducer> {
-    const reducer = createLiveReducer({ contextWindow });
-    if (upToOffset <= 0) return reducer;
-    try {
-      const res = await readJsonlFrom(path, 0);
-      for (const l of res.lines) {
-        if (l.offset >= upToOffset) break;
-        reducer.apply(parseJsonLine(l.text));
-      }
-    } catch {
-      // unreadable mid-flight: the caller keeps the fresh reducer and re-converges on the next tail
-    }
-    return reducer;
-  }
-
   async function tail(e: Entry): Promise<void> {
     if (e.source !== 'claude') return;
     if (!e.transcriptPath)
@@ -289,7 +327,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
             );
           }
           e.contextWindow = w;
-          e.reducer = await refold(path, l.offset, w);
+          e.reducer = await refoldUpTo(path, l.offset, w);
         }
       }
       const eff = e.reducer.apply(value);
@@ -358,6 +396,9 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
   function remove(e: Entry): void {
     entries.delete(e.pk);
     dismissed.set(e.pk, e.pid);
+    // Gates a one-shot warn. Left populated, a session retired and re-created under a new pid
+    // would never warn again, and the set would grow for the daemon's lifetime.
+    overLadderLogged.delete(e.pk);
     if (ctx.sessions.getByPk(e.pk)) ctx.sessions.setLive(e.pk, null);
     ctx.bus.emit({ type: 'session.removed', pk: e.pk });
   }
@@ -420,6 +461,13 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       procs = await deps.codex.scan();
     } catch (err) {
       ctx.log.warn({ err: String(err) }, 'codex live scan failed');
+    }
+    // `unresolvedCodexLogged` is keyed on processes that never become entries, so `remove()` can
+    // never prune it. It is pruned against what this sweep actually saw instead: bounded by the
+    // number of live codex processes, and a process that goes away and comes back warns again.
+    const seenCodexKeys = new Set(procs.map((p) => `${p.pid}:${p.startedAtMs}`));
+    for (const key of [...unresolvedCodexLogged]) {
+      if (!seenCodexKeys.has(key)) unresolvedCodexLogged.delete(key);
     }
     for (const p of procs) {
       if (!p.sessionId) {

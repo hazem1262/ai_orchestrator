@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OrcConfig } from '@orc/api-contract';
 import type { LiveState } from '@orc/core';
@@ -14,6 +14,7 @@ import {
   createLiveTracker,
   type LiveTracker,
   mapHookToStatus,
+  refoldUpTo,
   usedTokensOfRecord,
 } from './live-tracker.ts';
 import { createRegistryWatcher } from './registry-watcher.ts';
@@ -562,14 +563,96 @@ describe('LiveTracker context window', () => {
     expect(s?.live?.contextFill).toBeCloseTo(0.05, 10);
   });
 
-  it('uses the observed peak itself, and warns, above the largest known window', async () => {
+  it('uses the observed peak itself, and warns once, above the largest known window', async () => {
     const warnings: object[] = [];
     ctx.log = { ...ctx.log, warn: (o: object) => warnings.push(o) } as typeof ctx.log;
-    const s = await startCtxSession([prompt, usageLine('c1', 2_500_000, '2026-09-01T09:10:02.000Z')]);
-    // Honest saturation (it really is at the top of everything we know about), not a silent clamp.
-    expect(s?.live?.contextFill).toBe(1);
+    // TWO over-ladder records, each of which widens the window again (1.1M -> 1.25M, 1.4M -> 1.5M),
+    // so the dedupe is actually exercised rather than trivially satisfied by there being one.
+    const s = await startCtxSession([
+      prompt,
+      usageLine('c1', 1_100_000, '2026-09-01T09:10:02.000Z'),
+      usageLine('c2', 1_400_000, '2026-09-01T09:10:03.000Z'),
+    ]);
+    // Rounded up to the next 250k step, so this is honest headroom rather than a silent clamp.
+    expect(s?.live?.contextFill).toBeCloseTo(1_400_000 / 1_500_000, 10);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatchObject({ pk: 'claude:s-ctx', peakUsed: 2_500_000 });
+    expect(warnings[0]).toMatchObject({ pk: 'claude:s-ctx', peakUsed: 1_100_000 });
+  });
+
+  it('reports an honest 1.0 only when the peak lands exactly on a step', async () => {
+    const s = await startCtxSession([prompt, usageLine('c1', 2_500_000, '2026-09-01T09:10:02.000Z')]);
+    expect(s?.live?.contextFill).toBe(1);
+  });
+
+  it('keeps the peak across a pid change, so `claude --resume` cannot narrow the window', async () => {
+    // `upsertEntry` builds a fresh Entry when the pid changes for the same sessionId — which is
+    // every `--resume`. It carries the reducer and the window; if it dropped `peakUsed`, the next
+    // small turn would look like a brand-new session and RATCHET THE WINDOW BACK DOWN, breaking
+    // the one guarantee this design has.
+    const s1 = await startCtxSession([prompt, usageLine('c1', 300_000, '2026-09-01T09:10:02.000Z')]);
+    expect(s1?.live?.contextFill).toBeCloseTo(0.3, 10); // 300k / 1M
+
+    rmSync(join(homes.claudeHome, 'sessions', '41020.json'));
+    reg(41021, 's-ctx', 'idle', T0);
+    alive.add(41021);
+    await tracker.refresh();
+    expect(tracker.get('claude:s-ctx')?.live?.pid).toBe(41021); // the pid really did change
+
+    appendFileSync(transcriptFor('s-ctx'), usageLine('c2', 50_000, '2026-09-01T09:10:04.000Z'));
+    await tracker.refresh();
+    // 50k against the 1M window the session already proved it has — not 0.25 against a reset 200k.
+    expect(tracker.get('claude:s-ctx')?.live?.contextFill).toBeCloseTo(0.05, 10);
+  });
+
+  it('does not re-apply the record that triggered the widen', async () => {
+    // `refoldUpTo`'s end is exclusive, and the integration-level symptom of getting it wrong by a
+    // whole batch is a *missing* turn event: the widened reducer would already have folded the
+    // turn_duration record, so applying it again is a no-op and `turnEnded` never fires.
+    writeFileSync(
+      transcriptFor('s-ctx'),
+      [
+        prompt,
+        usageLine('c1', 300_000, '2026-09-01T09:10:02.000Z'),
+        line(
+          {
+            type: 'system',
+            subtype: 'turn_duration',
+            uuid: 'c9',
+            timestamp: '2026-09-01T09:10:03.000Z',
+            durationMs: 2000,
+          },
+          's-ctx',
+        ),
+      ].join(''),
+    );
+    reg(41020, 's-ctx', 'idle', T0);
+    alive.add(41020);
+    await tracker.refresh();
+    expect(of('session.turnEnded')).toEqual([{ type: 'session.turnEnded', pk: 'claude:s-ctx', turn: 1 }]);
+    expect(tracker.get('claude:s-ctx')?.live?.contextFill).toBeCloseTo(0.3, 10);
+  });
+
+  it('warns again for a session retired and re-created under a new pid', async () => {
+    // `overLadderLogged` gates a one-shot warn per pk. Left populated by `remove()` it would grow
+    // for the daemon's lifetime and, worse, permanently silence a session that comes back.
+    const warnings: object[] = [];
+    ctx.log = { ...ctx.log, warn: (o: object) => warnings.push(o) } as typeof ctx.log;
+    await startCtxSession([prompt, usageLine('c1', 1_100_000, '2026-09-01T09:10:02.000Z')]);
+    expect(warnings).toHaveLength(1);
+
+    alive.delete(41020);
+    nowMs = T0 + 1000;
+    await tracker.refresh();
+    nowMs = T0 + 1000 + 61_000;
+    await tracker.refresh();
+    expect(tracker.get('claude:s-ctx')).toBeNull();
+
+    rmSync(join(homes.claudeHome, 'sessions', '41020.json'));
+    reg(41021, 's-ctx', 'idle', nowMs);
+    alive.add(41021);
+    await tracker.refresh();
+    expect(tracker.get('claude:s-ctx')?.live?.pid).toBe(41021);
+    expect(warnings).toHaveLength(2);
   });
 
   it('ignores a <synthetic> record when sizing the window', async () => {
@@ -582,12 +665,21 @@ describe('LiveTracker context window', () => {
     expect(s?.live?.contextFill).toBeCloseTo(0.5, 10);
   });
 
-  it('maps peak usage onto the ladder', () => {
+  it('maps peak usage onto the ladder, then onto a coarse step above it', () => {
     expect(contextWindowForUsage(0)).toBe(200_000);
     expect(contextWindowForUsage(200_000)).toBe(200_000);
     expect(contextWindowForUsage(200_001)).toBe(1_000_000);
     expect(contextWindowForUsage(999_591)).toBe(1_000_000);
-    expect(contextWindowForUsage(1_000_001)).toBe(1_000_001);
+    // Above the ladder the peak is rounded UP to the next 250k step, so the window changes about
+    // once per 250k tokens of growth rather than on every record — each change re-reads the whole
+    // transcript. Rounding up keeps window >= peak, so the guarantee is untouched.
+    expect(contextWindowForUsage(1_000_001)).toBe(1_250_000);
+    expect(contextWindowForUsage(1_250_000)).toBe(1_250_000);
+    expect(contextWindowForUsage(1_250_001)).toBe(1_500_000);
+    expect(contextWindowForUsage(2_500_000)).toBe(2_500_000);
+    for (const peak of [1_000_001, 1_300_000, 2_000_123, 9_999_999]) {
+      expect(contextWindowForUsage(peak)).toBeGreaterThanOrEqual(peak);
+    }
   });
 
   it('reads context tokens off a record the same way the reducer does', () => {
@@ -595,6 +687,51 @@ describe('LiveTracker context window', () => {
     expect(usedTokensOfRecord(JSON.parse(usageLine('x', 5, 'T', '<synthetic>')))).toBeNull();
     expect(usedTokensOfRecord(JSON.parse(prompt))).toBeNull();
     expect(usedTokensOfRecord(undefined)).toBeNull();
+  });
+});
+
+describe('refoldUpTo', () => {
+  it('excludes the line that starts exactly at upToOffset', async () => {
+    // The contract the tracker depends on: the caller widens the window on a record it has not
+    // applied yet, so folding that record here would apply it twice. Pinned directly because the
+    // reducer's assistant branch is idempotent, which makes the off-by-one invisible through the
+    // only caller that exists — a mutant flipping `>=` to `>` survives every integration test.
+    const path = transcriptFor('s-fold');
+    const first = line(
+      {
+        type: 'user',
+        uuid: 'f1',
+        timestamp: '2026-09-01T09:10:01.000Z',
+        message: { role: 'user', content: 'first' },
+      },
+      's-fold',
+    );
+    const second = line(
+      {
+        type: 'user',
+        uuid: 'f2',
+        timestamp: '2026-09-01T09:10:02.000Z',
+        message: { role: 'user', content: 'second' },
+      },
+      's-fold',
+    );
+    writeFileSync(path, first + second);
+    const boundary = Buffer.byteLength(first);
+
+    const upTo = (await refoldUpTo(path, boundary, 200_000)).snapshot();
+    expect(upTo.turn).toBe(1);
+    expect(upTo.lastPrompt).toBe('first');
+
+    const whole = (await refoldUpTo(path, boundary + Buffer.byteLength(second), 200_000)).snapshot();
+    expect(whole.turn).toBe(2);
+    expect(whole.lastPrompt).toBe('second');
+  });
+
+  it('returns an empty reducer at offset 0 and survives an unreadable file', async () => {
+    const empty = (await refoldUpTo(transcriptFor('s-basic'), 0, 200_000)).snapshot();
+    expect(empty.turn).toBe(0);
+    const missing = (await refoldUpTo(join(homes.root, 'nope.jsonl'), 500, 200_000)).snapshot();
+    expect(missing.turn).toBe(0);
   });
 });
 
@@ -666,6 +803,29 @@ describe('LiveTracker (codex)', () => {
     await tracker.refresh();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatchObject({ pid: 702, cwd: '/Users/test/Wakecap' });
+  });
+
+  it('warns again once an unresolved codex process goes away and comes back', async () => {
+    // The dedupe set is keyed on processes that never become entries, so `remove()` can never
+    // prune it. Pruned against what each sweep saw instead: bounded, and not permanently silent.
+    const warnings: object[] = [];
+    ctx.log = { ...ctx.log, warn: (o: object) => warnings.push(o) } as typeof ctx.log;
+    const unresolved = {
+      pid: 702,
+      cwd: '/Users/test/Wakecap',
+      startedAtMs: T0,
+      rolloutPath: null,
+      sessionId: null,
+      originator: null,
+      lastWriteMs: null,
+    } satisfies CodexLiveProc;
+    codexProcs = [unresolved];
+    await tracker.refresh();
+    codexProcs = [];
+    await tracker.refresh();
+    codexProcs = [unresolved];
+    await tracker.refresh();
+    expect(warnings).toHaveLength(2);
   });
 
   it('shows an automated codex session when codex.showAutomated is on', async () => {
