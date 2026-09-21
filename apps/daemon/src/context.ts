@@ -5,6 +5,7 @@ import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
 import { type OrcDb, openDb } from './db/client.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
+import type { LiveTracker } from './live/live-tracker.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -22,6 +23,8 @@ export interface DaemonContext {
   sessions: SessionService;
   projects: ProjectServiceImpl;
   userMeta: UserMetaService;
+  /** P2 — set by the daemon entrypoint once the tracker is started (Task 8 wires the routes). */
+  live?: LiveTracker;
 }
 
 export interface BuildContextOptions {
