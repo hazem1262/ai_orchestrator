@@ -1,6 +1,7 @@
-import { apiError, HookIngestBody } from '@orc/api-contract';
+import { HookIngestBody } from '@orc/api-contract';
 import { bodyLimit } from 'hono/body-limit';
 import type { DaemonContext } from '../../context.ts';
+import { redactedApiError } from '../redact-out.ts';
 import type { OrcApp } from '../types.ts';
 
 /**
@@ -28,13 +29,16 @@ export function registerHookRoutes(app: OrcApp, ctx: DaemonContext): void {
     '/api/hooks',
     bodyLimit({
       maxSize: HOOK_BODY_LIMIT_BYTES,
-      onError: (c) => c.json(apiError('payload_too_large', 'hook payload too large'), 413),
+      onError: (c) => c.json(redactedApiError('payload_too_large', 'hook payload too large'), 413),
     }),
     async (c) => {
       const raw: unknown = await c.req.json().catch(() => null);
       const parsed = HookIngestBody.safeParse(raw);
       if (!parsed.success) {
-        return c.json(apiError('validation_failed', 'invalid hook payload', parsed.error.issues), 400);
+        return c.json(
+          redactedApiError('validation_failed', 'invalid hook payload', parsed.error.issues),
+          400,
+        );
       }
       const b = parsed.data;
       ctx.bus.emit({

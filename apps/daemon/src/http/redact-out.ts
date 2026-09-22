@@ -1,4 +1,6 @@
 import {
+  type ApiError,
+  apiError,
   type PtyInfo,
   type ResumeResponse,
   type SavedView,
@@ -49,9 +51,35 @@ const SECRET_TAG = redact('secret=x').slice('secret='.length);
  * note that `usage.updated` is the one wire shape whose entire subject is token counts**; if its
  * snapshot turns out to carry string-valued `*token*` fields, it needs its own redactor rather
  * than the generic walker.
+ *
+ * Exported as `{ source, sample }` PAIRS, not as one regex literal, so the guard can derive a
+ * seeded key from every alternative automatically — an alternative cannot be added without a
+ * sample, because the type requires both. Six were unpinned when this was a single literal:
+ * `token`, `pwd`, `secret`, `private[_-]?key`, `access[_-]?key` and `apikey` could each be
+ * deleted with the whole suite green, because the guard seeded eight hand-chosen keys.
+ *
+ * Derivation alone does NOT fix that, and it is worth being explicit about why: deleting an entry
+ * deletes its sample and its seed along with it, so the test stops asking the question. The guard
+ * that actually bites is `SECRET_KEY_CORPUS` in the test — real-world credential key names,
+ * written independently of this list, one per alternative.
+ *
+ * `apikey` was in this list and was dead: `api[_-]?key` already matches it with the separator
+ * absent. It is removed rather than left looking covered.
  */
-const SECRET_KEY =
-  /pass[_-]?(?:word|wd|phrase)|pwd|secret|token|api[_-]?key|apikey|authorization|auth(?!or)|credentials?|private[_-]?key|access[_-]?key/i;
+export const SECRET_KEY_PATTERNS: ReadonlyArray<{ source: string; sample: string }> = [
+  { source: 'pass[_-]?(?:word|wd|phrase)', sample: 'pass_phrase' },
+  { source: 'pwd', sample: 'PWD_VALUE' },
+  { source: 'secret', sample: 'clientSecret' },
+  { source: 'token', sample: 'refresh_token' },
+  { source: 'api[_-]?key', sample: 'x-api-key' },
+  { source: 'authorization', sample: 'Authorization' },
+  { source: 'auth(?!or)', sample: 'auth' },
+  { source: 'credentials?', sample: 'credential' },
+  { source: 'private[_-]?key', sample: 'private_key' },
+  { source: 'access[_-]?key', sample: 'accessKey' },
+];
+
+const SECRET_KEY = new RegExp(SECRET_KEY_PATTERNS.map((p) => p.source).join('|'), 'i');
 
 /**
  * The other half of the same defect. A tool call just as often records a credential as a
@@ -64,6 +92,17 @@ const SECRET_KEY =
  * {env:[{name:'PGPASSWORD', value:'hunter2'}]}
  * {key:'PGPASSWORD', value:'hunter2'}
  * ```
+ *
+ * Matched case-INSENSITIVELY, like `SECRET_KEY` itself: `{Name, Value}` and `{NAME, VALUE}` are
+ * what AWS, .NET and every PascalCase serialiser produce, and they passed clean while the regex
+ * beside them was `/i`.
+ *
+ * **Deliberately not covered** (real, but speculative here, and half-covering them is worse than
+ * listing them): `{name, val}`, `{k, v}`, `{header, value}`, OpenAPI's `schema.default`, the
+ * sibling-object split `[{name:'X'},{value:S}]`, the tuple form `[['PGPASSWORD', S]]`, and a
+ * space-separated `--password hunter2` inside a single already-joined string (that one is a gap
+ * in `redact()`'s own pattern, which needs `=` or `:` to anchor — it reaches `redactResume`'s
+ * `resumeCommandLine` output, whose argv comes from the user's own `resumeProfile` config).
  */
 const PAIR_NAME_KEYS = new Set(['name', 'key']);
 const PAIR_VALUE_KEY = 'value';
@@ -77,15 +116,29 @@ const PAIR_VALUE_KEY = 'value';
  */
 function walk(v: unknown, underSecretKey: boolean): unknown {
   if (typeof v === 'string') return underSecretKey ? SECRET_TAG : redact(v);
-  if (Array.isArray(v)) return v.map((x) => walk(x, underSecretKey));
+  if (Array.isArray(v)) {
+    // The argv form: `['--password', 'hunter2']`. The pair is split across ADJACENT ELEMENTS, so
+    // neither a key nor a `{name,value}` sibling carries the signal — the preceding element does.
+    // This is the shape `PtyInfo.args` takes, which is the highest-risk unredacted field here.
+    return v.map((x, i) => {
+      const prev = v[i - 1];
+      const flagged = typeof prev === 'string' && SECRET_KEY.test(prev);
+      return walk(x, underSecretKey || flagged);
+    });
+  }
   if (typeof v === 'object' && v !== null) {
+    // Anything that defines its own JSON form defines it: rebuilding a Date through
+    // `Object.entries`/`fromEntries` flattens it to `{}`, which matters now that this walker also
+    // runs over `ServiceError.details` — in-process JS rather than parsed JSON.
+    if (typeof (v as { toJSON?: unknown }).toJSON === 'function') return v;
     const entries = Object.entries(v);
     const pairIsSecret = entries.some(
-      ([k, x]) => PAIR_NAME_KEYS.has(k) && typeof x === 'string' && SECRET_KEY.test(x),
+      ([k, x]) => PAIR_NAME_KEYS.has(k.toLowerCase()) && typeof x === 'string' && SECRET_KEY.test(x),
     );
     return Object.fromEntries(
       entries.map(([k, x]) => {
-        const secret = underSecretKey || SECRET_KEY.test(k) || (pairIsSecret && k === PAIR_VALUE_KEY);
+        const secret =
+          underSecretKey || SECRET_KEY.test(k) || (pairIsSecret && k.toLowerCase() === PAIR_VALUE_KEY);
         // Keys reach the client too, and in `TimelineEvent.input` they are raw MCP/Bash argument
         // names rather than a fixed vocabulary, so they are redacted as well. `redact()` is a
         // no-op on every ordinary key name (`command`, `file_path`, even `PGPASSWORD`, which is a
@@ -227,12 +280,31 @@ export function redactProject(p: Project): Project {
  * serves it. `cwd` is the same class as `Session.startCwd`.
  */
 export function redactPtyInfo(i: PtyInfo): PtyInfo {
-  return { ...i, command: redact(i.command), args: i.args.map((a) => redact(a)), cwd: redact(i.cwd) };
+  // `args` goes through the WALKER, not a per-element `redact()`: a flag and its value are
+  // adjacent elements, so `['--password', 'hunter2']` has no `=` for a pattern to anchor on and
+  // element-wise redaction sees two innocent strings.
+  return {
+    ...i,
+    command: redact(i.command),
+    args: redactValue(i.args) as string[],
+    cwd: redact(i.cwd),
+  };
 }
 
-/** `name` is user-typed and `query` is a saved filter — whatever the user last searched for. */
+/**
+ * `name` is user-typed and display-only, so it is redacted.
+ *
+ * **`query` is deliberately NOT**, and it is the second declared exemption at this boundary, for
+ * the same reason as `GET /api/projects/:id`: it round-trips. `SavedViews.tsx` applies
+ * `viewQueryToSearch(v.query)` straight from the SERVED view, so a saved search for
+ * `q: "api_key=abc"` would be applied as `q: "api_key=«redacted:secret»"`, silently return
+ * different results, and persist the tag on the next save. Worse, it breaks the use case
+ * exactly: **searching your own transcripts for a leaked secret is a first-class use of this
+ * tool**, and it is the one search redaction would destroy. A saved query is a user-authored
+ * search string that must survive byte-exact.
+ */
 export function redactSavedView(v: SavedView): SavedView {
-  return { ...v, name: redact(v.name), query: redactValue(v.query) as Record<string, string> };
+  return { ...v, name: redact(v.name), query: { ...v.query } };
 }
 
 /**
@@ -251,4 +323,17 @@ export function redactResume(r: ResumeResponse): ResumeResponse {
  */
 export function redactLabels(labels: string[]): string[] {
   return labels.map((l) => redact(l));
+}
+
+/**
+ * The single constructor for an error response body.
+ *
+ * Error bodies are a response channel like any other and were an unmodelled one until fix round 2:
+ * `cwd_missing` served `Session.startCwd` raw in both its message and its `details`. `app.ts`'s
+ * `onError` routes every thrown error through here — but a route that builds an `apiError` itself
+ * bypasses that, which `routes/hooks.ts` did. Having one helper (and a test that lists every file
+ * allowed to call `apiError` directly) is what stops a third one appearing.
+ */
+export function redactedApiError(code: string, message: string, details?: unknown): ApiError {
+  return apiError(code, redact(message), details === undefined ? undefined : redactValue(details));
 }

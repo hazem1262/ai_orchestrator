@@ -182,6 +182,13 @@ describe('daemon server', () => {
       `/pty/${decoy.id}%`,
       `/pty/%?token=${daemon.token}`,
       `/pty/${decoy.id}%?token=${daemon.token}`,
+      // (d) The path regex is EXACT, not a prefix. Relaxing `/^\/pty\/([^/]+)$/` to `/^\/pty\//`
+      //     would upgrade these onto `<id>`, which is a different resource than the one asked
+      //     for. Valid token and Origin again, so only the anchor stops them.
+      `/pty/${decoy.id}/extra?token=${daemon.token}`,
+      `/pty/${decoy.id}/?token=${daemon.token}`,
+      `/pty/?token=${daemon.token}`,
+      `/pty?token=${daemon.token}`,
     ]) {
       statuses.push(await rawUpgrade(t));
     }

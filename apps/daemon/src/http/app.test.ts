@@ -9,7 +9,7 @@ import {
   SessionSchema,
 } from '@orc/api-contract';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { ZodError, z } from 'zod';
 import {
   createTestContext,
   FAKE_CLAUDE,
@@ -17,6 +17,7 @@ import {
   type TestContext,
   writeClaudeSession,
 } from '../../test/helpers.ts';
+import { CENSUS } from '../../test/route-census.ts';
 import { insertHistoryPrompts } from '../db/repos/history.ts';
 import type { Indexer } from '../indexer/indexer.ts';
 import { createApp } from './app.ts';
@@ -551,127 +552,247 @@ describe('static web app', () => {
 });
 
 /**
- * The final link in the redaction chain, and the one that was missing.
+ * The final link in the redaction chain, DERIVED FROM THE CENSUS.
  *
- * `redact-out.test.ts` proves each redactor redacts, and its census proves each route DECLARES a
- * redactor. Nothing tied the declaration to the handler actually calling it: measured, dropping
- * `.map(redactPtyInfo)`, `.map(redactProject)`, `.map(redactSavedView)`, `redactLabels(…)`,
- * `redactResume(…)` or the 409 summary's redaction each left the entire suite green — while the
- * same edit to phase 1's `.map(redactListItem)` failed two tests, because phase 1 had this.
+ * `redact-out.test.ts` proves each redactor redacts and that each route declares one. Neither
+ * ties a declaration to the handler: measured, dropping `.map(redactPtyInfo)`,
+ * `.map(redactProject)`, `.map(redactSavedView)`, `redactLabels(…)`, `redactResume(…)` or the 409
+ * summary's redaction each left the whole suite green, while the same edit to phase 1's
+ * `.map(redactListItem)` failed two tests — because phase 1 had a probe like this and those six
+ * did not.
  *
- * So: seed a sentinel into each shape, hit the REAL route through `createApp`, and assert no
- * sentinel survives in any response body. Error bodies are included, because they are a response
- * channel too and `cwd_missing` was shipping `startCwd` raw.
+ * The first version of this block hand-named nine surfaces, which protected what existed and
+ * nothing new: a CENSUS row naming a redactor its handler never calls still passed. So the probes
+ * are keyed on `CENSUS` itself. Every row with a `guardedBy` must have one, `has a probe for
+ * every guarded route` fails if it does not, and each probe must show a redaction tag in its own
+ * response — a seed that never lands is not a pass.
+ *
+ * One `it` per route, so different mutants fail different tests rather than all crowding into one.
  */
-describe('route-level redaction', () => {
+describe('route-level redaction, derived from the census', () => {
   const S = (name: string) => `ghp_${name}`.padEnd(24, 'x');
-  const SECRETS = {
-    projectName: S('projname'),
-    projectPrefix: S('projprefix'),
-    ptyArg: S('ptyarg'),
-    ptyCwd: S('ptycwd'),
-    viewName: S('viewname'),
-    viewQuery: S('viewquery'),
-    label: S('labelvalue'),
-    resumeCwd: S('resumecwd'),
+  const REDACTED = '«redacted:';
+
+  interface Probe {
+    /** Seeds, calls the route, asserts its own shape, and returns what to sweep. */
+    run(): Promise<{ bodies: unknown[]; mustContain: string; mustNotContain: string[] }>;
+  }
+
+  const secretSession = async () => {
+    await indexer.indexFile(writeSecretSession(ctx));
+    await indexer.indexFile(writeSecretSubagent(ctx));
   };
 
-  it('never serves a raw sentinel from any shape the census declares guarded', async () => {
-    const bodies: Array<[string, unknown]> = [];
-    const record = async (label: string, res: Response) => {
-      bodies.push([label, await json(res)]);
-      return bodies[bodies.length - 1]?.[1];
-    };
+  const seedPty = () => {
+    const arg = S('ptyarg');
+    const cwd = join(ctx.homes.root, 'work', S('ptycwd'));
+    mkdirSync(cwd, { recursive: true });
+    return { arg, cwd, info: ctx.pty.spawn({ command: FAKE_CLAUDE, args: ['--flag', arg], cwd }) };
+  };
 
-    // --- Project: name and pathPrefixes (cwd prefixes, the class Session.startCwd is redacted for)
-    ctx.projects.update('wakecap', {
-      name: SECRETS.projectName,
-      pathPrefixes: [`/tmp/${SECRETS.projectPrefix}`],
-    });
-    const projects = (await record('GET /api/projects', await call('/api/projects'))) as Array<{
-      id: string;
-      name: string;
-      pathPrefixes: string[];
-    }>;
-    const wakecap = projects.find((p) => p.id === 'wakecap');
-    expect(wakecap?.name).toBe('«redacted:github»');
-    expect(wakecap?.pathPrefixes).toEqual(['/tmp/«redacted:github»']);
-
-    // --- PtyInfo: argv and cwd, plus the 409 confirmation summary that repeats both
-    const ptyCwd = join(ctx.homes.root, 'work', SECRETS.ptyCwd);
-    mkdirSync(ptyCwd, { recursive: true });
-    const pty = ctx.pty.spawn({ command: FAKE_CLAUDE, args: ['--flag', SECRETS.ptyArg], cwd: ptyCwd });
-    const ptys = (await record('GET /api/pty', await call('/api/pty'))) as Array<{ args: string[] }>;
-    expect(ptys[0]?.args).toEqual(['--flag', '«redacted:github»']);
-    const confirm = await call(`/api/pty/${pty.id}`, { method: 'DELETE' });
-    expect(confirm.status).toBe(409);
-    const confirmBody = (await record('DELETE /api/pty/:id (409)', confirm)) as {
-      error: { details: { summary: string } };
-    };
-    // The 409 summary is a second copy of the same argv and cwd. It is redacted twice over — by
-    // `redactPtyInfo` at the throw site and by the error boundary in `app.ts` — so removing
-    // either one alone leaves the output correct and this assertion green. That is the intended
-    // shape of defence in depth; what is pinned here is the OUTPUT, and removing both fails.
-    expect(confirmBody.error.details.summary).toContain('«redacted:github»');
-    expect(confirmBody.error.details.summary).not.toContain(SECRETS.ptyArg);
-    expect(confirmBody.error.details.summary).not.toContain(SECRETS.ptyCwd);
-    ctx.pty.remove(pty.id);
-
-    // --- SavedView: name and the saved filter values
-    const saved = (await record(
-      'POST /api/views',
-      await call('/api/views', {
-        method: 'POST',
-        body: { name: SECRETS.viewName, query: { q: SECRETS.viewQuery } },
-      }),
-    )) as { id: string; name: string };
-    expect(saved.name).toBe('«redacted:github»');
-    await record('GET /api/views', await call('/api/views'));
-
-    // --- labels: served bare by /api/labels and echoed by the label mutation
-    const labelled = (await record(
-      'POST /api/sessions/:pk/label',
-      await call('/api/sessions/claude/s-basic/label', {
-        method: 'POST',
-        body: { labels: [SECRETS.label] },
-      }),
-    )) as { labels: string[] };
-    expect(labelled.labels).toEqual(['«redacted:github»']);
-    await record('GET /api/labels', await call('/api/labels'));
-
-    // --- ResumeResponse.command: the external-launch branch echoes the argv the daemon just ran
-    const resumeCwd = join(ctx.homes.root, 'work', SECRETS.resumeCwd);
+  const seedResumableCwd = async () => {
+    const cwd = join(ctx.homes.root, 'work', S('resumecwd'));
     await indexer.indexFile(
-      writeClaudeSession(ctx.homes, { sessionId: 's-rcwd', cwd: resumeCwd, prompt: 'resume redaction' }),
+      writeClaudeSession(ctx.homes, { sessionId: 's-rcwd', cwd, prompt: 'resume redaction' }),
     );
-    const external = (await record(
-      'POST /api/sessions/:pk/resume (external)',
-      await call('/api/sessions/claude/s-rcwd/resume', { method: 'POST', body: { mode: 'external' } }),
-    )) as { command: string };
-    expect(external.command).toContain('«redacted:github»');
+    return cwd;
+  };
 
-    // --- the error channel: `cwd_missing` puts startCwd in BOTH the message and the details
-    rmSync(resumeCwd, { recursive: true, force: true });
-    const missing = await call('/api/sessions/claude/s-rcwd/resume', {
-      method: 'POST',
-      body: { mode: 'external' },
+  const PROBES: Record<string, Probe> = {
+    'GET /api/sessions': {
+      run: async () => {
+        await secretSession();
+        const body = await json(await call('/api/sessions?source=claude&limit=200'));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: SECRETS };
+      },
+    },
+    'GET /api/sessions/:source/:id': {
+      run: async () => {
+        await secretSession();
+        const body = await json(await call(`/api/sessions/claude/${SECRET_SESSION_ID}`));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: SECRETS };
+      },
+    },
+    'GET /api/sessions/:source/:id/events': {
+      run: async () => {
+        await secretSession();
+        const body = await json(await call(`/api/sessions/claude/${SECRET_SESSION_ID}/events`));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: SECRETS };
+      },
+    },
+    'GET /api/sessions/:source/:id/agents': {
+      run: async () => {
+        await secretSession();
+        const body = await json(await call(`/api/sessions/claude/${SECRET_SESSION_ID}/agents`));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: SECRETS };
+      },
+    },
+    'POST /api/sessions/:source/:id/resume': {
+      run: async () => {
+        await seedResumableCwd();
+        const res = await call('/api/sessions/claude/s-rcwd/resume', {
+          method: 'POST',
+          body: { mode: 'external' },
+        });
+        expect(res.status).toBe(200);
+        const body = (await json(res)) as { command: string };
+        expect(body.command).toContain(REDACTED);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [S('resumecwd')] };
+      },
+    },
+    'POST /api/sessions/:source/:id/label': {
+      run: async () => {
+        const label = S('labelvalue');
+        const body = (await json(
+          await call('/api/sessions/claude/s-basic/label', { method: 'POST', body: { labels: [label] } }),
+        )) as { labels: string[] };
+        expect(body.labels).toEqual(['«redacted:github»']);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [label] };
+      },
+    },
+    'GET /api/labels': {
+      run: async () => {
+        const label = S('labelvalue');
+        await call('/api/sessions/claude/s-basic/label', { method: 'POST', body: { labels: [label] } });
+        const body = await json(await call('/api/labels'));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [label] };
+      },
+    },
+    'GET /api/projects': {
+      run: async () => {
+        const name = S('projname');
+        const prefix = S('projprefix');
+        ctx.projects.update('wakecap', { name, pathPrefixes: [`/tmp/${prefix}`] });
+        const body = (await json(await call('/api/projects'))) as Array<{
+          id: string;
+          name: string;
+          pathPrefixes: string[];
+        }>;
+        const wakecap = body.find((p) => p.id === 'wakecap');
+        expect(wakecap?.name).toBe('«redacted:github»');
+        expect(wakecap?.pathPrefixes).toEqual(['/tmp/«redacted:github»']);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [name, prefix] };
+      },
+    },
+    'GET /api/pty': {
+      run: async () => {
+        const { arg, cwd } = seedPty();
+        const body = (await json(await call('/api/pty'))) as Array<{ args: string[] }>;
+        expect(body[0]?.args).toEqual(['--flag', '«redacted:github»']);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [arg, cwd] };
+      },
+    },
+    'DELETE /api/pty/:ptyId': {
+      run: async () => {
+        const { arg, cwd, info } = seedPty();
+        const res = await call(`/api/pty/${info.id}`, { method: 'DELETE' });
+        expect(res.status).toBe(409);
+        const body = (await json(res)) as { error: { details: { summary: string } } };
+        // The 409 summary repeats the same argv and cwd. It is redacted twice — at the throw site
+        // and again by `app.ts`'s error boundary — so removing either layer alone still produces
+        // correct output. Both layers call the same `redact()`, so the redundancy is duplicate
+        // rather than diverse: it is not two chances against a pattern gap. Removing BOTH fails.
+        expect(body.error.details.summary).toContain(REDACTED);
+        ctx.pty.remove(info.id);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [arg, cwd] };
+      },
+    },
+    'GET /api/views': {
+      run: async () => {
+        const name = S('viewname');
+        await call('/api/views', { method: 'POST', body: { name, query: { q: 'plain' } } });
+        const body = await json(await call('/api/views'));
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [name] };
+      },
+    },
+    'POST /api/views': {
+      run: async () => {
+        const name = S('viewname');
+        const body = (await json(
+          await call('/api/views', { method: 'POST', body: { name, query: { q: 'plain' } } }),
+        )) as { name: string };
+        expect(body.name).toBe('«redacted:github»');
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [name] };
+      },
+    },
+  };
+
+  it('has a probe for every guarded route in the census', () => {
+    const guarded = Object.entries(CENSUS)
+      .filter(([, e]) => e.guardedBy !== null)
+      .map(([route]) => route);
+    expect(guarded.filter((r) => !(r in PROBES))).toEqual([]);
+    // And no probe for a route the census does not declare guarded, which would mean this list
+    // and that one have drifted.
+    expect(Object.keys(PROBES).filter((r) => CENSUS[r]?.guardedBy == null)).toEqual([]);
+  });
+
+  for (const [route, probe] of Object.entries(PROBES)) {
+    it(`${route} serves no raw sentinel`, async () => {
+      const { bodies, mustContain, mustNotContain } = await probe.run();
+      const text = JSON.stringify(bodies);
+      expect(text, 'the seed never reached this route, so the sweep below proves nothing').toContain(
+        mustContain,
+      );
+      for (const secret of mustNotContain) expect(text).not.toContain(secret);
     });
-    expect(missing.status).toBe(422);
-    const err = (await record('POST resume (422 cwd_missing)', missing)) as {
-      error: { code: string; message: string; details: { cwd: string } };
-    };
-    expect(err.error.code).toBe('cwd_missing');
-    expect(err.error.message).toContain('«redacted:github»');
-    expect(err.error.details.cwd).toContain('«redacted:github»');
+  }
+});
 
-    // Nothing anywhere, in any of them.
-    for (const [label, body] of bodies) {
-      const text = JSON.stringify(body);
-      for (const secret of Object.values(SECRETS)) {
-        expect(text, `${label} leaked a raw sentinel`).not.toContain(secret);
-      }
-    }
-    // And every surface really did get exercised.
-    expect(bodies.map(([l]) => l)).toHaveLength(9);
+describe('the error channel', () => {
+  const LEAK_KEY = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+
+  it('redacts an attacker-supplied key name echoed back by a 422', async () => {
+    // `readJson` puts zod's issues in `details` AND the first issue's message in the response
+    // message, and `unrecognized_keys` carries the offending KEY NAMES — which are whatever the
+    // caller sent. Both copies go through the boundary.
+    const res = await call('/api/projects/wakecap', { method: 'PATCH', body: { [LEAK_KEY]: 1 } });
+    expect(res.status).toBe(422);
+    const text = JSON.stringify(await json(res));
+    expect(text).toContain('«redacted:github»');
+    expect(text).not.toContain(LEAK_KEY);
+  });
+
+  it('a thrown ZodError never reaches onError, so the branch that handled it was dead', async () => {
+    // Round 3 flagged the `ZodError` branch of `onError` as unpinned: reverting it to an
+    // unredacted `apiError` failed nothing. The reason turned out to be that it was UNREACHABLE.
+    // A zod v4 ZodError is not an `instanceof Error` in this runtime, and Hono's `handleError`
+    // rethrows anything that is not, so it escapes the app rather than being converted to our
+    // 400. The branch is gone; this is the canary that says to put it back.
+    const zodError = new ZodError([{ code: 'custom', path: [], message: 'm' }] as never);
+    expect(
+      zodError instanceof Error,
+      'zod now extends Error: restore the ZodError branch in app.ts onError, redacting its issues',
+    ).toBe(false);
+
+    app.get('/__zod', async () => {
+      throw zodError;
+    });
+    await expect(app.request(`${BASE}/__zod`)).rejects.toBeInstanceOf(ZodError);
+  });
+});
+
+describe('the declared exemptions round-trip byte-exact', () => {
+  it('applies a saved view identically after a round trip through the API', async () => {
+    // `SavedViews.tsx` calls `viewQueryToSearch(v.query)` on the SERVED view, so a redacted query
+    // would silently search for something else and persist the tag on the next save. And the use
+    // case this protects is the pointed one: searching your own transcripts for a leaked secret.
+    const query = { q: 'api_key=abc123def456', ticket: 'SAF-1787', model: 'sk-ant-notarealkey00' };
+    const saved = (await json(
+      await call('/api/views', { method: 'POST', body: { name: 'leak hunt', query } }),
+    )) as { id: string; query: Record<string, string> };
+    expect(saved.query).toEqual(query);
+
+    const listed = (await json(await call('/api/views'))) as Array<{
+      id: string;
+      query: Record<string, string>;
+    }>;
+    expect(listed.find((v) => v.id === saved.id)?.query).toEqual(query);
+
+    // Re-saving what was served must not drift, which is what a tag in the query would cause.
+    const resaved = (await json(
+      await call('/api/views', { method: 'POST', body: { name: 'leak hunt 2', query: saved.query } }),
+    )) as { query: Record<string, string> };
+    expect(resaved.query).toEqual(query);
   });
 });

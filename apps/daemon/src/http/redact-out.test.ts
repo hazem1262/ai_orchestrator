@@ -12,6 +12,13 @@ import {
 } from '@orc/api-contract';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import {
+  CENSUS,
+  CREATE_APP_LOCAL,
+  EXPORT_KINDS,
+  RAW_API_ERROR_FILES,
+  REGISTRAR_FILES,
+} from '../../test/route-census.ts';
 import type { DaemonContext } from '../context.ts';
 import { createApp, registerAllRoutes } from './app.ts';
 import * as boundary from './redact-out.ts';
@@ -25,6 +32,7 @@ import {
   redactSavedView,
   redactSession,
   redactValue,
+  SECRET_KEY_PATTERNS,
 } from './redact-out.ts';
 
 /**
@@ -121,6 +129,17 @@ const fillUnknown = (path: string, leaves: Leaves): unknown => ({
   headers: { Authorization: `Bearer ${seedBare(leaves, `${path}.headers.Authorization`)}` },
   api_key: seedBare(leaves, `${path}.api_key`),
   nestedSecret: { credentials: [seedBare(leaves, `${path}.nestedSecret.credentials.0`)] },
+  // DERIVED, not hand-listed: one seeded key per alternative in SECRET_KEY. Six of the eleven
+  // were unpinned when the seeds were hand-chosen — `token`, `pwd`, `secret`, `private[_-]?key`,
+  // `access[_-]?key` and `apikey` could each be deleted with the suite still green.
+  byPattern: Object.fromEntries(
+    SECRET_KEY_PATTERNS.map((pat) => [pat.sample, seedBare(leaves, `${path}.byPattern.${pat.sample}`)]),
+  ),
+  // The argv form: the pair is split across ADJACENT ELEMENTS.
+  argv: ['--password', seedBare(leaves, `${path}.argv.1`)],
+  // Pair form in PascalCase / SCREAMING_CASE, which every non-JS serialiser produces.
+  pascalPair: { Name: 'Authorization', Value: seedBare(leaves, `${path}.pascalPair.Value`) },
+  screamingPair: { NAME: 'PGPASSWORD', VALUE: seedBare(leaves, `${path}.screamingPair.VALUE`) },
   // The pair form: no KEY here is secret-ish, the signal is the VALUE of `name`/`key`.
   headerList: [{ name: 'Authorization', value: seedBare(leaves, `${path}.headerList.0.value`) }],
   envList: [{ name: 'PGPASSWORD', value: seedBare(leaves, `${path}.envList.0.value`) }],
@@ -300,8 +319,14 @@ const CASES: BoundaryCase[] = [
     structural: {
       id: 'saved-view row id',
       createdAt: 'ISO timestamp',
-      // `query.[key]` is likewise absent: keys go through `redact()` too, which is a no-op on
-      // every real filter name (q, projectId, source, …).
+      // THE SECOND DECLARED EXEMPTION, alongside `GET /api/projects/:id`, and for the same
+      // round-trip reason: `SavedViews.tsx` applies `viewQueryToSearch(v.query)` from the SERVED
+      // view, so redacting a saved search for `q: "api_key=abc"` would silently return different
+      // results and persist the tag on the next save. It also breaks the use case exactly —
+      // searching your own transcripts for a leaked secret is a first-class use of this tool, and
+      // it is the one search redaction would destroy. See `redactSavedView`.
+      'query.[key]': 'user-authored search string; must round-trip byte-exact (see redactSavedView)',
+      'query.[value]': 'user-authored search string; must round-trip byte-exact (see redactSavedView)',
     },
   },
 ];
@@ -385,100 +410,22 @@ describe('live.waitingFor', () => {
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-// The meta-gap: the guard above is exhaustive WITHIN a shape, but `CASES` is a hand-written list.
-// Nothing above notices a sixth shape that crosses the boundary with no redactor at all — which
-// is how `Project.pathPrefixes`, `PtyInfo.args` and `SavedView.query` were served raw for a whole
-// phase. "Someone must remember", moved up one level, is still the failure mode that cost us
-// thirteen fields. These three tests chain route -> redactor -> case so it cannot recur:
-//
-//   1. the routes the daemon actually registers must all be declared here (a new route fails);
-//   2. every redactor a declaration names must really be exported by `redact-out.ts`;
-//   3. every SHAPE redactor `redact-out.ts` exports must appear in `CASES` (a new shape fails).
-//
-// The census can only see SUCCESS bodies. Error bodies are a second response channel, and one of
-// them (`cwd_missing`) was serving `startCwd` raw on a route this table calls guarded. That is
-// handled where it belongs — `app.ts`'s `onError` walks every `ServiceError` message and details
-// through `redactValue` — rather than by enumerating each route's possible errors here.
-// `app.test.ts > route-level redaction` is the third link: it hits the real routes, success and
-// error alike, with sentinels seeded into every shape below.
-// ---------------------------------------------------------------------------------------------
-
-interface CensusEntry {
-  /** The `redact-out.ts` export that guards this response, or null when there is no free text. */
-  guardedBy: string | null;
-  reason: string;
-}
-
-const CENSUS: Record<string, CensusEntry> = {
-  'ALL /api/*': { guardedBy: null, reason: 'the auth middleware and the 404 catch-all; apiError only' },
-  'GET /api/health': { guardedBy: null, reason: 'version, uptime and counts' },
-  'GET /bootstrap.js': {
-    guardedBy: null,
-    reason: 'deliberately serves the loopback token itself to a same-origin local request',
-  },
-  'GET /api/sessions': { guardedBy: 'redactListItem', reason: '' },
-  'GET /api/sessions/:source/:id': { guardedBy: 'redactSession', reason: '' },
-  'GET /api/sessions/:source/:id/events': { guardedBy: 'redactEvent', reason: '' },
-  'GET /api/sessions/:source/:id/agents': { guardedBy: 'redactAgent', reason: '' },
-  'POST /api/sessions/:source/:id/resume': { guardedBy: 'redactResume', reason: '' },
-  'POST /api/sessions/:source/:id/pin': { guardedBy: null, reason: '{ pinned: boolean }' },
-  'POST /api/sessions/:source/:id/label': { guardedBy: 'redactLabels', reason: '' },
-  'GET /api/labels': { guardedBy: 'redactLabels', reason: '' },
-  'GET /api/projects': { guardedBy: 'redactProject', reason: '' },
-  'GET /api/projects/:id': {
-    guardedBy: null,
-    reason:
-      'the settings editor round-trip: the client GETs this, edits a field and PATCHes the whole ' +
-      'object back, so a tag written here would land in the user’s own config.json as the new ' +
-      'pathPrefixes and unbind the project. User-authored config, not transcript-derived.',
-  },
-  'PATCH /api/projects/:id': { guardedBy: null, reason: 'echoes the config the client just sent; see above' },
-  'GET /api/pty': { guardedBy: 'redactPtyInfo', reason: '' },
-  'DELETE /api/pty/:ptyId': {
-    guardedBy: 'redactPtyInfo',
-    reason: 'the 409 confirmation summary embeds the same argv and cwd, built from the redacted view',
-  },
-  'GET /api/views': { guardedBy: 'redactSavedView', reason: '' },
-  'POST /api/views': { guardedBy: 'redactSavedView', reason: '' },
-  'DELETE /api/views/:id': { guardedBy: null, reason: '{ ok: true }' },
-};
-
-/**
- * Every export of `redact-out.ts`, split by what it is. `shape` members must each have a `CASES`
- * entry and are then walked exhaustively. `primitive` members have no schema to walk — a bare
- * `string[]`, a two-branch union, a raw value — so each one has a focused test in this file
- * instead; `every primitive redactor has a focused test` below pins that.
- */
-const EXPORT_KINDS: Record<string, 'shape' | 'primitive'> = {
-  redactSession: 'shape',
-  redactListItem: 'shape',
-  redactEvent: 'shape',
-  redactAgent: 'shape',
-  redactInboxItem: 'shape',
-  redactProject: 'shape',
-  redactPtyInfo: 'shape',
-  redactSavedView: 'shape',
-  redactResume: 'primitive',
-  redactLabels: 'primitive',
-  redactValue: 'primitive',
-  redactSnippet: 'primitive',
-};
-
-/**
- * The only route `createApp` registers outside `registerAllRoutes`. (`ALL /api/*` appears on both
- * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
- * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
- * has been routed around the single registration path, and fails the test below.
- */
-const CREATE_APP_LOCAL = ['GET /bootstrap.js'];
-
 describe('the boundary census', () => {
   // Registration never touches `ctx` — only the handlers do, and none run here.
   const stub = {} as DaemonContext;
   const routesOf = (a: { routes: Array<{ method: string; path: string }> }) =>
     [...new Set(a.routes.map((r) => `${r.method} ${r.path}`))].sort();
-  const served = routesOf(createApp({ ctx: stub, token: 't', port: () => 4317, env: {} }));
+  // Every point in the option space that changes what gets registered, not one point in it. The
+  // census used to omit `webDist`, so `registerStatic`'s route never appeared — while production
+  // `createDaemon()` defaults it to `apps/web/dist`, which exists.
+  const OPTION_SPACE = [{ webDist: null }, { webDist: '/nonexistent/web-dist' }];
+  const served = [
+    ...new Set(
+      OPTION_SPACE.flatMap((opts) =>
+        routesOf(createApp({ ctx: stub, token: 't', port: () => 4317, env: {}, ...opts })),
+      ),
+    ),
+  ].sort();
 
   it('declares every route the daemon actually registers, and no route it does not', () => {
     expect(served).toEqual(Object.keys(CENSUS).sort());
@@ -492,17 +439,6 @@ describe('the boundary census', () => {
     // `app.get(...)` SOMEWHERE, and that somewhere must be listed here. Task 16's
     // `registerPhase2Routes` will have to add its file to this list, which is the moment to add
     // its routes to CENSUS as well.
-    const REGISTRARS = [
-      'apps/daemon/src/http/app.ts',
-      'apps/daemon/src/http/routes/health.ts',
-      'apps/daemon/src/http/routes/hooks.ts',
-      'apps/daemon/src/http/routes/live.ts',
-      'apps/daemon/src/http/routes/projects.ts',
-      'apps/daemon/src/http/routes/pty.ts',
-      'apps/daemon/src/http/routes/sessions.ts',
-      'apps/daemon/src/http/routes/views.ts',
-      'apps/daemon/src/http/static.ts',
-    ];
     // `.<method>(` with a string-literal first argument starting `/` or `*`: a Hono route
     // registration, and essentially nothing else.
     const REGISTRATION = /\.(?:get|post|put|patch|delete|all|use|route|mount|on)\(\s*['"`][/*]/;
@@ -518,7 +454,28 @@ describe('the boundary census', () => {
       }
     };
     walk(new URL('../../../../apps/daemon/src/', import.meta.url));
-    expect(found.sort()).toEqual([...REGISTRARS].sort());
+    expect(found.sort()).toEqual([...REGISTRAR_FILES].sort());
+  });
+
+  it('builds error bodies only through the one redacting constructor', () => {
+    // The same enumeration failure one level down: `routes/hooks.ts` constructed two `apiError`
+    // bodies itself, bypassing the boundary the census header claims covers errors, and nothing
+    // would have detected a third. A file may call `apiError` directly only if it is listed with
+    // the reason — which is always "the message and details are compile-time constants".
+    const repo = new URL('../../../../', import.meta.url).pathname;
+    const found: string[] = [];
+    const walkFiles = (dir: URL): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const child = new URL(e.isDirectory() ? `${e.name}/` : e.name, dir);
+        if (e.isDirectory()) walkFiles(child);
+        else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) {
+          if (/\bapiError\(/.test(readFileSync(child, 'utf8'))) found.push(child.pathname.slice(repo.length));
+        }
+      }
+    };
+    walkFiles(new URL('../../../../apps/daemon/src/', import.meta.url));
+    walkFiles(new URL('../../../../packages/api-contract/src/', import.meta.url));
+    expect(found.sort()).toEqual(Object.keys(RAW_API_ERROR_FILES).sort());
   });
 
   it('registers every API route through the one path the census can see', () => {
@@ -624,10 +581,77 @@ describe('redactValue is key-aware', () => {
     });
   });
 
+  /**
+   * Written against the real world, NOT derived from `SECRET_KEY_PATTERNS` — that is the whole
+   * point. Deriving both sides means deleting an alternative also deletes the question, which is
+   * exactly how six alternatives sat unpinned. Each name here is matched by exactly one
+   * alternative (verified), so deleting any one of them fails this test.
+   */
+  const SECRET_KEY_CORPUS = [
+    'PGPASSWORD', // pass[_-]?(word|wd|phrase)
+    'passphrase', // ditto
+    'user_pwd', // pwd
+    'client_secret', // secret
+    'refresh_token', // token
+    'x-api-key', // api[_-]?key
+    'Authorization', // authorization
+    'authHeader', // auth(?!or)
+    'credential', // credentials?
+    'private_key', // private[_-]?key
+    'AWS_ACCESS_KEY_ID', // access[_-]?key
+  ];
+
+  it.each(SECRET_KEY_CORPUS)('catches the real-world key name %s', (key) => {
+    expect(redactValue({ [key]: 'plainvaluenothingmatches' })).toEqual({ [key]: '«redacted:secret»' });
+  });
+
+  it('exercises every alternative the pattern list declares', () => {
+    // The derived half: no alternative may sit in the list without a sample that reaches it.
+    for (const { source, sample } of SECRET_KEY_PATTERNS) {
+      expect(new RegExp(source, 'i').test(sample), `sample "${sample}" does not match "${source}"`).toBe(
+        true,
+      );
+    }
+  });
+
+  it.each(SECRET_KEY_PATTERNS.map((p) => [p.source, p.sample] as const))(
+    'matches the %s alternative via a key named %s',
+    (_source, sample) => {
+      // Derived from the pattern list itself, so an alternative cannot be added without a sample
+      // and cannot be deleted without failing here.
+      expect(redactValue({ [sample]: 'plainvaluenothingmatches' })).toEqual({
+        [sample]: '«redacted:secret»',
+      });
+    },
+  );
+
   it('covers the separator forms of the password keyword', () => {
     for (const k of ['pass_word', 'pass-word', 'pass_phrase', 'passphrase', 'PASSWD']) {
       expect(redactValue({ [k]: 'hunter2' })).toEqual({ [k]: '«redacted:secret»' });
     }
+  });
+
+  it('redacts the pair form case-insensitively, and an argv flag/value pair', () => {
+    expect(redactValue({ Name: 'Authorization', Value: 'Bearer abc123xyz789' })).toEqual({
+      Name: 'Authorization',
+      Value: '«redacted:secret»',
+    });
+    expect(redactValue({ NAME: 'PGPASSWORD', VALUE: 'hunter2' })).toEqual({
+      NAME: 'PGPASSWORD',
+      VALUE: '«redacted:secret»',
+    });
+    // The argv class: a flag and its value are ADJACENT ELEMENTS, so nothing anchors on either.
+    expect(redactValue({ args: ['--password', 'hunter2', '--verbose'] })).toEqual({
+      args: ['--password', '«redacted:secret»', '--verbose'],
+    });
+  });
+
+  it('leaves a value that defines its own JSON form alone', () => {
+    // `walk` rebuilds objects via Object.entries/fromEntries, which flattens a Date to `{}`. That
+    // now matters: this walker also runs over `ServiceError.details`, which is in-process JS.
+    const when = new Date('2026-09-01T09:00:00.000Z');
+    expect((redactValue({ when }) as { when: Date }).when).toBeInstanceOf(Date);
+    expect(JSON.stringify(redactValue({ when }))).toBe('{"when":"2026-09-01T09:00:00.000Z"}');
   });
 
   it('redacts object KEYS as well as values', () => {
@@ -722,6 +746,31 @@ const PRIMITIVE_TESTS: Array<{ name: string; run: () => void }> = [
     run: () => {
       expect(redactValue('ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toBe('«redacted:github»');
       expect(redactValue({ password: 'x' })).toEqual({ password: '«redacted:secret»' });
+    },
+  },
+  {
+    name: 'redactedApiError',
+    run: () => {
+      // The single constructor for an error body: both the message and the details go through.
+      expect(
+        boundary.redactedApiError('cwd_missing', 'directory /x/PGPASSWORD=hunter2 gone', {
+          cwd: '/x/PGPASSWORD=hunter2',
+          issues: [{ code: 'unrecognized_keys', keys: ['ghp_abcdefghijklmnopqrstuvwxyz0123456789'] }],
+        }),
+      ).toEqual({
+        error: {
+          code: 'cwd_missing',
+          message: 'directory /x/PGPASSWORD=«redacted:secret» gone',
+          details: {
+            cwd: '/x/PGPASSWORD=«redacted:secret»',
+            issues: [{ code: 'unrecognized_keys', keys: ['«redacted:github»'] }],
+          },
+        },
+      });
+      // `details` omitted stays omitted, rather than becoming an explicit undefined.
+      expect(boundary.redactedApiError('nope', 'gone')).toEqual({
+        error: { code: 'nope', message: 'gone' },
+      });
     },
   },
   {
