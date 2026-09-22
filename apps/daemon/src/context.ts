@@ -4,8 +4,10 @@ import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
 import { type OrcDb, openDb } from './db/client.ts';
+import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
 import type { LiveTracker } from './live/live-tracker.ts';
+import type { Notifier } from './notify/notifier.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -25,6 +27,10 @@ export interface DaemonContext {
   userMeta: UserMetaService;
   /** P2 — set by the daemon entrypoint once the tracker is started (Task 8 wires the routes). */
   live?: LiveTracker;
+  /** P2 — the attention inbox (Task 9). Optional so the P1 entrypoint and tests stay valid. */
+  inbox?: InboxEngine;
+  /** P2 — desktop/push/Slack notifications (Task 11 implements; Task 9 only calls `notify`). */
+  notifier?: Notifier;
 }
 
 export interface BuildContextOptions {

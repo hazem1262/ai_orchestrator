@@ -279,10 +279,12 @@ const CASES: BoundaryCase[] = [
       id: 'inbox row id',
       sessionId: IDS_AND_CLOCKS.sessionId,
       projectId: IDS_AND_CLOCKS.projectId,
-      // NOTE: nothing composes this yet — tasks 9-15 own the inbox rules. The claim below is a
-      // CONSTRAINT ON THOSE TASKS, re-asserted by `dedupeKey is composed, never copied` below,
-      // which fails the moment a producer appears that does not satisfy it.
-      dedupeKey: 'composed from kind + session pk by the inbox engine; never copied from free text',
+      // Task 9 made good on this: `InboxUpsert` has no `dedupeKey` field at all, so a caller has
+      // no channel to hand one in. Every key is composed by `inboxDedupeKey` from a closed `kind`
+      // enum, a closed scope tag and a percent-encoded id. `dedupeKey is composed, never copied`
+      // below pins both halves — who may touch the field, and that the composer is the only
+      // source of the value the engine writes.
+      dedupeKey: 'composed from kind + scope by inbox/dedupe-key.ts; never copied from free text',
       createdAt: 'ISO timestamp',
       updatedAt: 'ISO timestamp',
       snoozeUntil: 'ISO timestamp',
@@ -685,11 +687,16 @@ describe('redactValue is key-aware', () => {
 });
 
 describe('dedupeKey is composed, never copied', () => {
-  // `InboxItem.dedupeKey` is allowlisted as structural on the strength of how it WILL be built.
-  // Nothing builds one yet — tasks 9-15 own the inbox rules — so the allowlist entry currently
-  // rests on a promise. This pins the promise: the moment a producer appears, this fails and
-  // whoever wrote it has to either satisfy the claim or move `dedupeKey` to the redacted side.
-  it('has no producer outside the schema and the repository', () => {
+  // `InboxItem.dedupeKey` is allowlisted as structural on the strength of how it is built. Task 9
+  // introduced the producer, so the promise is no longer hypothetical; this keeps it honest.
+  // Two separate properties are pinned, because either alone is weak:
+  //   1. WHO may mention the field at all (below) — a new producer has to come and argue here.
+  //   2. WHAT value the engine writes (`the engine writes only composed keys`) — the one file
+  //      that is allowed to write the column must take its value from the composer, not from an
+  //      argument. The type system already removes the channel (`InboxUpsert` has no such field,
+  //      pinned by a `@ts-expect-error` in `inbox/engine.test.ts`), and this catches the case
+  //      where someone adds one back in a way TypeScript is happy with, e.g. via `payload`.
+  it('has no producer outside the schema, the repository and the one composer', () => {
     const roots = [
       new URL('../../../../apps/daemon/src/', import.meta.url),
       new URL('../../../../packages/core/src/', import.meta.url),
@@ -713,8 +720,24 @@ describe('dedupeKey is composed, never copied', () => {
     expect(hits.sort()).toEqual([
       'apps/daemon/src/db/repos/inbox.ts', // reads and writes the column
       'apps/daemon/src/db/schema.ts', // declares the column and its unique index
+      'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
+      'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type
+    ]);
+  });
+
+  it('the engine writes only composed keys', () => {
+    const src = readFileSync(new URL('../inbox/engine.ts', import.meta.url), 'utf8');
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    // Every `dedupeKey` mention in the engine's code is either the local const it derives from
+    // the composer, or the row field initialised from that const. None reads one off an argument.
+    const mentions = [...code.matchAll(/^.*\bdedupeKey\b.*$/gm)].map((m) => m[0].trim());
+    expect(mentions).toEqual([
+      'const dedupeKey = inboxDedupeKey(u);',
+      'const existing = findActiveByDedupe(ctx.db, dedupeKey);',
+      'dedupeKey,',
+      'const active = findActiveByDedupe(ctx.db, it.dedupeKey);',
     ]);
   });
 });
