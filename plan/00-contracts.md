@@ -595,16 +595,41 @@ export interface ProjectServiceImpl extends ProjectService {
   syncTable(): void;
 }   // DaemonContext.projects is typed as ProjectServiceImpl, not the narrower ProjectService — the indexer and other P1-internal callers need the extra methods
 
+// P2 — apps/daemon/src/inbox/dedupe-key.ts
+// REVISED in task 9 (was: callers passed a literal `dedupeKey: string`). The unique index is on
+// the literal key string, not on (session, kind), so under the old shape a session was only scoped
+// because a caller remembered to put it in the key. Two sessions that shared a hand-written key
+// silently suppressed each other's items and the user never saw the second one. The engine now
+// owns composition and there is no field through which a caller can supply a key.
+export type InboxScope =
+  | { session: string }   // session pk, `${source}:${id}`
+  | { project: string }   // project id
+  | { ticket: string }    // ticket key
+  | { global: true };     // not about any one session/project/ticket
+export interface InboxKey { kind: InboxKind; scope: InboxScope; facet?: string }
+export function inboxDedupeKey(key: InboxKey): string
+// `${kind}:${scopeTag}[:${encodeURIComponent(scopeValue)}][:${encodeURIComponent(facet)}]`, e.g.
+// `waiting:session:claude%3As-basic`, `budget:project:wakecap`, `reminder:global:daily`.
+// `kind` and the scope tag are closed enums and the variable parts are percent-encoded (which
+// escapes the `:` separator), so the mapping identity → string is injective: nothing can collide.
+// `facet` is the extra discriminator for one kind raising several distinct items for one scope
+// (a PR's `checks` vs its `review`). It can only ever split a key in two, never merge two scopes.
+
 // P2 — apps/daemon/src/inbox/engine.ts
-export interface InboxUpsert { kind: InboxKind; dedupeKey: string; sessionId?: string | null; projectId?: string | null; ticket?: string | null; reason: string; payload?: Record<string, unknown> }
+export const REASON_MAX = 300
+export interface InboxUpsert extends InboxKey { sessionId?: string | null; projectId?: string | null; ticket?: string | null; reason: string; payload?: Record<string, unknown> }
 export interface InboxEngine {
   upsert(item: InboxUpsert): InboxItem;                // open or refresh; emits inbox.upserted; triggers notifier
-  resolve(dedupeKey: string): void;                    // auto_resolved
+  resolve(key: InboxKey): void;                        // auto_resolved
   list(filter: { state?: InboxState[]; kind?: InboxKind[]; projectId?: string }): InboxItem[];
   markDone(id: string): InboxItem; snooze(id: string, until: string): InboxItem; reopen(id: string): InboxItem;
   registerRule(rule: InboxRule): void;
 }
 export interface InboxRule { name: string; on: BusEvent['type'][]; handle(e: BusEvent, ctx: DaemonContext): void }
+// `InboxItem.dedupeKey` (§ above) is unchanged — it is a DB column and the wire shape keeps it.
+// `reason` is redacted and THEN truncated to REASON_MAX via core's `truncate` (never `slice`, and
+// never truncate-first: cutting `PGPASSWORD=hunter2` to `SSWORD=hunter2` removes the anchor every
+// pattern matches on). Tasks 10+ call `inboxDedupeKey` instead of declaring their own key helper.
 
 // P2 — apps/daemon/src/notify/notifier.ts
 export type NotifyChannel = 'macos' | 'webpush' | 'slack_dm';

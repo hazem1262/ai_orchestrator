@@ -4126,7 +4126,11 @@ git commit -m "feat(daemon): add attention inbox engine with dedupe, snooze and 
   ```ts
   // inbox/rules/status-rules.ts
   export const STATUS_KIND: Partial<Record<LiveStatus, InboxKind>>   // waiting→waiting, review→review, error→error
-  export function dedupeKeyFor(kind: InboxKind, pk: string): string   // `${kind}:${pk}`
+  // SUPERSEDED by the task-9 ruling: do NOT declare a second key helper here. The engine owns
+  // dedupe-key composition — import `inboxDedupeKey` from `../dedupe-key.ts` and build keys as
+  // `inboxDedupeKey({ kind, scope: { session: pk } })`. `InboxUpsert`/`resolve` take the parts,
+  // not a string; see contracts §11 and `.superpowers/sdd/.../task-9-report.md`. The code blocks
+  // below in this task still show the old `dedupeKey: '…'` call shape and need adapting.
   export const statusRule: InboxRule                                    // name 'status', on ['session.statusChanged']
   export const testsRedRule: InboxRule                                  // name 'tests_red', on ['tests.recorded']
   export function registerDefaultRules(engine: InboxEngine): void
