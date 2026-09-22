@@ -29,6 +29,13 @@
       "when": 1789997894301,
       "tag": "0003_familiar_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790087167467,
+      "tag": "0004_archive_entries_head_fingerprint",
+      "breakpoints": true
     }
   ]
 }

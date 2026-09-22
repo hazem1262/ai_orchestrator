@@ -209,6 +209,12 @@ export const archiveEntries = sqliteTable(
     sourceMtimeMs: integer('source_mtime_ms').notNull(),
     bytes: integer('bytes').notNull(),
     archivedAt: text('archived_at').notNull(),
+    /**
+     * `"<size>:<sha1 of first 4096 bytes>"` of the source at copy time, same format as
+     * `file_offsets.head_fingerprint`. Detects a same-size rewrite that (size, mtime) cannot.
+     * `null` on rows written before this column existed.
+     */
+    headFingerprint: text('head_fingerprint'),
   },
   (t) => [index('archive_entries_session_idx').on(t.sessionPk)],
 );

@@ -14,6 +14,7 @@ export interface ArchiveEntry {
   sourceMtimeMs: number;
   bytes: number;
   archivedAt: string;
+  headFingerprint: string | null;
 }
 
 export function getArchiveEntry(db: OrcDb, path: string): ArchiveEntry | null {

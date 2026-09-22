@@ -109,7 +109,7 @@ function readMeta(jsonlPath: string): SubagentMeta {
  * the first `HEAD_FINGERPRINT_BYTES` bytes — never a whole multi-MB transcript — combined with
  * the total size so a short file can't collide with a longer file sharing the same head.
  */
-async function readHeadFingerprint(path: string, size: number): Promise<string> {
+export async function readHeadFingerprint(path: string, size: number): Promise<string> {
   const len = Math.min(HEAD_FINGERPRINT_BYTES, size);
   const buf = Buffer.alloc(len);
   if (len > 0) {
