@@ -1,7 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type FormEvent, lazy, type ReactNode, Suspense, useState } from 'react';
 import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
+import { useLiveEvents } from '@/api/live-events.ts';
+import { scopeProject, useOpenInboxCount } from '@/api/queries/inbox.ts';
 import { Input } from '@/components/ui/input.tsx';
+import { useInboxTitle } from '@/features/inbox/useInboxTitle.ts';
+import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { ProjectSelector } from './ProjectSelector.tsx';
 
@@ -60,6 +64,11 @@ function Workspace({ children }: { children: ReactNode }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  // One socket for the whole app: the shell outlives every route, so the live caches stay fresh
+  // across navigation and a reconnect resyncs them once.
+  useLiveEvents();
+  const projectId = scopeProject(useProjectStore((s) => s.projectId));
+  useInboxTitle(useOpenInboxCount(projectId));
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-4">
