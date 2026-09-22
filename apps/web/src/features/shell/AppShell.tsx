@@ -81,6 +81,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Main" className="flex w-40 shrink-0 flex-col gap-1 border-r p-2 text-sm">
           <Link
+            to="/live"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Live
+          </Link>
+          <Link
             to="/history"
             className="rounded px-2 py-1 hover:bg-muted"
             activeProps={{ className: 'bg-muted font-medium' }}
