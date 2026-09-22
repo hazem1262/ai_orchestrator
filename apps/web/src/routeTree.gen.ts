@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionsSourceIdRouteImport } from './routes/sessions/$source/$id'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LiveRoute = LiveRouteImport.update({
@@ -44,6 +50,7 @@ const SessionsSourceIdRoute = SessionsSourceIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
@@ -59,19 +67,33 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/history': typeof HistoryRoute
+  '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/history' | '/live' | '/settings' | '/sessions/$source/$id'
+  fullPaths:
+    | '/'
+    | '/history'
+    | '/inbox'
+    | '/live'
+    | '/settings'
+    | '/sessions/$source/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/history' | '/live' | '/settings' | '/sessions/$source/$id'
+  to:
+    | '/'
+    | '/history'
+    | '/inbox'
+    | '/live'
+    | '/settings'
+    | '/sessions/$source/$id'
   id:
     | '__root__'
     | '/'
     | '/history'
+    | '/inbox'
     | '/live'
     | '/settings'
     | '/sessions/$source/$id'
@@ -80,6 +102,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HistoryRoute: typeof HistoryRoute
+  InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
   SettingsRoute: typeof SettingsRoute
   SessionsSourceIdRoute: typeof SessionsSourceIdRoute
@@ -99,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/live': {
@@ -128,6 +158,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HistoryRoute: HistoryRoute,
+  InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
   SettingsRoute: SettingsRoute,
   SessionsSourceIdRoute: SessionsSourceIdRoute,
