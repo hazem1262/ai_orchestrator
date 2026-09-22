@@ -37,9 +37,11 @@ const DEFAULT_DISCOVER_TIMEOUT_MS = 8000;
  * Claude Code's subcommands and their aliases, from the `Commands:` section of `claude --help` on
  * Claude Code 2.1.278. Claude parses its argv with Commander, which dispatches a subcommand even
  * when its name follows `--` (probed: `claude -- mcp` and `claude --model sonnet -- mcp` both print
- * the `claude mcp` help), so `--` cannot protect a claude prompt. A prompt whose first word is one
- * of these names is refused instead. `help` is not in the list: `claude help` starts a session
- * with "help" as the prompt.
+ * the `claude mcp` help), so `--` cannot protect a claude prompt. Commander dispatches only when a
+ * whole argv element equals one of these names (probed: `claude mcp` prints the `claude mcp` help;
+ * `claude 'mcp zzz'`, `claude ' mcp'` and `claude 'mcp '` start a session; `claude MCP` exits with
+ * `unknown command "MCP"`). A prompt that reaches argv as exactly one of these names is refused
+ * instead. `help` is not in the list: `claude help` starts a session with "help" as the prompt.
  */
 export const CLAUDE_SUBCOMMANDS: ReadonlySet<string> = new Set([
   'agents',
@@ -178,12 +180,12 @@ export function createLaunchService(
       if (prompt.trimStart().startsWith('-')) {
         throw new LaunchError(400, 'validation_failed', 'prompt must not start with "-"');
       }
-      const firstWord = prompt.trim().split(/\s+/)[0] ?? '';
-      if (req.source === 'claude' && CLAUDE_SUBCOMMANDS.has(firstWord)) {
+      // `prompt` is the exact final argv element: composePrompt has already trimmed it.
+      if (req.source === 'claude' && CLAUDE_SUBCOMMANDS.has(prompt)) {
         throw new LaunchError(
           400,
           'validation_failed',
-          `prompt must not start with the claude subcommand "${firstWord}"`,
+          `prompt must not be exactly the claude subcommand "${prompt}"`,
         );
       }
 

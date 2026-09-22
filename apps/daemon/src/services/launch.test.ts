@@ -165,20 +165,32 @@ describe('LaunchService.launch', () => {
     },
   );
 
+  // Probed on Claude Code 2.1.278, one argv element each: `claude mcp` prints the `claude mcp`
+  // help; `claude 'mcp zzz'`, `claude ' mcp'` and `claude 'mcp '` start a session; `claude MCP`
+  // exits with `unknown command "MCP"`. Commander dispatches only when the whole element equals a
+  // subcommand name. composePrompt trims the prompt, so a padded name reaches argv bare.
+  it.each(['update', 'upgrade', 'plugins', 'auth', 'mcp', '  mcp', 'mcp ', '\tupdate\n'])(
+    'refuses a claude prompt %j that reaches argv as exactly a claude subcommand',
+    async (prompt) => {
+      const err = await errOf(createLaunchService(ctx).launch(req({ prompt })));
+      expect(err).toBeInstanceOf(LaunchError);
+      expect(err).toMatchObject({ status: 400, code: 'validation_failed' });
+      expect(pty.spawned).toHaveLength(0);
+    },
+  );
+
   it.each([
-    'update',
-    'upgrade',
-    'mcp list',
-    'plugins',
-    'kill 3',
-    '  install\tlatest',
-    'doctor\nplease',
-    'auth',
-  ])('refuses a claude prompt %j whose first word is a claude subcommand', async (prompt) => {
-    const err = await errOf(createLaunchService(ctx).launch(req({ prompt })));
-    expect(err).toBeInstanceOf(LaunchError);
-    expect(err).toMatchObject({ status: 400, code: 'validation_failed' });
-    expect(pty.spawned).toHaveLength(0);
+    ['update the readme', 'update the readme'],
+    ['install deps and run tests', 'install deps and run tests'],
+    ['mcp zzz', 'mcp zzz'],
+    ['mcp list', 'mcp list'],
+    ['kill 3', 'kill 3'],
+    ['  install\tlatest', 'install\tlatest'],
+    ['doctor\nplease', 'doctor\nplease'],
+  ])('lets a claude prompt %j through when it only starts with a subcommand name', async (prompt, argv) => {
+    await createLaunchService(ctx, { discoverTimeoutMs: 1 }).launch(req({ prompt }));
+    expect(pty.spawned).toHaveLength(1);
+    expect(pty.spawned[0]?.args.at(-1)).toBe(argv);
   });
 
   it('lets a claude prompt through when a subcommand name is not its first word', async () => {
