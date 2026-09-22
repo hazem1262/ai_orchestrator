@@ -14,7 +14,10 @@ export function registerPtyRoutes(app: OrcApp, ctx: DaemonContext): void {
       typeof body === 'object' && body !== null && (body as { confirm?: unknown }).confirm === true;
     if (!confirmed) {
       // Built from the redacted view, not the raw one: this summary embeds the full command line
-      // and cwd verbatim, so it is a second copy of the same argv the list route serves.
+      // and cwd verbatim, so it is a second copy of the same argv the list route serves. It is
+      // redacted a second time by `app.ts`'s error boundary, which walks every `ServiceError`'s
+      // `details` — deliberate overlap, so neither layer alone is load-bearing and only removing
+      // BOTH fails `app.test.ts > route-level redaction`.
       const safe = redactPtyInfo(info);
       throw new ServiceError('confirmation_required', 409, 'confirm to stop this terminal', {
         summary: `Stop \`${[safe.command, ...safe.args].join(' ')}\` (pid ${safe.pid}) in ${safe.cwd}`,

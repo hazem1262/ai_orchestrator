@@ -1,11 +1,13 @@
 import type { HttpBindings } from '@hono/node-server';
 import { apiError } from '@orc/api-contract';
+import { redact } from '@orc/core';
 import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { ZodError } from 'zod';
 import type { DaemonContext } from '../context.ts';
 import { ServiceError } from '../services/errors.ts';
 import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.ts';
+import { redactValue } from './redact-out.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPtyRoutes } from './routes/pty.ts';
@@ -22,16 +24,50 @@ export interface AppOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/**
+ * **The single registration path.** Every `/api/*` route the daemon serves is registered here and
+ * nowhere else, and `redact-out.test.ts`'s boundary census calls this function directly — so a
+ * route added here is automatically accounted for at the redaction boundary, and a route added
+ * anywhere else is not accounted for at all.
+ *
+ * Do NOT add a route-registration hook to `createApp`'s options. A `registerExtra` callback passed
+ * from `main.ts` was demonstrated to put an unredacted `/api/brand-new` into the live daemon with
+ * the entire suite passing, because the census calls `createApp` without it. Task 16's
+ * `registerPhase2Routes` (live, hooks, inbox, launch, archive, templates, notifications) belongs
+ * in the block below, above the catch-all.
+ */
+export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
+  registerHealthRoutes(app);
+  registerProjectRoutes(app, ctx);
+  registerSessionRoutes(app, ctx);
+  registerViewRoutes(app, ctx);
+  registerPtyRoutes(app, ctx);
+  // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
+  // catch-all, so anything registered after it is shadowed and answers 404.
+  app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
+}
+
 export function createApp(o: AppOptions): OrcApp {
   const app: OrcApp = new Hono<{ Bindings: HttpBindings }>();
   const hostOf = (c: Context) => c.req.header('host') ?? new URL(c.req.url).host;
   const hostOk = (c: Context) => allowedHosts(o.port(), o.env).includes(hostOf(c));
 
+  // Error bodies are a response channel like any other, and until now an unmodelled one: the
+  // census could only see what a route returns on success. `services/sessions.ts` throws
+  // `cwd_missing` with `` `directory ${s.startCwd} no longer exists` `` and `details: { cwd }`,
+  // and `startCwd` is precisely the field phase 1 added to `redactSession` because it is
+  // transcript-derived — served raw here on any session whose directory was removed, which is a
+  // deleted worktree, which is routine. Redacting at this one point rather than at each throw
+  // site is the whole point: enumerating every route's possible error bodies is the same
+  // "someone must remember" that cost us thirteen fields.
+  const errorBody = (code: string, message: string, details?: unknown) =>
+    apiError(code, redact(message), details === undefined ? undefined : redactValue(details));
+
   app.onError((err, c) => {
-    if (err instanceof ServiceError) return c.json(apiError(err.code, err.message, err.details), err.status);
+    if (err instanceof ServiceError) return c.json(errorBody(err.code, err.message, err.details), err.status);
     if (err instanceof ZodError)
-      return c.json(apiError('validation_failed', 'invalid request', err.issues), 400);
-    if (err instanceof HTTPException) return c.json(apiError('bad_request', err.message), 400);
+      return c.json(errorBody('validation_failed', 'invalid request', err.issues), 400);
+    if (err instanceof HTTPException) return c.json(errorBody('bad_request', err.message), 400);
     o.ctx.log.error({ err }, 'unhandled request error');
     return c.json(apiError('internal', 'internal error'), 500);
   });
@@ -59,16 +95,7 @@ export function createApp(o: AppOptions): OrcApp {
     });
   });
 
-  registerHealthRoutes(app);
-  registerProjectRoutes(app, o.ctx);
-  registerSessionRoutes(app, o.ctx);
-  registerViewRoutes(app, o.ctx);
-  registerPtyRoutes(app, o.ctx);
-  // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
-  // catch-all, so anything registered after it is shadowed and answers 404. Task 16's
-  // `registerPhase2Routes` (live, hooks, inbox, launch, archive, templates, notifications) goes
-  // with the calls above, not below.
-  app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
+  registerAllRoutes(app, o.ctx);
 
   if (o.webDist) registerStatic(app, o.webDist);
   return app;
