@@ -725,6 +725,7 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/db/schema.ts', // declares the column and its unique index
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
+      'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type
     ]);
@@ -744,8 +745,12 @@ describe('dedupeKey is composed, never copied', () => {
       [/^dedupeKey: [A-Za-z_$][\w$]*,$/, 'the row field, from a plain local of any name'],
       [/^dedupeKey\)/, 'passing a key to a repo lookup'],
       [/^dedupeKey'\]/, "the composer's return type, `InboxItem['dedupeKey']`"],
+      [
+        /^dedupeKey === [A-Za-z_$][\w$]*\)/,
+        'comparing a row against a composed local (a lookup, not a write)',
+      ],
     ];
-    for (const file of ['../inbox/engine.ts', '../inbox/dedupe-key.ts']) {
+    for (const file of ['../inbox/engine.ts', '../inbox/dedupe-key.ts', '../inbox/rules/status-rules.ts']) {
       const src = readFileSync(new URL(file, import.meta.url), 'utf8');
       const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       for (const m of code.matchAll(/\bdedupeKey\b.*$/gm)) {
