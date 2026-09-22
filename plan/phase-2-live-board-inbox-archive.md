@@ -4140,7 +4140,7 @@ git commit -m "feat(daemon): add attention inbox engine with dedupe, snooze and 
 
 **Rules:**
 - **statusRule:**
-  - Entering `waiting`, `review` or `error` upserts that kind with key `${kind}:${pk}`.
+  - Entering `waiting`, `review` or `error` upserts that kind scoped to the session (the engine composes the key).
   - Leaving one of these states resolves its key. The exception is `review → ended`: work that is ready for review still needs the user after the process exits.
   - The payload is `{ source, id, status }`. `projectId` and `ticket` (first ticket) come from `ctx.live.get(pk) ?? ctx.sessions.getByPk(pk)`.
 - **testsRedRule:**
@@ -4160,7 +4160,8 @@ import type { DaemonContext } from '../../context.ts';
 import { insertTestResult } from '../../db/repos/test-results.ts';
 import { stubSession } from '../../live/stub-session.ts';
 import { type InboxEngineRuntime, createInboxEngine } from '../engine.ts';
-import { dedupeKeyFor, registerDefaultRules } from './status-rules.ts';
+import { registerDefaultRules } from './status-rules.ts';
+import { inboxDedupeKey } from '../dedupe-key.ts';
 
 useTempHomes();
 let ctx: DaemonContext;
@@ -4199,7 +4200,7 @@ describe('statusRule', () => {
     const [item] = engine.list({ state: ['open'] });
     expect(item).toMatchObject({
       kind: 'waiting',
-      dedupeKey: dedupeKeyFor('waiting', PK),
+      dedupeKey: inboxDedupeKey({ kind: 'waiting', scope: { session: PK } }),
       sessionId: 's-live',
       projectId: 'wakecap',
       ticket: 'SAF-1787',
@@ -4286,8 +4287,8 @@ const post = (path: string, body: unknown) =>
 beforeEach(() => {
   ctx = createTestContext();
   ctx.inbox = createInboxEngine(ctx);
-  id = ctx.inbox.upsert({ kind: 'waiting', dedupeKey: 'waiting:claude:a', projectId: 'wakecap', reason: 'r' }).id;
-  ctx.inbox.upsert({ kind: 'error', dedupeKey: 'error:claude:b', projectId: 'forza', reason: 'r' });
+  id = ctx.inbox.upsert({ kind: 'waiting', scope: { session: 'claude:a' }, projectId: 'wakecap', reason: 'r' }).id;
+  ctx.inbox.upsert({ kind: 'error', scope: { session: 'claude:b' }, projectId: 'forza', reason: 'r' });
   app = new Hono();
   registerInboxRoutes(app, ctx);
 });
@@ -4343,7 +4344,9 @@ export const STATUS_KIND: Partial<Record<LiveStatus, InboxKind>> = {
   error: 'error',
 };
 
-export const dedupeKeyFor = (kind: InboxKind, pk: string): string => `${kind}:${pk}`;
+// REMOVED by the task-9 ruling: the engine owns dedupe-key composition. A second helper here is
+// exactly the drift that ruling removed. Import `inboxDedupeKey` from '../dedupe-key.ts' when a
+// test needs to assert the composed value; rules never compose a key themselves.
 
 function lookup(ctx: DaemonContext, pk: string): { s: Session | null; source: string; id: string; label: string } {
   const { source, id } = splitPk(pk);
@@ -4374,12 +4377,13 @@ export const statusRule: InboxRule = {
     const fromKind = e.from ? STATUS_KIND[e.from] : undefined;
     const toKind = STATUS_KIND[e.to];
     const keepReviewAfterExit = fromKind === 'review' && e.to === 'ended';
-    if (fromKind && fromKind !== toKind && !keepReviewAfterExit) ctx.inbox.resolve(dedupeKeyFor(fromKind, e.pk));
+    if (fromKind && fromKind !== toKind && !keepReviewAfterExit)
+      ctx.inbox.resolve({ kind: fromKind, scope: { session: e.pk } });
     if (!toKind) return;
     const { s, source, id, label } = lookup(ctx, e.pk);
     ctx.inbox.upsert({
       kind: toKind,
-      dedupeKey: dedupeKeyFor(toKind, e.pk),
+      scope: { session: e.pk },
       sessionId: id,
       projectId: s?.projectId ?? null,
       ticket: s?.tickets[0] ?? null,
@@ -4394,18 +4398,18 @@ export const testsRedRule: InboxRule = {
   on: ['tests.recorded'],
   handle(e, ctx) {
     if (e.type !== 'tests.recorded' || !ctx.inbox) return;
-    const key = dedupeKeyFor('tests_red', e.pk);
+    const scope = { session: e.pk } as const;
     if (e.result.failed === 0) {
-      ctx.inbox.resolve(key);
+      ctx.inbox.resolve({ kind: 'tests_red', scope });
       return;
     }
     const prev = previousTestResult(ctx.db, e.pk, e.result.ts);
-    const alreadyRed = ctx.inbox.list({ state: ['open', 'snoozed'], kind: ['tests_red'] }).some((i) => i.dedupeKey === key);
+    const alreadyRed = ctx.inbox.list({ state: ['open', 'snoozed'], kind: ['tests_red'] }).some((i) => i.dedupeKey === inboxDedupeKey({ kind: 'tests_red', scope }));
     if (!alreadyRed && (!prev || prev.failed > 0)) return;
     const { s, source, id, label } = lookup(ctx, e.pk);
     ctx.inbox.upsert({
       kind: 'tests_red',
-      dedupeKey: key,
+      scope,
       sessionId: id,
       projectId: s?.projectId ?? null,
       ticket: s?.tickets[0] ?? null,
@@ -9877,7 +9881,7 @@ git checkout main && git merge --no-ff phase/2-live-board-inbox-archive -m "merg
 - `InboxEngineRuntime` (9) is used by the rules (10) and `startPhase2` (16).
 - `ArchiveServiceRuntime.restorePlan/codec` (14/15) is used by the routes (15).
 - `LaunchError` statuses (13) map through `apiError` (2).
-- `dedupeKeyFor` produces `${kind}:${pk}` (10), which is what the engine tests (9) and the notifier debounce (11) use.
+- the engine owns dedupe-key composition via `inboxDedupeKey({ kind, scope })` (task 9 ruling, contracts §11); rules (10) pass scope parts, and the notifier debounce (11) keys on the composed `InboxItem.dedupeKey`.
 - `WireEvent` exists in the daemon (8) and the web (17) with the same variants.
 - The query keys `['live']`, `['inbox', filters]`, `['archive-status']` and `['notification-prefs']` are the same in 17–20.
 - `useLiveLayoutStore.openInByProject` (18) is used by `OpenInButton` (18).

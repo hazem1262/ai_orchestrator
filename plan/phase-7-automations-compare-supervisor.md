@@ -29,6 +29,19 @@
 
 ---
 
+> **⚠ SUPERSEDED CALL SHAPE — read before implementing any inbox rule in this phase.**
+> Phase 2 Task 9 moved dedupe-key composition into the InboxEngine (contracts §11). Callers no
+> longer pass a `dedupeKey` string, and no task may declare its own key helper — the unique index
+> is on the literal key, so a hand-written key shared by two scopes makes the second item vanish
+> with no error anywhere.
+>
+> Everywhere below that shows `inbox.upsert({ …, dedupeKey: '…' })`, pass a scope instead:
+> `inbox.upsert({ kind, scope: { session } | { project } | { ticket } | { domain, id } | { global: true }, facet?, … })`.
+> Everywhere that shows `inbox.resolve('<string>')`, pass `{ kind, scope, facet? }`.
+> Local helpers such as `prKey`/`planKey` are removed — use `{ domain: 'pr', id: … }` etc.
+> `InboxItem.dedupeKey` is unchanged, so assertions reading it stay valid; compose the expected
+> value with `inboxDedupeKey({ kind, scope })` rather than writing the string.
+
 ## Contract additions
 
 These are merged into `plan/00-contracts.md` in Task 25.
