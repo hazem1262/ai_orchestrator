@@ -1,9 +1,9 @@
-import type { InboxItem } from '@orc/core';
+import type { InboxItem, TestResult } from '@orc/core';
 import { type Logger, pino } from 'pino';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestContext, type TestContext, useTempHomes } from '../../test/helpers.ts';
 import type { Notifier } from '../notify/notifier.ts';
-import type { InboxKey } from './dedupe-key.ts';
+import type { InboxKey, InboxScope } from './dedupe-key.ts';
 import {
   createInboxEngine,
   type InboxEngineRuntime,
@@ -33,6 +33,15 @@ const waiting = (reason = 'Waiting: input needed', pk = PK): InboxUpsert => ({
 });
 
 const waitingKey: InboxKey = { kind: 'waiting', scope: { session: PK } };
+
+const TEST_RESULT: TestResult = {
+  ts: '2026-09-01T09:00:00.000Z',
+  command: 'pnpm test',
+  passed: 1,
+  failed: 0,
+  skipped: 0,
+  durationMs: 10,
+};
 
 /**
  * Captures what the *engine* logs. `createTestContext` only swaps `ctx.log`; the event bus keeps
@@ -124,6 +133,30 @@ describe('InboxEngine', () => {
     expect(engine.reopen(a.id).state).toBe('open');
   });
 
+  it('start() ticks at once and on a timer, and stop() stops the timer', () => {
+    vi.useFakeTimers();
+    try {
+      const a = engine.upsert(waiting());
+      engine.snooze(a.id, '2026-09-01T09:05:00.000Z');
+      nowMs = Date.parse('2026-09-01T09:06:00.000Z');
+      engine.start(1000);
+      expect(engine.list({ state: ['open'] }).map((i) => i.id)).toEqual([a.id]); // the eager tick
+
+      engine.snooze(a.id, '2026-09-01T09:10:00.000Z');
+      nowMs = Date.parse('2026-09-01T09:11:00.000Z');
+      vi.advanceTimersByTime(1000);
+      expect(engine.list({ state: ['open'] }).map((i) => i.id)).toEqual([a.id]); // the interval
+
+      engine.snooze(a.id, '2026-09-01T09:20:00.000Z');
+      nowMs = Date.parse('2026-09-01T09:21:00.000Z');
+      engine.stop();
+      vi.advanceTimersByTime(5000);
+      expect(engine.list({ state: ['snoozed'] }).map((i) => i.id)).toEqual([a.id]); // clearInterval
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('wakes a due item on its own clock, and leaves a later one asleep', () => {
     const a = engine.upsert(waiting('first', 'claude:s-one'));
     const b = engine.upsert(waiting('second', 'claude:s-two'));
@@ -167,6 +200,47 @@ describe('InboxEngine', () => {
     expect(engine.list({ projectId: 'wakecap' }).map((i) => i.kind)).toEqual(['waiting']);
   });
 
+  it('rejects a snooze time that is not a zoned, four-digit-year ISO instant', () => {
+    const a = engine.upsert(waiting());
+    // No zone: `Date.parse` reads this as *local* time, so the same request would snooze for a
+    // different duration depending on where the daemon runs.
+    expect(() => engine.snooze(a.id, '2026-09-01T20:00:00')).toThrow(InboxError);
+    // Expanded year: `snoozeUntil` is compared lexicographically in SQL and `'+'` sorts before
+    // every digit, so this far-future snooze would come due on the very next tick.
+    expect(() => engine.snooze(a.id, '+010000-01-01T00:00:00.000Z')).toThrow(InboxError);
+    expect(() => engine.snooze(a.id, '2026-09-01')).toThrow(InboxError);
+    expect(engine.list({ state: ['open'] }).map((i) => i.id)).toEqual([a.id]);
+    // An offset zone is fine — it pins a real instant.
+    expect(engine.snooze(a.id, '2026-09-01T11:30:00+01:00').snoozeUntil).toBe('2026-09-01T10:30:00.000Z');
+  });
+
+  it('keeps the item when its payload cannot be serialized', () => {
+    const cyclic: Record<string, unknown> = { ok: 1 };
+    cyclic.self = cyclic;
+    const item = engine.upsert({ ...waiting(), payload: { ...cyclic, big: 1n } });
+    // The alternative is a throw out of `upsert`, which `registerRule` would swallow as
+    // `inbox rule failed` — leaving the user with no item and no visible error.
+    expect(item.payload).toEqual({ ok: 1, serializationFailed: true });
+    expect(engine.list({ state: ['open'] }).map((i) => i.id)).toEqual([item.id]);
+    // And the same on the refresh path, which stringifies through a different call.
+    const refreshed = engine.upsert({ ...waiting('again'), payload: { b: 2n, c: 3 } });
+    expect(refreshed.id).toBe(item.id);
+    expect(refreshed.payload).toEqual({ c: 3, serializationFailed: true });
+  });
+
+  it('refreshes only the fields the caller supplied, and lets null clear one', () => {
+    const a = engine.upsert({ ...waiting(), ticket: 'SAF-1787' });
+    expect(a).toMatchObject({ ticket: 'SAF-1787', projectId: 'wakecap', sessionId: 's-basic' });
+    // Absent → untouched. The `?? existing.x` form this replaced behaved the same here…
+    const b = engine.upsert({ kind: 'waiting', scope: { session: PK }, reason: 'thin' });
+    expect(b).toMatchObject({ ticket: 'SAF-1787', projectId: 'wakecap', sessionId: 's-basic' });
+    expect(b.payload).toEqual({ source: 'claude', id: 's-basic' });
+    // …but an explicit null could never clear a ticket a rule had stopped being able to derive,
+    // and an explicit sessionId was ignored outright.
+    const c = engine.upsert({ ...waiting(), ticket: null, sessionId: 's-renamed' });
+    expect(c).toMatchObject({ ticket: null, sessionId: 's-renamed', projectId: 'wakecap' });
+  });
+
   it('survives a notifier that rejects', async () => {
     notify.mockRejectedValueOnce(new Error('osascript died'));
     const item = engine.upsert(waiting());
@@ -191,6 +265,12 @@ describe('InboxEngine', () => {
     ctx.bus.emit({ type: 'session.turnEnded', pk: 'claude:s', turn: 1 });
     expect(good).toHaveBeenCalledTimes(1);
     expect(good.mock.calls[0]?.[1]).toBe(ctx);
+    // EVERY type in `rule.on` is subscribed, not just the first. A rule wired to two events and
+    // tested with one is indistinguishable from a rule that silently ignores its second event —
+    // and the second event's item would then never appear, with no error and no log line.
+    ctx.bus.emit({ type: 'tests.recorded', pk: 'claude:s', result: TEST_RESULT });
+    expect(good).toHaveBeenCalledTimes(2);
+    expect(good.mock.calls[1]?.[0]).toMatchObject({ type: 'tests.recorded' });
     // The engine catches the rule's throw itself and names the culprit. Leaving it to the bus's
     // own isolation would still keep `good` running, but would lose the rule name — and this
     // sink, which the bus does not write to, would be empty.
@@ -203,7 +283,8 @@ describe('InboxEngine', () => {
     ]);
     engine.stop();
     ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:s', from: 'busy', to: 'idle' });
-    expect(good).toHaveBeenCalledTimes(1);
+    ctx.bus.emit({ type: 'tests.recorded', pk: 'claude:s', result: TEST_RESULT });
+    expect(good).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -247,8 +328,8 @@ describe('reason hygiene', () => {
 describe('dedupe key composition', () => {
   /**
    * Written by hand, not generated from the composer: the point is to pin identities the engine
-   * must keep apart. The last four are the colon traps — a session pk already contains a colon,
-   * so an unescaped separator lets a facet impersonate a longer pk.
+   * must keep apart. The last group are the colon traps — a session pk already contains a colon,
+   * so an unescaped separator lets a facet impersonate a longer pk, or a domain a longer domain.
    */
   const CORPUS: InboxKey[] = [
     { kind: 'waiting', scope: { session: 'claude:s-basic' } },
@@ -256,16 +337,25 @@ describe('dedupe key composition', () => {
     { kind: 'review', scope: { session: 'claude:s-basic' } },
     { kind: 'waiting', scope: { project: 'wakecap' } },
     { kind: 'waiting', scope: { ticket: 'SAF-1787' } },
+    // Same value under two different tags: collapsing the tags is a collision, and nothing else
+    // in this corpus would notice it.
+    { kind: 'waiting', scope: { project: 'SAF-1787' } },
     { kind: 'waiting', scope: { global: true } },
     { kind: 'reminder', scope: { global: true } },
     { kind: 'reminder', scope: { global: true }, facet: 'daily' },
     { kind: 'reminder', scope: { global: true }, facet: 'weekly' },
-    { kind: 'pr_event', scope: { ticket: 'SAF-1787' }, facet: 'checks' },
-    { kind: 'pr_event', scope: { ticket: 'SAF-1787' }, facet: 'review' },
+    { kind: 'pr_event', scope: { domain: 'pr', id: 'owner/repo#4' }, facet: 'checks' },
+    { kind: 'pr_event', scope: { domain: 'pr', id: 'owner/repo#4' }, facet: 'review' },
+    { kind: 'pr_event', scope: { domain: 'pr', id: 'owner/repo#5' }, facet: 'checks' },
+    { kind: 'pr_event', scope: { domain: 'worktree', id: '/Users/test/wt' }, facet: 'archive_blocked' },
+    { kind: 'budget', scope: { domain: 'quota', id: 'block:2026-09-01T09:00:00.000Z' } },
     { kind: 'waiting', scope: { session: 'claude:s' }, facet: 'x' },
     { kind: 'waiting', scope: { session: 'claude:s:x' } },
     { kind: 'waiting', scope: { project: 'session:claude:s' } },
     { kind: 'waiting', scope: { project: 'wakecap' }, facet: 'session:claude:s' },
+    { kind: 'waiting', scope: { domain: 'a:b', id: 'c' } },
+    { kind: 'waiting', scope: { domain: 'a', id: 'b' }, facet: 'c' },
+    { kind: 'waiting', scope: { domain: 'a', id: 'b:c' } },
   ];
 
   it('maps distinct identities to distinct keys', () => {
@@ -280,6 +370,31 @@ describe('dedupe key composition', () => {
     expect(inboxDedupeKey({ kind: 'budget', scope: { project: 'wakecap' } })).toBe('budget:project:wakecap');
     expect(inboxDedupeKey({ kind: 'review', scope: { ticket: 'SAF-1787' } })).toBe('review:ticket:SAF-1787');
     expect(inboxDedupeKey({ kind: 'reminder', scope: { global: true } })).toBe('reminder:global');
+    expect(inboxDedupeKey({ kind: 'pr_event', scope: { domain: 'pr', id: 'o/r#4' }, facet: 'checks' })).toBe(
+      'pr_event:pr:o%2Fr%234:checks',
+    );
+  });
+
+  it('treats session/project/ticket as sugar for the domains of the same name', () => {
+    // Deliberate aliasing, not a collision: these are two spellings of one identity, so one item
+    // is the correct outcome. Stated here so nobody has to rediscover it from the format.
+    expect(inboxDedupeKey({ kind: 'waiting', scope: { domain: 'session', id: PK } })).toBe(
+      inboxDedupeKey({ kind: 'waiting', scope: { session: PK } }),
+    );
+  });
+
+  it('rejects a scope that names two things at once', () => {
+    // A union of single-field objects is structurally satisfied by its first member, so without
+    // the `?: never` branding TypeScript accepts this and the composer silently drops `project`.
+    // @ts-expect-error — a scope is about exactly one thing.
+    const mixed: InboxScope = { session: PK, project: 'wakecap' };
+    expect(mixed).toBeDefined();
+  });
+
+  it('a facet of the empty string still splits the key', () => {
+    expect(inboxDedupeKey({ kind: 'waiting', scope: { project: 'p' }, facet: '' })).not.toBe(
+      inboxDedupeKey({ kind: 'waiting', scope: { project: 'p' } }),
+    );
   });
 
   it('keeps every identity in the corpus as its own live row', () => {
@@ -308,6 +423,25 @@ describe('dedupe key composition', () => {
         .sort(),
     ).toEqual(['one waits', 'the other waits']);
     expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it('cannot be steered by any caller-supplied value', () => {
+    // The behavioural half of the "never copied from free text" promise, and the only half no
+    // refactor can quietly break: a source scan of the engine misses a smuggle hidden inside the
+    // composer itself, because such code need not contain the string `dedupeKey` at all. Every
+    // caller-controlled field carries a sentinel; none of them may reach the key.
+    const SENTINEL = 'hijacked-by-the-caller';
+    const item = engine.upsert({
+      kind: 'waiting',
+      scope: { session: PK },
+      reason: SENTINEL,
+      sessionId: SENTINEL,
+      projectId: SENTINEL,
+      ticket: SENTINEL,
+      payload: { dedupeKey: SENTINEL, dedupe_key: SENTINEL, key: SENTINEL, k: SENTINEL },
+    });
+    expect(item.dedupeKey).toBe(inboxDedupeKey({ kind: 'waiting', scope: { session: PK } }));
+    expect(item.dedupeKey).not.toContain(SENTINEL);
   });
 
   it('offers a caller no channel to hand-write a key', () => {

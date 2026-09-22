@@ -689,13 +689,16 @@ describe('redactValue is key-aware', () => {
 describe('dedupeKey is composed, never copied', () => {
   // `InboxItem.dedupeKey` is allowlisted as structural on the strength of how it is built. Task 9
   // introduced the producer, so the promise is no longer hypothetical; this keeps it honest.
-  // Two separate properties are pinned, because either alone is weak:
+  // Three properties are pinned, because none of them is sufficient alone:
   //   1. WHO may mention the field at all (below) — a new producer has to come and argue here.
-  //   2. WHAT value the engine writes (`the engine writes only composed keys`) — the one file
-  //      that is allowed to write the column must take its value from the composer, not from an
-  //      argument. The type system already removes the channel (`InboxUpsert` has no such field,
-  //      pinned by a `@ts-expect-error` in `inbox/engine.test.ts`), and this catches the case
-  //      where someone adds one back in a way TypeScript is happy with, e.g. via `payload`.
+  //   2. HOW the two inbox files use the name (`the inbox files only compose and look up keys`) —
+  //      a source scan, so it catches a caller key assigned in a way TypeScript is happy with.
+  //      Note its limit: a smuggle hidden *inside* `inboxDedupeKey` need not contain the string
+  //      `dedupeKey` at all, and this test cannot see it.
+  //   3. THAT NO CALLER VALUE REACHES THE KEY — `cannot be steered by any caller-supplied value`
+  //      in `inbox/engine.test.ts`, which seeds every caller-controlled field with a sentinel and
+  //      asserts the composed key. That one is behavioural and no refactor can weaken it; the two
+  //      source-level tests here are the early-warning layer above it.
   it('has no producer outside the schema, the repository and the one composer', () => {
     const roots = [
       new URL('../../../../apps/daemon/src/', import.meta.url),
@@ -727,18 +730,34 @@ describe('dedupeKey is composed, never copied', () => {
     ]);
   });
 
-  it('the engine writes only composed keys', () => {
-    const src = readFileSync(new URL('../inbox/engine.ts', import.meta.url), 'utf8');
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    // Every `dedupeKey` mention in the engine's code is either the local const it derives from
-    // the composer, or the row field initialised from that const. None reads one off an argument.
-    const mentions = [...code.matchAll(/^.*\bdedupeKey\b.*$/gm)].map((m) => m[0].trim());
-    expect(mentions).toEqual([
-      'const dedupeKey = inboxDedupeKey(u);',
-      'const existing = findActiveByDedupe(ctx.db, dedupeKey);',
-      'dedupeKey,',
-      'const active = findActiveByDedupe(ctx.db, it.dedupeKey);',
-    ]);
+  it('the inbox files only compose and look up keys', () => {
+    /**
+     * The allowed *uses* of the name, matched from the `dedupeKey` token to end of line. This is
+     * deliberately a shape test rather than an exact-line test: renaming the surrounding locals or
+     * rewrapping the call must not fail it, but assigning a key from anything other than the
+     * composer must.
+     */
+    const ALLOWED: Array<[form: RegExp, why: string]> = [
+      [/^dedupeKey = inboxDedupeKey\(/, 'composing into a local'],
+      [/^dedupeKey: inboxDedupeKey\(/, 'composing straight onto the row'],
+      [/^dedupeKey,$/, 'the row field, shorthand from a same-named local'],
+      [/^dedupeKey: [A-Za-z_$][\w$]*,$/, 'the row field, from a plain local of any name'],
+      [/^dedupeKey\)/, 'passing a key to a repo lookup'],
+      [/^dedupeKey'\]/, "the composer's return type, `InboxItem['dedupeKey']`"],
+    ];
+    for (const file of ['../inbox/engine.ts', '../inbox/dedupe-key.ts']) {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      for (const m of code.matchAll(/\bdedupeKey\b.*$/gm)) {
+        expect(
+          ALLOWED.some(([form]) => form.test(m[0])),
+          `${file}: \`${m[0].trim()}\` is not an allowed use of dedupeKey. The key must come from ` +
+            `inboxDedupeKey() and nowhere else — a caller-supplied value here would let two ` +
+            `sessions share one inbox row and silently suppress each other. Allowed forms: ` +
+            ALLOWED.map(([form, why]) => `${form.source} (${why})`).join('; '),
+        ).toBe(true);
+      }
+    }
   });
 });
 

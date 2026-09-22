@@ -1,4 +1,16 @@
-import type { InboxKind } from '@orc/core';
+import type { InboxItem, InboxKind } from '@orc/core';
+
+type ScopeField = 'session' | 'project' | 'ticket' | 'domain' | 'id' | 'global';
+
+/**
+ * One variant of `InboxScope`, with every field belonging to a *different* variant explicitly
+ * closed off. Without this, TypeScript's excess-property check happily accepts
+ * `{ session: 'claude:s', project: 'p1' }` — a union of single-field objects is structurally
+ * satisfied by the first member — and the composer would silently drop `project`.
+ */
+type Exclusive<T extends Partial<Record<ScopeField, unknown>>> = T & {
+  [K in Exclude<ScopeField, keyof T>]?: never;
+};
 
 /**
  * What an inbox item is *about*.
@@ -12,13 +24,25 @@ import type { InboxKind } from '@orc/core';
  */
 export type InboxScope =
   /** A single session, addressed by its pk (`${source}:${id}`). */
-  | { session: string }
+  | Exclusive<{ session: string }>
   /** A whole project, addressed by its project id. */
-  | { project: string }
+  | Exclusive<{ project: string }>
   /** A ticket, across whatever sessions touch it. */
-  | { ticket: string }
-  /** Not about any one session, project or ticket (a daily digest, a budget ceiling, …). */
-  | { global: true };
+  | Exclusive<{ ticket: string }>
+  /**
+   * Anything else that has a stable identity of its own: a PR, a worktree, an automation run, a
+   * quota window. `domain` names the namespace and `id` addresses the thing inside it — e.g.
+   * `{ domain: 'pr', id: 'owner/repo#4' }`, `{ domain: 'worktree', id: '/Users/x/wt' }`. This is
+   * the escape hatch that keeps later phases from falling back on `{ global: true }` plus a
+   * hand-composed facet, which would reintroduce the very hand-written key this type removes.
+   *
+   * `session`, `project` and `ticket` are sugar for the domains of the same name, so
+   * `{ domain: 'session', id: pk }` composes to the same key as `{ session: pk }`. That is
+   * aliasing of one identity, not a collision of two.
+   */
+  | Exclusive<{ domain: string; id: string }>
+  /** Genuinely global: one item for the whole daemon (use `facet` to have more than one). */
+  | Exclusive<{ global: true }>;
 
 /** The identity of an inbox item: what it is (`kind`) and what it is about (`scope`, `facet`). */
 export interface InboxKey {
@@ -35,9 +59,10 @@ export interface InboxKey {
 type ScopeParts = readonly [tag: string, value: string | null];
 
 function scopeParts(scope: InboxScope): ScopeParts {
-  if ('session' in scope) return ['session', scope.session];
-  if ('project' in scope) return ['project', scope.project];
-  if ('ticket' in scope) return ['ticket', scope.ticket];
+  if (scope.session !== undefined) return ['session', scope.session];
+  if (scope.project !== undefined) return ['project', scope.project];
+  if (scope.ticket !== undefined) return ['ticket', scope.ticket];
+  if (scope.domain !== undefined) return [scope.domain, scope.id];
   return ['global', null];
 }
 
@@ -46,13 +71,19 @@ function scopeParts(scope: InboxScope): ScopeParts {
  * `InboxUpsert` has no field to supply one — that is the promise the redaction boundary's
  * allowlist rests on (`apps/daemon/src/http/redact-out.test.ts`).
  *
- * `kind` and the scope tag are closed enums, and the variable parts are percent-encoded, which
- * escapes the `:` separator. The mapping from `{kind, scope, facet}` to string is therefore
- * injective: no two distinct identities can collide, not even a session pk that itself contains a
- * colon (`claude:s` + facet `x` vs. session `claude:s:x`).
+ * Shape: `${kind}:${tag}[:${id}][:${facet}]`, where every variable segment is percent-encoded.
+ * `kind` is a closed enum and the encoding escapes the `:` separator, so the mapping from
+ * `{kind, scope, facet}` to string is injective: no two distinct identities can collide, not even
+ * a session pk that itself contains a colon (`claude:s` + facet `x` vs. session `claude:s:x`), nor
+ * a domain that contains one (`{domain:'a:b', id:'c'}` vs `{domain:'a', id:'b', facet:'c'}`).
  */
-export function inboxDedupeKey(key: InboxKey): string {
+export function inboxDedupeKey(key: InboxKey): InboxItem['dedupeKey'] {
   const [tag, value] = scopeParts(key.scope);
-  const head = value === null ? `${key.kind}:${tag}` : `${key.kind}:${tag}:${encodeURIComponent(value)}`;
-  return key.facet ? `${head}:${encodeURIComponent(key.facet)}` : head;
+  const head =
+    value === null
+      ? `${key.kind}:${encodeURIComponent(tag)}`
+      : `${key.kind}:${encodeURIComponent(tag)}:${encodeURIComponent(value)}`;
+  // `!== undefined`, not truthiness: `facet: ''` must still split the key, or the promise that a
+  // facet can only ever split and never merge would be false for exactly one value.
+  return key.facet !== undefined ? `${head}:${encodeURIComponent(key.facet)}` : head;
 }

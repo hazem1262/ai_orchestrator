@@ -601,19 +601,25 @@ export interface ProjectServiceImpl extends ProjectService {
 // because a caller remembered to put it in the key. Two sessions that shared a hand-written key
 // silently suppressed each other's items and the user never saw the second one. The engine now
 // owns composition and there is no field through which a caller can supply a key.
+// Each variant is `Exclusive<…>`: every field of every OTHER variant is re-declared `?: never`,
+// so `{ session, project }` is a type error rather than a silently-dropped field.
 export type InboxScope =
-  | { session: string }   // session pk, `${source}:${id}`
-  | { project: string }   // project id
-  | { ticket: string }    // ticket key
-  | { global: true };     // not about any one session/project/ticket
+  | { session: string }             // session pk, `${source}:${id}`
+  | { project: string }             // project id
+  | { ticket: string }              // ticket key
+  | { domain: string; id: string }  // any other namespaced thing: pr, worktree, quota, automation-run, …
+  | { global: true };               // one item for the whole daemon (use `facet` for more than one)
 export interface InboxKey { kind: InboxKind; scope: InboxScope; facet?: string }
-export function inboxDedupeKey(key: InboxKey): string
-// `${kind}:${scopeTag}[:${encodeURIComponent(scopeValue)}][:${encodeURIComponent(facet)}]`, e.g.
-// `waiting:session:claude%3As-basic`, `budget:project:wakecap`, `reminder:global:daily`.
-// `kind` and the scope tag are closed enums and the variable parts are percent-encoded (which
-// escapes the `:` separator), so the mapping identity → string is injective: nothing can collide.
-// `facet` is the extra discriminator for one kind raising several distinct items for one scope
-// (a PR's `checks` vs its `review`). It can only ever split a key in two, never merge two scopes.
+export function inboxDedupeKey(key: InboxKey): InboxItem['dedupeKey']
+// `${kind}:${enc(tag)}[:${enc(id)}][:${enc(facet)}]` where `enc` is encodeURIComponent, e.g.
+// `waiting:session:claude%3As-basic`, `budget:project:wakecap`, `reminder:global:daily`,
+// `pr_event:pr:o%2Fr%234:checks`. `kind` is a closed enum and encoding escapes the `:` separator,
+// so the mapping identity → string is injective: nothing can collide, not a pk containing a colon
+// nor a domain containing one. `session`/`project`/`ticket` are sugar for the domains of the same
+// name — `{domain:'session', id:pk}` is the same key as `{session:pk}`, which is aliasing of ONE
+// identity, not a collision of two. `facet` is the extra discriminator for one kind raising
+// several distinct items for one scope (a PR's `checks` vs its `review`); it can only ever split
+// a key in two, never merge two scopes, and `facet: ''` splits like any other value.
 
 // P2 — apps/daemon/src/inbox/engine.ts
 export const REASON_MAX = 300
@@ -626,10 +632,19 @@ export interface InboxEngine {
   registerRule(rule: InboxRule): void;
 }
 export interface InboxRule { name: string; on: BusEvent['type'][]; handle(e: BusEvent, ctx: DaemonContext): void }
+export interface InboxEngineRuntime extends InboxEngine { tick(now?: Date): void; start(intervalMs?: number): void; stop(): void }
+export class InboxError extends Error { readonly status: 400 | 404; readonly code: 'not_found' | 'validation_failed' }
+export function createInboxEngine(ctx: DaemonContext, opts?: { now?: () => Date; notifier?: Notifier }): InboxEngineRuntime
 // `InboxItem.dedupeKey` (§ above) is unchanged — it is a DB column and the wire shape keeps it.
 // `reason` is redacted and THEN truncated to REASON_MAX via core's `truncate` (never `slice`, and
 // never truncate-first: cutting `PGPASSWORD=hunter2` to `SSWORD=hunter2` removes the anchor every
 // pattern matches on). Tasks 10+ call `inboxDedupeKey` instead of declaring their own key helper.
+// `upsert` refresh semantics: `undefined`/absent leaves a column alone, any other value — `null`
+// included — replaces it, for `payload`, `ticket`, `projectId` and `sessionId` alike. A payload
+// that cannot be JSON-serialized is degraded per key and flagged `{ serializationFailed: true }`
+// rather than throwing, because a throw inside a rule is swallowed and the item never appears.
+// `snooze(until)` takes a future ISO instant with a four-digit year and an explicit zone; a naive
+// local time or an expanded year (`+010000-…`, which sorts before every digit in SQL) is a 400.
 
 // P2 — apps/daemon/src/notify/notifier.ts
 export type NotifyChannel = 'macos' | 'webpush' | 'slack_dm';

@@ -13,7 +13,7 @@ export interface InboxFilter {
 }
 
 export type InboxPatch = Partial<
-  Pick<InboxItem, 'reason' | 'state' | 'snoozeUntil' | 'payload' | 'ticket' | 'projectId'>
+  Pick<InboxItem, 'reason' | 'state' | 'snoozeUntil' | 'payload' | 'ticket' | 'projectId' | 'sessionId'>
 > & {
   updatedAt: string;
 };
