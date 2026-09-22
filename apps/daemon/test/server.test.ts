@@ -1,3 +1,4 @@
+import { connect, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { pino } from 'pino';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,8 +10,10 @@ import { FAKE_CLAUDE, makeTempHomes, type TempHomes, writeClaudeSession } from '
 let homes: TempHomes;
 let daemon: Daemon;
 let server: { port: number; close(): Promise<void> } | undefined;
+const rawClients: Socket[] = [];
 
 afterEach(async () => {
+  for (const c of rawClients.splice(0)) c.destroy();
   await server?.close();
   server = undefined;
   homes?.cleanup();
@@ -119,6 +122,64 @@ describe('daemon server', () => {
     await expect(open(port, `/pty/nope?token=${daemon.token}`, undefined)).rejects.toThrow('status 403');
     await expect(open(port, `/pty/nope?token=${daemon.token}`, origin)).rejects.toThrow('status 404');
     await expect(open(port, `/other?token=${daemon.token}`, origin)).rejects.toThrow();
+  });
+
+  it('survives an upgrade target that Node accepts and WHATWG URL rejects', async () => {
+    // `new URL(req.url, base)` inside an 'upgrade' listener throws SYNCHRONOUSLY, before the token
+    // and Origin checks, so this used to end the process: every PTY, the indexer, the board. One
+    // unauthenticated TCP connection to the loopback port was the whole exploit. `socket.on(
+    // 'error')` cannot help — the throw is not a socket event.
+    const port = await boot();
+    const origin = `http://127.0.0.1:${port}`;
+    /** Resolves with the response status line, or '' if the socket was destroyed without one. */
+    const rawUpgrade = (target: string): Promise<string> =>
+      new Promise((resolve) => {
+        let seen = '';
+        const c = connect(port, '127.0.0.1', () => {
+          c.write(
+            `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nOrigin: ${origin}\r\n` +
+              'Upgrade: websocket\r\nConnection: Upgrade\r\n' +
+              'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n',
+          );
+        });
+        rawClients.push(c);
+        const done = () => resolve(seen.split('\r\n')[0] ?? '');
+        c.on('error', done);
+        c.on('close', done);
+        c.on('data', (d) => {
+          seen += d.toString('latin1');
+          done();
+        });
+        setTimeout(done, 250);
+      });
+
+    // The last two carry a VALID token, this server's own Origin and a REAL pty id, so only the
+    // refusal to normalise a foreign authority stops them upgrading.
+    const decoy = daemon.ctx.pty.spawn({ command: FAKE_CLAUDE, args: [], cwd: homes.root });
+    const statuses: string[] = [];
+    for (const t of [
+      'http://[',
+      '//[/ws',
+      '//',
+      `//evil.example/pty/${decoy.id}?token=${daemon.token}`,
+      `/\\evil.example/pty/${decoy.id}?token=${daemon.token}`,
+    ]) {
+      statuses.push(await rawUpgrade(t));
+    }
+    // Not one of them may be answered with a handshake.
+    expect(statuses.filter((l) => l.includes('101'))).toEqual([]);
+    expect(daemon.ctx.pty.get(decoy.id)?.exitedAt ?? null).toBeNull();
+
+    // The daemon is still up and still serving.
+    const health = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      headers: { 'x-orc-token': daemon.token },
+    });
+    expect(health.status).toBe(200);
+    // And a real PTY socket still works afterwards.
+    const pty = daemon.ctx.pty.spawn({ command: FAKE_CLAUDE, args: [], cwd: homes.root });
+    const live = await open(port, `/pty/${pty.id}?token=${daemon.token}`, origin);
+    await waitFor(() => live.frames.length > 0);
+    live.ws.close();
   });
 
   it('serves bootstrap.js to local same-origin requests', async () => {

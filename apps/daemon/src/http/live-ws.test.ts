@@ -1,5 +1,7 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { connect as netConnect, type Socket } from 'node:net';
+import { PassThrough } from 'node:stream';
 import type { InboxItem } from '@orc/core';
 import { type Logger, pino } from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -19,6 +21,7 @@ let server: Server;
 let origin: string;
 let url: string;
 const sockets: WebSocket[] = [];
+const rawClients: Socket[] = [];
 let warnings: unknown[][] = [];
 
 /** The hub's only observable reaction to a socket-level error is a `ctx.log.warn`. */
@@ -59,6 +62,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  for (const c of rawClients.splice(0)) c.destroy();
   for (const ws of sockets.splice(0)) ws.terminate();
   await hub.close();
   await new Promise((r) => server.close(r));
@@ -174,6 +178,50 @@ describe('live WS hub', () => {
     });
   });
 
+  /** A raw TCP upgrade, so the request target bypasses anything a WebSocket client would sanitise. */
+  function rawUpgrade(target: string): Promise<void> {
+    const port = (server.address() as AddressInfo).port;
+    return new Promise((resolve) => {
+      const c = netConnect(port, '127.0.0.1', () => {
+        c.write(
+          `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nOrigin: ${origin}\r\n` +
+            `Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n` +
+            'Sec-WebSocket-Version: 13\r\n\r\n',
+        );
+      });
+      rawClients.push(c);
+      c.on('error', () => resolve());
+      c.on('close', () => resolve());
+      c.on('data', () => resolve());
+      setTimeout(resolve, 250);
+    });
+  }
+
+  it('survives an unparseable upgrade target, and refuses a protocol-relative one', async () => {
+    // Both of these crashed the daemon before `parseUpgradeTarget`: the URL throw happens
+    // synchronously inside the 'upgrade' listener, before the token or Origin check, so one
+    // unauthenticated TCP connection took the whole process down. `//evil.example/ws` did not
+    // throw — it normalised to pathname '/ws' on a foreign authority and upgraded.
+    const good = await connect();
+    await expect.poll(() => good.messages.length).toBe(1);
+    // The last two carry a VALID token and this server's own Origin, so the only thing standing
+    // between them and an upgraded socket is the refusal to normalise a foreign authority.
+    for (const t of [
+      'http://[',
+      '//[/ws',
+      '//',
+      `//evil.example/ws?token=${TOKEN}`,
+      `/\\evil.example/ws?token=${TOKEN}`,
+    ]) {
+      await rawUpgrade(t);
+    }
+    // Still alive, still serving, and none of those became a client.
+    expect(hub.clientCount()).toBe(1);
+    ctx.bus.emit({ type: 'session.removed', pk: 'claude:alive' });
+    await expect.poll(() => good.messages.length).toBe(2);
+    expect(good.messages[1]).toEqual({ type: 'session.removed', pk: 'claude:alive' });
+  });
+
   it('rejects a bad token, a foreign origin, a missing origin and any other path', async () => {
     await expect(connect('/ws?token=wrong')).rejects.toThrow('status 401');
     await expect(connect('/ws')).rejects.toThrow('status 401');
@@ -220,15 +268,37 @@ describe('live WS hub', () => {
     await boot({ maxBufferedBytes: 1024 });
     const stuck = await connect();
     await expect.poll(() => stuck.messages.length).toBe(1);
-    // The first event leaves ~1 MB queued on the socket (it cannot have flushed synchronously),
-    // so the second broadcast sees bufferedAmount over the cap and evicts the client.
+
+    // Stop the CLIENT reading, at the TCP level. Its receive window closes, so the server's
+    // socket stops accepting writes and `bufferedAmount` only ever grows. The eviction condition
+    // is then CAUSED rather than raced: the previous version emitted twice and hoped ~1 MiB had
+    // failed to flush in between, which moves with reporter I/O and CPU load and did fail under
+    // the full suite. Reaching into `_socket` is the price of driving the condition directly.
+    (stuck.ws as unknown as { _socket: Socket })._socket.pause();
+
     const big = {
       type: 'session.updated' as const,
-      session: liveSession({ lastPrompt: 'a'.repeat(1 << 20) }),
+      session: liveSession({ lastPrompt: 'a'.repeat(256 * 1024) }),
     };
-    ctx.bus.emit(big);
-    ctx.bus.emit(big);
-    await expect.poll(() => hub.clientCount()).toBe(0);
+    // Synchronous, so nothing can drain between iterations. The cap only bounds the failure case.
+    let emits = 0;
+    while (hub.clientCount() > 0 && emits < 64) {
+      ctx.bus.emit(big);
+      emits += 1;
+    }
+    expect(hub.clientCount()).toBe(0);
+    expect(emits).toBeLessThan(64);
+  });
+
+  it('attaches an error listener to the pre-upgrade socket before anything can throw', () => {
+    // The raw socket is an EventEmitter that can emit 'error' (a client resetting mid-handshake)
+    // with nothing else listening, and an unhandled 'error' on an EventEmitter is fatal to the
+    // process. Driven directly rather than raced, because the listener EXISTING is the property —
+    // the window it covers is a few microseconds wide and cannot be hit reliably from outside.
+    const socket = new PassThrough();
+    hub.handleUpgrade({ url: '/nope', headers: {} } as IncomingMessage, socket, Buffer.alloc(0));
+    expect(() => socket.emit('error', new Error('reset during handshake'))).not.toThrow();
+    expect(warnings.map((a) => a[1])).toContain('live upgrade socket error');
   });
 
   it('subscribes to exactly the live types and unsubscribes on close', async () => {

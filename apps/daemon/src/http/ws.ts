@@ -4,6 +4,7 @@ import { PtyClientMessageSchema } from '@orc/api-contract';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { DaemonContext } from '../context.ts';
 import { tokenMatches } from './auth.ts';
+import { parseUpgradeTarget } from './upgrade-target.ts';
 
 export interface PtySocketOptions {
   ctx: DaemonContext;
@@ -26,15 +27,21 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
     // The raw pre-upgrade socket is also an EventEmitter that can emit 'error' (e.g. the client
     // resets the connection before the handshake finishes) with no listener otherwise attached.
     socket.on('error', (err) => o.ctx.log.warn({ err }, 'pty upgrade socket error'));
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    const match = /^\/pty\/([^/]+)$/.exec(url.pathname);
+    // Never `new URL(...)` inline here: a target Node's parser accepts and WHATWG rejects would
+    // throw synchronously inside this listener and kill the daemon, before any auth ran.
+    const target = parseUpgradeTarget(req.url);
+    if (!target) {
+      socket.destroy();
+      return;
+    }
+    const match = /^\/pty\/([^/]+)$/.exec(target.path);
     if (!match?.[1]) {
       socket.destroy();
       return;
     }
     const ptyId = decodeURIComponent(match[1]);
     const headerToken = req.headers['x-orc-token'];
-    const token = (typeof headerToken === 'string' ? headerToken : null) ?? url.searchParams.get('token');
+    const token = (typeof headerToken === 'string' ? headerToken : null) ?? target.query.get('token');
     if (!tokenMatches(o.token, token)) {
       reject(socket, 401, 'Unauthorized');
       return;

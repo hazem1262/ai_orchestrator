@@ -5,6 +5,7 @@ import type { DaemonContext } from '../context.ts';
 import type { BusEvent } from '../live/event-bus.ts';
 import { tokenMatches } from './auth.ts';
 import { redactInboxItem, redactSession, redactValue } from './redact-out.ts';
+import { parseUpgradeTarget } from './upgrade-target.ts';
 
 /** The bus events that are fanned out to browsers. Everything else on the bus stays internal. */
 export const LIVE_EVENT_TYPES = [
@@ -62,8 +63,11 @@ export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): Liv
   const now = opts.now ?? (() => new Date());
   const maxBuffered = opts.maxBufferedBytes ?? 5 * 1024 * 1024;
   const wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
-  // A server-level emit (a malformed upgrade the ws lib itself chokes on) must not be an
-  // unhandled 'error' event — Node treats that as fatal and kills the whole daemon process.
+  // Defence in depth, and honestly labelled as such: unlike the per-connection and pre-upgrade
+  // listeners below, no input has been found that makes `WebSocketServer` itself emit 'error' in
+  // `noServer` mode — the review tried 60 hostile-frame and handshake variants without firing it.
+  // It stays because an unhandled 'error' on an EventEmitter is fatal to the whole process and
+  // the cost of listening is one line. `http/ws.ts` carries the same listener for the same reason.
   wss.on('error', (err) => ctx.log.warn({ err }, 'live websocket server error'));
 
   wss.on('connection', (ws: WebSocket) => {
@@ -126,13 +130,15 @@ export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): Liv
       // The raw pre-upgrade socket is an EventEmitter too, and can emit 'error' (a client that
       // resets before the handshake finishes) with nothing else listening.
       socket.on('error', (err) => ctx.log.warn({ err }, 'live upgrade socket error'));
-      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-      if (url.pathname !== LIVE_WS_PATH) {
+      // Never `new URL(...)` inline here: a target Node's parser accepts and WHATWG rejects would
+      // throw synchronously inside this listener and kill the daemon, before any auth ran.
+      const target = parseUpgradeTarget(req.url);
+      if (!target || target.path !== LIVE_WS_PATH) {
         socket.destroy();
         return;
       }
       const headerToken = req.headers['x-orc-token'];
-      const token = (typeof headerToken === 'string' ? headerToken : null) ?? url.searchParams.get('token');
+      const token = (typeof headerToken === 'string' ? headerToken : null) ?? target.query.get('token');
       if (!tokenMatches(opts.token, token)) {
         reject(socket, 401, 'Unauthorized');
         return;
