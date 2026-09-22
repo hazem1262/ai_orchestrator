@@ -93,6 +93,9 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/sessions.ts',
+  // Registers `/api/templates` but is not yet wired into `registerAllRoutes`; Task 16 wires it
+  // and adds its routes to `CENSUS`.
+  'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',
   'apps/daemon/src/http/static.ts',
 ];

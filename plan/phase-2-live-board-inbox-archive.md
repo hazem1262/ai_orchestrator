@@ -115,7 +115,7 @@ Repos: `db/repos/inbox.ts`, `db/repos/test-results.ts`, `db/repos/archive.ts` (s
 **§6 routes (Phase 2, final list)**
 ```
 P2  GET    /api/live                                   → Session[] (live != null)
-P2  POST   /api/sessions/launch                        body LaunchRequest → { ptyId, sessionId | null }   errors: 400 validation_failed|cwd_not_found|template_var_missing, 404 template_not_found, 429 concurrency_limit, 501 not_implemented
+P2  POST   /api/sessions/launch                        body LaunchRequest → { ptyId, sessionId | null }   errors: 400 validation_failed|cwd_not_found|template_var_missing|template_var_invalid, 404 template_not_found, 429 concurrency_limit, 501 not_implemented
 P2  POST   /api/sessions/:source/:id/kill              body { confirm?: boolean } → { killed: 'pty' | 'pid' }   409 confirmation_required, 404 not_live
 P2  POST   /api/sessions/:source/:id/open-in           body { app: 'vscode'|'terminal'|'finder'; remember?: boolean } → { ok: true }
 P2  GET    /api/inbox?state=open,snoozed&kind=a,b&projectId → InboxItem[]

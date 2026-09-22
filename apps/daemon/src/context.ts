@@ -12,6 +12,7 @@ import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
+import type { TemplateRegistry } from './services/templates.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 
 /** contracts §11 — Phase 1 fields. Later phases add optional services. */
@@ -33,6 +34,8 @@ export interface DaemonContext {
   notifier?: Notifier;
   /** P2 — replace the config and persist it (Task 11's notification prefs route; Task 16 wires it). */
   updateConfig?: (fn: (cfg: OrcConfig) => OrcConfig) => OrcConfig;
+  /** P2 — workflow templates and task presets (Task 12; Task 16 wires it). */
+  templates?: TemplateRegistry;
 }
 
 export interface BuildContextOptions {
