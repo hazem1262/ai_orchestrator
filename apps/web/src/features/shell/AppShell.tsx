@@ -1,7 +1,15 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type FormEvent, lazy, type ReactNode, Suspense, useState } from 'react';
 import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
+import { useLiveEvents } from '@/api/live-events.ts';
+import { scopeProject, useOpenInboxCount } from '@/api/queries/inbox.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { InboxCount } from '@/features/inbox/InboxCount.tsx';
+import { useInboxTitle } from '@/features/inbox/useInboxTitle.ts';
+import { LaunchDialog } from '@/features/launch/LaunchDialog.tsx';
+import { useLaunchStore } from '@/stores/launch.ts';
+import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { ProjectSelector } from './ProjectSelector.tsx';
 
@@ -60,6 +68,13 @@ function Workspace({ children }: { children: ReactNode }) {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  // One socket for the whole app: the shell outlives every route, so the live caches stay fresh
+  // across navigation and a reconnect resyncs them once.
+  useLiveEvents();
+  const projectId = scopeProject(useProjectStore((s) => s.projectId));
+  const openInboxCount = useOpenInboxCount(projectId);
+  const showLaunch = useLaunchStore((s) => s.show);
+  useInboxTitle(openInboxCount);
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-4">
@@ -68,9 +83,27 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Link>
         <ProjectSelector />
         <GlobalSearch />
+        <InboxCount count={openInboxCount} />
+        <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
+          New session
+        </Button>
       </header>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Main" className="flex w-40 shrink-0 flex-col gap-1 border-r p-2 text-sm">
+          <Link
+            to="/inbox"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Inbox
+          </Link>
+          <Link
+            to="/live"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Live
+          </Link>
           <Link
             to="/history"
             className="rounded px-2 py-1 hover:bg-muted"
@@ -88,6 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <Workspace>{children}</Workspace>
       </div>
+      <LaunchDialog />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { createEventBus, type EventBus } from './live/event-bus.ts';
 import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
+import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -33,12 +34,17 @@ export interface DaemonContext {
   inbox?: InboxEngine;
   /** P2 — desktop/push/Slack notifications (Task 11 implements; Task 9 only calls `notify`). */
   notifier?: Notifier;
-  /** P2 — replace the config and persist it (Task 11's notification prefs route; Task 16 wires it). */
+  /** P2 — replace the config and persist it (Task 11's notification prefs route; set by `createDaemon`). */
   updateConfig?: (fn: (cfg: OrcConfig) => OrcConfig) => OrcConfig;
-  /** P2 — workflow templates and task presets (Task 12; Task 16 wires it). */
+  /** P2 — workflow templates and task presets (Task 12; set by `startPhase2`). */
   templates?: TemplateRegistry;
-  /** P2 — app-owned session launch and kill (Task 13; Task 16 wires it). */
+  /** P2 — app-owned session launch and kill (Task 13; set by `startPhase2`). */
   launcher?: LaunchService;
+  /**
+   * P2 — the transcript archive (Tasks 14-15; set by `startPhase2`). The `/api/archive` routes answer
+   * 503 `archive_unavailable` while it is unset.
+   */
+  archive?: ArchiveServiceRuntime | undefined;
 }
 
 export interface BuildContextOptions {

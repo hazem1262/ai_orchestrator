@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { OrcConfig } from '@orc/api-contract';
 import type { Logger } from 'pino';
 import { ensureToken, type OrcPaths, resolvePaths } from './config.ts';
 import { buildContext, type DaemonContext } from './context.ts';
@@ -10,6 +11,7 @@ import { createApp } from './http/app.ts';
 import { allowedOrigins } from './http/auth.ts';
 import { attachPtyWebSocket } from './http/ws.ts';
 import { createIndexer, type Indexer } from './indexer/indexer.ts';
+import { startPhase2 } from './phase2.ts';
 import { warnIfChildSessionEnv } from './pty/pty-manager.ts';
 import type { ExternalLauncher } from './services/external.ts';
 
@@ -29,6 +31,11 @@ export async function createDaemon(
   const built = buildContext({ paths, log: o.log, launchExternal: o.launchExternal });
   const { ctx } = built;
   const token = ensureToken(paths);
+  ctx.updateConfig = (fn) => {
+    const next = OrcConfig.parse(fn(ctx.config()));
+    built.saveConfig(next);
+    return next;
+  };
   const indexer = createIndexer({
     db: ctx.db,
     raw: built.raw,
@@ -46,6 +53,8 @@ export async function createDaemon(
     token,
     async start({ port, watch = true }) {
       let boundPort = port;
+      const origins = () => allowedOrigins(boundPort);
+      const phase2 = await startPhase2(ctx, { token, origins });
       const app = createApp({ ctx, token, port: () => boundPort, webDist });
       const server = await new Promise<Server>((resolve) => {
         const s = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, (info: AddressInfo) => {
@@ -53,7 +62,7 @@ export async function createDaemon(
           resolve(s as Server);
         });
       });
-      const sockets = attachPtyWebSocket(server, { ctx, token, origins: () => allowedOrigins(boundPort) });
+      const sockets = attachPtyWebSocket(server, { ctx, token, origins, liveHub: phase2.hub });
       ctx.log.info({ port: boundPort }, 'daemon listening');
       const scan = indexer
         .scanAll()
@@ -66,6 +75,7 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          await phase2.stop();
           await indexer.close();
           await sockets.close();
           await new Promise<void>((resolve) => {

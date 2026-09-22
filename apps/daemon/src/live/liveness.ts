@@ -243,11 +243,8 @@ export interface LivenessCheckerOptions {
    * pid-reuse guard by one delta value, on a signature nobody has ever seen fire.
    *
    * No logger is injected: this module has no `DaemonContext`/pino coupling and should not acquire
-   * one. **The daemon's construction site must wire this to `ctx.log.warn`.** There is still no
-   * such site: task 8 shipped the `/api/live` routes and the `/ws` hub but constructs no
-   * `LiveTracker`, and per the phase plan the tracker, the registry watcher and this checker are
-   * all built by task 16's `startPhase2` (`apps/daemon/src/phase2.ts`). Until then this callback is
-   * exercised only by `liveness.test.ts`, and the guard protects nothing in production.
+   * one. The daemon's construction site, `startPhase2` (`apps/daemon/src/phase2.ts`), wires it to
+   * `ctx.log.warn`.
    */
   onSuspectedFormatChange?: (info: {
     pid: number;

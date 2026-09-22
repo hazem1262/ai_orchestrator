@@ -62,6 +62,40 @@ export const CENSUS: Record<string, CensusEntry> = {
   'GET /api/views': { guardedBy: 'redactSavedView', reason: '' },
   'POST /api/views': { guardedBy: 'redactSavedView', reason: '' },
   'DELETE /api/views/:id': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/live': { guardedBy: 'redactSession', reason: '' },
+  'POST /api/hooks': {
+    guardedBy: null,
+    reason: '{ ok: true }; the hook body is reduced to three fields and never echoed back',
+  },
+  'GET /api/inbox': { guardedBy: 'redactInboxItem', reason: '' },
+  'POST /api/inbox/:id/:action{done|snooze|reopen}': { guardedBy: 'redactInboxItem', reason: '' },
+  'GET /api/templates': {
+    guardedBy: null,
+    reason: 'the built-in templates: compile-time constants, no user or transcript data',
+  },
+  'POST /api/sessions/launch': {
+    guardedBy: null,
+    reason: '{ ptyId, sessionId }: the daemon-minted pty id and the discovered session id',
+  },
+  'POST /api/sessions/:source/:id/kill': { guardedBy: null, reason: '{ killed: "pty" | "pid" }' },
+  'POST /api/sessions/:source/:id/open-in': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/config/notifications': {
+    guardedBy: null,
+    reason: 'per-kind enabled flags and channel names from the user’s own config',
+  },
+  'PUT /api/config/notifications': {
+    guardedBy: null,
+    reason: 'echoes the preferences the client just sent, after schema validation',
+  },
+  'GET /api/archive/status': {
+    guardedBy: null,
+    reason: 'counts, bytes, the codec, a daemon-derived ISO timestamp and a constant snippet',
+  },
+  'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
+  'POST /api/archive/restore': {
+    guardedBy: 'redactValue',
+    reason: 'the restored paths, and the 409 summary and target list, are transcript paths',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -76,28 +110,20 @@ export const CENSUS: Record<string, CensusEntry> = {
 /**
  * Every file allowed to register an HTTP route. A `registerExtra`-style hook cannot be added
  * quietly: its body has to call `app.get(...)` somewhere, and that somewhere must be listed here.
- * Task 16's `registerPhase2Routes` will have to add its file — which is the same moment it has to
- * add its routes to `CENSUS`.
+ * A new registrar file is added here at the same moment its routes are added to `CENSUS`.
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
-  // Registers `/api/inbox` routes but is not yet wired into `registerAllRoutes`; Task 16 wires it
-  // and adds its routes to `CENSUS`.
   'apps/daemon/src/http/routes/inbox.ts',
-  // Registers `/api/sessions/launch`, `/kill` and `/open-in` but is not yet wired into
-  // `registerAllRoutes`; Task 16 wires it and adds its routes to `CENSUS`.
   'apps/daemon/src/http/routes/launch.ts',
   'apps/daemon/src/http/routes/live.ts',
-  // Registers `/api/config/notifications` but is not yet wired into `registerAllRoutes`; Task 16
-  // wires it and adds its routes to `CENSUS`.
   'apps/daemon/src/http/routes/notifications.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/sessions.ts',
-  // Registers `/api/templates` but is not yet wired into `registerAllRoutes`; Task 16 wires it
-  // and adds its routes to `CENSUS`.
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',
   'apps/daemon/src/http/static.ts',

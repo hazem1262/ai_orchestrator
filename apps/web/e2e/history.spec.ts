@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 test('finds sessions by keyword, shows prompts-only history and opens the detail view', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/history');
   await expect(page).toHaveURL(/\/history/);
   await expect(page.getByRole('combobox', { name: 'Project' })).toHaveValue('wakecap');
   await expect(page.getByRole('link', { name: 'Notification service test check' })).toBeVisible();

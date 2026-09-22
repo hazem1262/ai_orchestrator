@@ -141,6 +141,7 @@ describe('archive repo', () => {
       sourceMtimeMs: 1,
       bytes: 10,
       archivedAt: '2026-09-01T09:00:00.000Z',
+      headFingerprint: null,
     };
     upsertArchiveEntry(handle.db, e);
     upsertArchiveEntry(handle.db, { ...e, sourceSize: 200, bytes: 20 });

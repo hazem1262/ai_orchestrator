@@ -126,6 +126,8 @@ apps/web/src/
 
 - **`ORC_HOME`** defaults to `~/.orchestrator`. Tests always set it to a temp dir.
 - **`CLAUDE_HOME`** defaults to `~/.claude`, and **`CODEX_HOME`** defaults to `~/.codex`. Tests point them at `fixtures/`.
+- **`ORC_PORT`** overrides `OrcConfig.port` for one run (`apps/daemon/src/main.ts`).
+- **`ORC_NOTIFY=off`** (P2) registers no notification channel at all, so nothing is sent on any channel. The unit tests and the e2e run set it.
 
 ```
 $ORC_HOME/
@@ -168,7 +170,8 @@ export const OrcConfig = z.object({
   recaps: z.object({ enabled: z.boolean().default(false), trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'), engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'), autoModel: z.string().default('claude-haiku-4-5'), onDemandModel: z.string().default('claude-sonnet-5'), monthlyBudgetUsd: z.number().default(20), maxInputTokens: z.number().default(30000), minPrompts: z.number().default(2), language: z.string().default('en'), promptTemplate: z.string().nullable().default(null) }).prefault({}),
   notifications: z.record(z.string(), z.object({ enabled: z.boolean(), channels: z.array(z.enum(['macos', 'webpush', 'slack_dm'])) })).default({}),
   archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
-});
+  live: z.object({ pollMs: z.number().int().positive().default(1000), endedRetentionMin: z.number().int().positive().default(10), codexBusyWindowMs: z.number().int().positive().default(10000) }).prefault({}),   // P2
+}).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 ```
@@ -302,6 +305,37 @@ export type AuditActor = 'user' | 'automation' | 'supervisor' | 'remote';
 export interface AuditEntry { id: string; ts: string; actor: AuditActor; actorDetail: string | null; action: string; target: string | null; params: Record<string, unknown>; result: 'ok' | 'error' | 'denied'; error: string | null }
 ```
 
+**P2 derivations (`@orc/core`)** — pure, no `node:fs`, all re-exported from `src/index.ts`:
+
+```ts
+// claude/registry.ts
+export type RegistryStatus = 'busy' | 'idle' | 'waiting' | 'shell';
+export interface RegistryEntry { pid: number; procStart: string | null; sessionId: string; cwd: string; startedAt: number | null; version: string | null; kind: string | null; name: string | null; status: RegistryStatus | null; waitingFor: string | null; statusUpdatedAt: number | null; updatedAt: number | null }
+export function parseRegistryEntry(value: unknown): RegistryEntry | null;   // never throws; never copies messagingSocketPath or any peer* field
+export const parseRegistryFile = parseRegistryEntry;                        // P1 alias, kept
+export function isRegistryFileName(name: string): boolean;                  // /^\d+\.json$/ — never matches *.key
+export function registryStatusToLive(status: string): LiveStatus;
+// derive/tests.ts
+export function isTestCommand(command: string): boolean;
+export function parseTestOutput(command: string, output: string, ts: string): TestResult | null;
+// derive/stage.ts
+export type ToolCategory = 'read' | 'edit' | 'test' | 'other';
+export function categorizeTool(tool: string, input: unknown): ToolCategory;
+export function inferStage(s: { categories: ToolCategory[]; turnEnded: boolean; changedFiles: number }): Stage | null;
+// derive/live-transcript.ts
+export interface TranscriptLive { turn: number; lastPrompt: string | null; currentTool: string | null; stage: Stage | null; backgroundJobs: number; runningSubagents: number; contextFill: number | null; lastTest: TestResult | null; turnEnded: boolean; turnChangedFiles: string[]; turnPrs: number; lastApiError: string | null; permissionMode: string | null; lastActivityAt: string | null }
+export interface LiveReducerEffects { testRecorded: TestResult | null; turnEnded: number | null }
+export interface LiveReducer { apply(value: unknown): LiveReducerEffects; snapshot(): TranscriptLive }
+export const emptyTranscriptLive: () => TranscriptLive;
+export function createLiveReducer(opts?: { contextWindow?: number }): LiveReducer;
+// derive/live-status.ts
+export interface DeriveStatusInput { alive: boolean; registryStatus: RegistryStatus | null; transcript: TranscriptLive }
+export function deriveLiveStatus(i: DeriveStatusInput): LiveStatus;
+export function splitPk(pk: string): { source: Source; id: string };
+```
+
+`deriveLiveStatus` precedence: `ended` (process dead) > `waiting`/`busy`/`shell` (straight from the registry) > `error` (last assistant record was an API error) > `review` (turn ended having changed a file or opened a PR) > `idle`. `blocked` needs Phase-5 goal data and never comes out of this function yet.
+
 **Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `pty.input`, `archive.restore`, `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`.
 
 ## 5. SQLite & migrations
@@ -335,7 +369,15 @@ export interface AuditEntry { id: string; ts: string; actor: AuditActor; actorDe
 | `connector_tokens_meta`, `push_subscriptions`, `webauthn_credentials`, `slack_threads` | 6 | — |
 | `automations`, `automation_runs`, `compare_groups`, `supervisor_rules`, `supervisor_decisions` | 7 | — |
 
-- **Repositories:** each table group has a repo module in `apps/daemon/src/db/repos/<name>.ts` that exports plain functions taking `db: OrcDb` as the first argument, e.g. `upsertSession(db, s)`. **Routes never run SQL directly.**
+- **P2 columns** (as built, `apps/daemon/src/db/schema.ts`):
+
+| Table | Columns |
+|---|---|
+| `inbox_items` | `id` text pk, `kind`, `session_id`, `project_id`, `ticket`, `reason`, `dedupe_key`, `created_at`, `updated_at`, `state`, `snooze_until`, `payload_json` (not null, default `'{}'`). Unique index `inbox_items_active_dedupe` on `dedupe_key` `WHERE state in ('open','snoozed')`. Index `inbox_items_state_idx` (`state`, `updated_at`). |
+| `test_results` | `session_pk`, `ts`, `command`, `passed`, `failed`, `skipped`, `duration_ms`. PK (`session_pk`, `ts`). No FK, because a live session may not be indexed yet. |
+| `archive_entries` | `path` text pk (the source transcript path), `session_pk`, `agent_id`, `project_id`, `archive_path`, `codec` (`'zstd'\|'gzip'`), `source_size`, `source_mtime_ms`, `bytes`, `archived_at`, `head_fingerprint` (`"<size>:<sha1 of the first 4096 bytes>"`, same format as `file_offsets.head_fingerprint`; catches a same-size rewrite that (size, mtime) cannot; `null` on rows written before the column existed). Index `archive_entries_session_idx` on `session_pk`. |
+
+- **Repositories:** each table group has a repo module in `apps/daemon/src/db/repos/<name>.ts` that exports plain functions taking `db: OrcDb` as the first argument, e.g. `upsertSession(db, s)`. **Routes never run SQL directly.** P2 adds `db/repos/inbox.ts`, `db/repos/test-results.ts` and `db/repos/archive.ts`.
 
 ```ts
 // apps/daemon/src/db/client.ts
@@ -381,14 +423,21 @@ P1  DELETE /api/views/:id                            → { ok: true }
 P1  GET    /api/pty                                  → PtyInfo[]
 P1  DELETE /api/pty/:ptyId                           body { confirm: true }
 P1  WS     /pty/:ptyId                               binary out; client msgs: { t:'in', d:string } | { t:'resize', cols, rows }
-P2  GET    /api/live                                 → Session[] (with live != null)
+P2  GET    /api/live                                 → Session[] (live != null)
 P2  POST   /api/sessions/launch                      body LaunchRequest → { ptyId, sessionId | null }
-P2  POST   /api/sessions/:source/:id/kill            body { confirm: true }
-P2  GET    /api/inbox?state&kind&projectId           → InboxItem[]
-P2  POST   /api/inbox/:id/(done|snooze|reopen)       body { until? }
-P2  GET    /api/templates                            → Template[]
-P2  GET    /api/archive/status ; POST /api/archive/restore  body { source, id, confirm }
-P2  WS     /ws                                       server → client LiveEvent (below)
+                                                     errors: 400 validation_failed|cwd_not_found|template_var_missing|template_var_invalid, 404 template_not_found, 429 concurrency_limit, 501 not_implemented (planApproval|worktree|compare), 503 templates_unavailable
+P2  POST   /api/sessions/:source/:id/kill            body { confirm?: boolean } → { killed: 'pty' | 'pid' }   409 confirmation_required, 404 not_live
+P2  POST   /api/sessions/:source/:id/open-in         body { app: 'vscode'|'terminal'|'finder'; remember?: boolean } → { ok: true }
+P2  GET    /api/inbox?state=open,snoozed&kind=a,b&projectId → InboxItem[]
+P2  POST   /api/inbox/:id/:action{done|snooze|reopen} body { until? } → InboxItem   (snooze requires a future ISO `until`)
+P2  GET    /api/templates?projectId                  → Template[]
+P2  GET    /api/archive/status                       → ArchiveStatus
+P2  POST   /api/archive/restore                      body { source, id, confirm? } → { restored: string[] }   409 confirmation_required|restore_target_exists, 404 not_archived, 400 unsupported_source
+P2  POST   /api/archive/sync                         → { copied: number }
+P2  GET    /api/config/notifications                 → NotificationPrefs
+P2  PUT    /api/config/notifications                 body NotificationPrefs → NotificationPrefs
+P2  POST   /api/hooks                                body HookIngestBody → { ok: true }   (minimal ingest; the full bridge is P5)
+P2  WS     /ws                                       hello, then LiveEvent deltas (below)
 P3  GET    /api/audit?…                              → AuditEntry[]
 P3  GET    /api/sessions/:source/:id/export          → application/zip
 P4  /api/worktrees…  /api/diff…  /api/checkpoints…  /api/ship…        (defined in phase 4)
@@ -396,6 +445,10 @@ P5  /api/streams…  /api/analytics…  /api/usage…  /api/recaps…  /api/goal
 P6  /api/connectors…  /api/push…  /api/webauthn…
 P7  /api/automations…  /api/compare…  /api/supervisor…
 ```
+
+P2's zod schemas live in `packages/api-contract/src/routes/{live,launch,inbox,templates,archive,notifications,hooks}.ts`, with `export type LaunchRequest = z.infer<typeof LaunchRequest>` and `ArchiveStatus = z.object({ enabled, files, bytes, oldestTranscript, cleanupPeriodDays, codec, recommendedSnippet })`. P2's client methods (`packages/api-contract/src/client-p2.ts`, folded into `createApiClient`) are `liveList`, `sessionsLaunch`, `sessionsKill`, `sessionsOpenIn`, `inboxList`, `inboxDone`, `inboxSnooze`, `inboxReopen`, `templatesList`, `archiveStatus`, `archiveRestore`, `archiveSync`, `notificationsGet`, `notificationsPut`.
+
+**P2 BusEvent additions:** none. Phase 2 emits the existing `session.statusChanged`, `session.turnEnded`, `tests.recorded`, `hook.received`, `session.updated`, `session.removed` and `inbox.upserted`.
 
 ### WS `/ws` live events
 ```ts
@@ -513,10 +566,13 @@ export interface DaemonContext {
   sessions: SessionService;                // P1
   projects: ProjectServiceImpl;            // P1 — as-built name; ProjectService is the narrower public interface it extends (see below)
   userMeta: UserMetaService;               // P1 — pins/labels/saved views; not anticipated by the original §11 draft
+  live?: LiveTracker;                      // P2
   inbox?: InboxEngine;                     // P2
   notifier?: Notifier;                     // P2
+  updateConfig?: (fn: (cfg: OrcConfig) => OrcConfig) => OrcConfig;   // P2 — replaces the config and persists it via saveConfig
   templates?: TemplateRegistry;            // P2
-  archive?: ArchiveService;                // P2
+  launcher?: LaunchService;                // P2
+  archive?: ArchiveServiceRuntime;         // P2 — narrows the contract's ArchiveService (superset); the /api/archive routes answer 503 archive_unavailable while it is unset
   audit?: AuditService;                    // P3
   denyList?: DenyList;                     // P3
   worktrees?: WorktreeService;             // P4
@@ -650,6 +706,10 @@ export function createInboxEngine(ctx: DaemonContext, opts?: { now?: () => Date;
 export type NotifyChannel = 'macos' | 'webpush' | 'slack_dm';
 export interface NotifyChannelImpl { id: NotifyChannel; send(item: InboxItem, url: string): Promise<void> }
 export interface Notifier { notify(item: InboxItem): Promise<void>; register(channel: NotifyChannelImpl): void; setAway(away: boolean): void; isAway(): boolean }
+// Every session-scoped inbox item's payload carries `{ source, id }`, so a channel builds its URL as
+// `http://127.0.0.1:<port>/sessions/<source>/<id>` without parsing the dedupe key. A banner's text is
+// the kind's fixed title plus `item.reason`, which the engine already redacted; no other field goes
+// out. `ORC_NOTIFY=off` (§3) registers no channel at all.
 
 // P2 — apps/daemon/src/services/templates.ts
 export interface Template { id: string; kind: 'workflow' | 'preset'; label: string; prompt: string; vars: Array<'ticket' | 'ticketUrl' | 'prUrl' | 'file' | 'check'>; defaultSource: Source; projectIds: string[] | 'all' }
@@ -659,6 +719,34 @@ export const LaunchRequest = z.object({ source: z.enum(['claude','codex']), proj
 
 // P2 — apps/daemon/src/services/archive/archive.ts
 export interface ArchiveService { syncAll(): Promise<{ copied: number }>; status(): { enabled: boolean; files: number; bytes: number; oldestTranscript: string | null; cleanupPeriodDays: number | null }; restore(source: Source, id: string): Promise<void> }
+// apps/daemon/src/services/archive/compress.ts
+export type ArchiveCodec = 'zstd' | 'gzip'   // zstd when node:zlib has it, else gzip
+export interface ArchiveServiceRuntime extends ArchiveService { restorePlan(source: Source, id: string): { targets: string[] }; codec(): ArchiveCodec; start(intervalMs?: number): void; stop(): Promise<void> }
+export class ArchiveError extends Error { readonly status: 400 | 404 | 409; readonly code: string; readonly details?: unknown }
+export function resolveAvailability(i: { transcriptExists: boolean; archived: boolean; hasPrompts: boolean; remote?: boolean }): Availability
+// remote > transcriptExists ('resumable') > archived > 'prompts-only'. SessionService's availability
+// expression calls this, so `archived` has exactly one definition.
+
+// P2 — apps/daemon/src/live/live-tracker.ts
+export interface HookEvent { sessionId: string; event: string; message: string | null; ts: string }
+export interface LiveTracker { start(): Promise<void>; stop(): Promise<void>; refresh(): Promise<void>; list(): Session[]; get(pk: string): Session | null; waitForPid(pid: number, timeoutMs: number): Promise<string | null>; applyHook(e: HookEvent): void }
+export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): LiveTracker
+
+// P2 — apps/daemon/src/collectors/codex/live.ts
+export interface CodexLiveProc { pid: number; cwd: string; startedAtMs: number; rolloutPath: string | null; sessionId: string | null; originator: string | null; lastWriteMs: number | null }
+export interface CodexLiveDetector { scan(): Promise<CodexLiveProc[]> }
+
+// P2 — apps/daemon/src/services/launch.ts
+export interface LaunchResult { ptyId: string; sessionId: string | null }
+export interface LaunchService { launch(req: LaunchRequest): Promise<LaunchResult>; kill(source: Source, id: string): Promise<{ killed: 'pty' | 'pid' }>; ownedCount(projectId: string | null): number }
+export class LaunchError extends Error { readonly status: 400 | 404 | 409 | 429 | 501 | 503; readonly code: string; readonly details?: unknown }
+export function buildLaunchCommand(cfg: OrcConfig, req: { source: 'claude' | 'codex'; model?: string; prompt: string }): { command: string; args: string[] }
+// argv only, never a shell. The prompt is one argv element, always last, and is dropped when blank.
+// Codex gets `--` before it (clap reads everything after `--` as the positional); claude gets no
+// `--` (Commander dispatches a subcommand even after one), so a prompt equal to one of
+// `CLAUDE_SUBCOMMANDS` is a 400 instead. The cap check and the spawn sit in one synchronous block:
+// no await between them, or two concurrent launches both pass. Both the cap's limit and its count
+// come from the project the CWD resolves to; a request-supplied projectId only has to agree.
 
 // P3 — apps/daemon/src/services/audit/audit.ts
 export interface AuditService { record(e: Omit<AuditEntry, 'id' | 'ts'>): AuditEntry; list(filter: { sessionPk?: string; action?: string; actor?: AuditActor; from?: string; to?: string; limit?: number }): AuditEntry[] }
@@ -719,7 +807,18 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
 - **Stores:**
   - `stores/project.ts` → `useProjectStore` `{ projectId, setProjectId }`, persisted in localStorage
   - `stores/terminals.ts` → `useTerminalStore` `{ tabs: {ptyId,title}[], active, open(ptyId,title), close(ptyId), setActive(ptyId) }` — `setActive` is a P1 addition over the original draft (switches the focused terminal tab without opening/closing one); persisted to **sessionStorage** (not localStorage — tabs are meant to outlive a reload within the same browser tab, not follow the user across tabs/devices)
+  - `stores/live-layout.ts` (P2) → `useLiveLayoutStore` `{ layout: 'grid'|'list'|'split'; pinned: string[]; groupBy: 'none'|'project'|'ticket'|'source'; openInByProject: Record<string, OpenInApp>; setLayout; togglePin; setGroupBy; setOpenIn }`, persisted in localStorage under `orc.live-layout`. `togglePin` keeps the last `MAX_PINNED` (4) pins.
+  - `stores/launch.ts` (P2) → `useLaunchStore` `{ open: boolean; preset: Partial<LaunchRequestInput> | null; show(preset?); hide() }` — **not** persisted: a half-filled launch form should never survive a reload.
 - **API access** only through hooks in `api/queries/*.ts`: `useSessions(filters)`, `useSession(source,id)`, `useSessionEvents(...)`, `useLive()`, `useInbox(filters)`, etc. The WS hook `useLiveEvents()` is mounted once in `AppShell` and applies cache updates.
+- **Query keys** are exported next to the hook that owns them, and nothing builds one inline: `['sessions', filters]`, `['session', source, id]`, `['projects']`, `['project', id]`, `['pty']`, `['views']`, and from P2 `liveKey = ['live']`, `inboxRootKey = ['inbox']`, `inboxKey(f) = ['inbox', f]`, `templatesKey(projectId) = ['templates', projectId ?? null]`, `archiveStatusKey = ['archive', 'status']`, `notificationPrefsKey = ['config', 'notifications']`.
+- **Live events (P2, `api/live-events.ts`):**
+  ```ts
+  export type WireEvent = LiveEvent                                     // the same variants as the daemon's wire type
+  export const pkOf: (s: { source: Source; id: string }) => string      // `${source}:${id}`
+  export function applyLiveEvent(qc: QueryClient, e: WireEvent): void
+  export function liveWsUrl(loc: Pick<Location, 'protocol' | 'host'>, token: string): string
+  export function useLiveEvents(opts?: { url?: string; WebSocketImpl?: typeof WebSocket }): { connected: boolean }
+  ```
 - **PTY transport (P1, as-built — `api/pty-socket.ts`, not in the original §12 draft):**
   ```ts
   export function ptySocketUrl(ptyId: string, token: string, loc: { protocol: string; host: string }): string
@@ -729,6 +828,7 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   ```
   `connectPty` owns reconnect/backoff and realm-safe binary-frame decoding (a plain `instanceof ArrayBuffer`/`DataView` check fails across a jsdom-vs-Node realm boundary — Task 18's fix round; see the tag-based `toBytes()` helper).
 - **P1 web feature directories (as-built):** `features/history/` (F3), `features/session-detail/` (F2), `features/terminal/` (F4 — `TerminalDock.tsx`, `TerminalView.tsx`, `ResumeActions.tsx`), `features/settings/` (F13 project settings), `features/shell/` (`AppShell.tsx`, `ProjectSelector.tsx`).
+- **P2 web feature directories:** `features/live-board/` (`LiveBoard.tsx`, `SessionCard.tsx`, `StageBar.tsx`, `TestChip.tsx`, `OpenInButton.tsx`, `sort.ts`), `features/inbox/` (`InboxPage.tsx`, `useInboxKeys.ts`, `InboxCount.tsx`), `features/launch/LaunchDialog.tsx`, and `features/settings/{ArchiveSettings,NotificationSettings}.tsx`.
 - **Tests:** component tests with Testing Library and an MSW-free fake client (`api/client.ts` exports `setApiClientForTests`). E2E runs with Playwright against the daemon started on fixtures (`apps/web/e2e/*.spec.ts`, via `pnpm --filter @orc/web e2e`).
 
 ## 13. Symbol ownership & de-duplication

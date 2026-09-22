@@ -57,8 +57,8 @@ export interface UpgradeTarget {
  *    `decodeURIComponent`. Fail closed: a target we cannot read is refused, not guessed at.
  *    Removing this net alone fails thirteen, including both end-to-end tests.
  *
- * Shared by `ws.ts` (`/pty/:ptyId`) and `live-ws.ts` (`/ws`), and intended for task 16's upgrade
- * dispatcher, so the fix cannot be re-introduced by a fourth copy of the same line.
+ * Shared by `ws.ts` (`/pty/:ptyId`, and the `/ws` dispatch in the same listener) and `live-ws.ts`
+ * (`/ws`), so the fix cannot be re-introduced by another copy of the same line.
  */
 export function parseUpgradeTarget(rawUrl: string | undefined | null): UpgradeTarget | null {
   if (!rawUrl?.startsWith('/')) return null;

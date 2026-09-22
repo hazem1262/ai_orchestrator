@@ -20,8 +20,14 @@ export interface TempHomes {
   cleanup(): void;
 }
 
-export function makeTempHomes(): TempHomes {
-  const root = mkdtempSync(join(tmpdir(), 'orc-test-'));
+/** `root` pins the temp homes to a known path (the e2e harness needs one Playwright can compute);
+ *  anything already there is removed first. Without it every call gets a fresh `mkdtemp`. */
+export function makeTempHomes(opts: { root?: string } = {}): TempHomes {
+  const root = opts.root ?? mkdtempSync(join(tmpdir(), 'orc-test-'));
+  if (opts.root) {
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(root, { recursive: true });
+  }
   const orcHome = join(root, 'orc');
   const claudeHome = join(root, 'claude');
   const codexHome = join(root, 'codex');

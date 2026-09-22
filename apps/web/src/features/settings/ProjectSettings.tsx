@@ -1,6 +1,6 @@
 import type { ProjectConfig } from '@orc/api-contract';
 import type { Project } from '@orc/core';
-import { compileTicketRegex } from '@orc/core';
+import { compileTicketRegex } from '@orc/core/browser';
 import { useId, useMemo, useState } from 'react';
 import { useProjectConfig, useProjects, useUpdateProject } from '@/api/queries/projects.ts';
 import { Button } from '@/components/ui/button.tsx';

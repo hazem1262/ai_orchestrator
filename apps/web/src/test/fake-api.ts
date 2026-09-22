@@ -1,4 +1,4 @@
-import type { ApiClient } from '@orc/api-contract';
+import type { ApiClient, P2Methods } from '@orc/api-contract';
 import { vi } from 'vitest';
 
 const unexpected = (name: string) =>
@@ -6,8 +6,10 @@ const unexpected = (name: string) =>
     throw new Error(`unexpected api call: ${name}`);
   });
 
-export function createFakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  const base: ApiClient = {
+export type FakeApi = ApiClient & P2Methods;
+
+export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
+  const base: FakeApi = {
     healthGet: vi.fn(async () => ({ ok: true, version: '0.0.0', uptimeS: 1 })),
     projectsList: vi.fn(async () => []),
     projectsGet: unexpected('projectsGet'),
@@ -25,6 +27,20 @@ export function createFakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     viewsDelete: vi.fn(async () => ({ ok: true as const })),
     ptyList: vi.fn(async () => []),
     ptyKill: vi.fn(async () => ({ ok: true as const })),
+    liveList: vi.fn(async () => []),
+    sessionsLaunch: unexpected('sessionsLaunch'),
+    sessionsKill: unexpected('sessionsKill'),
+    sessionsOpenIn: unexpected('sessionsOpenIn'),
+    inboxList: vi.fn(async () => []),
+    inboxDone: unexpected('inboxDone'),
+    inboxSnooze: unexpected('inboxSnooze'),
+    inboxReopen: unexpected('inboxReopen'),
+    templatesList: vi.fn(async () => []),
+    archiveStatus: unexpected('archiveStatus'),
+    archiveRestore: unexpected('archiveRestore'),
+    archiveSync: unexpected('archiveSync'),
+    notificationsGet: unexpected('notificationsGet'),
+    notificationsPut: unexpected('notificationsPut'),
   };
   return { ...base, ...overrides };
 }

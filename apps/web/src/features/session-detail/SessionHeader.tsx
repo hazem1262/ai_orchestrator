@@ -1,6 +1,7 @@
 import type { Session } from '@orc/core';
 import type { ReactNode } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
+import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
 import { formatCost, formatDateTime, formatDuration, formatTokens, shortenPath } from '@/lib/format.ts';
 
 const AVAILABILITY_VARIANT: Record<Session['availability'], BadgeVariant> = {
@@ -32,6 +33,9 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
               <Badge variant={session.live.status === 'ended' ? 'outline' : 'warning'}>
                 {session.live.ownership === 'owned' ? 'open in app' : session.live.status}
               </Badge>
+            ) : null}
+            {session.availability === 'archived' ? (
+              <RestoreButton source={session.source} id={session.id} />
             ) : null}
           </div>
         </div>

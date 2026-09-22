@@ -4,12 +4,18 @@ import { PtyClientMessageSchema } from '@orc/api-contract';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { DaemonContext } from '../context.ts';
 import { tokenMatches } from './auth.ts';
+import { LIVE_WS_PATH, type LiveWsHub } from './live-ws.ts';
 import { parseUpgradeTarget } from './upgrade-target.ts';
 
 export interface PtySocketOptions {
   ctx: DaemonContext;
   token: string;
   origins: () => string[];
+  /**
+   * The `/ws` fan-out hub. This listener is the server's only `upgrade` listener, so `/ws` is
+   * dispatched from here; the hub applies the same token, Origin and 1 MiB frame guards itself.
+   */
+  liveHub?: LiveWsHub;
 }
 
 function reject(socket: Duplex, status: number, text: string): void {
@@ -24,12 +30,16 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
   wss.on('error', (err) => o.ctx.log.warn({ err }, 'pty websocket server error'));
 
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
-    // The raw pre-upgrade socket is also an EventEmitter that can emit 'error' (e.g. the client
-    // resets the connection before the handshake finishes) with no listener otherwise attached.
-    socket.on('error', (err) => o.ctx.log.warn({ err }, 'pty upgrade socket error'));
     // Never `new URL(...)` inline here: a target Node's parser accepts and WHATWG rejects would
     // throw synchronously inside this listener and kill the daemon, before any auth ran.
     const target = parseUpgradeTarget(req.url);
+    if (target?.path === LIVE_WS_PATH && o.liveHub) {
+      o.liveHub.handleUpgrade(req, socket, head);
+      return;
+    }
+    // The raw pre-upgrade socket is also an EventEmitter that can emit 'error' (e.g. the client
+    // resets the connection before the handshake finishes) with no listener otherwise attached.
+    socket.on('error', (err) => o.ctx.log.warn({ err }, 'pty upgrade socket error'));
     if (!target) {
       socket.destroy();
       return;
