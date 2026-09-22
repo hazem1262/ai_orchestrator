@@ -1,17 +1,24 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import type { Source } from '@orc/core';
+import { basename, dirname, join, resolve, sep } from 'node:path';
+import type { Availability, Source } from '@orc/core';
 import type { DaemonContext } from '../../context.ts';
 import { sessionPk } from '../../db/keys.ts';
 import {
   type ArchiveEntry,
   archiveTotals,
   getArchiveEntry,
+  listArchiveEntries,
   upsertArchiveEntry,
 } from '../../db/repos/archive.ts';
 import { readHeadFingerprint } from '../../indexer/indexer.ts';
-import { type ArchiveCodec, availableCodec, codecExtension, compressBuffer } from './compress.ts';
+import {
+  type ArchiveCodec,
+  availableCodec,
+  codecExtension,
+  compressBuffer,
+  decompressBuffer,
+} from './compress.ts';
 
 export interface TranscriptFile {
   path: string;
@@ -114,6 +121,47 @@ export function readCleanupPeriodDays(claudeHome: string): number | null {
   } catch {
     return null;
   }
+}
+
+/** docs/02 F3, computed when read: remote > resumable > archived > prompts-only. */
+export function resolveAvailability(i: {
+  transcriptExists: boolean;
+  archived: boolean;
+  hasPrompts: boolean;
+  remote?: boolean;
+}): Availability {
+  if (i.remote) return 'remote';
+  if (i.transcriptExists) return 'resumable';
+  if (i.archived) return 'archived';
+  return 'prompts-only';
+}
+
+/** The real path of `p`, or of its deepest existing ancestor with the missing tail re-appended. */
+function realpathOfNearest(p: string): string {
+  const tail: string[] = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return join(realpathSync(cur), ...tail.reverse());
+    } catch {
+      const parent = dirname(cur);
+      if (parent === cur) return p;
+      tail.push(basename(cur));
+      cur = parent;
+    }
+  }
+}
+
+/**
+ * True when `target` lies strictly inside `root`, both lexically (so `../` and a sibling such as
+ * `projects-evil` are refused) and after resolving symlinks in its existing ancestors (so a
+ * symlinked directory under `root` cannot carry a write outside it).
+ */
+function isInside(root: string, target: string): boolean {
+  const lexRoot = `${resolve(root)}${sep}`;
+  if (!resolve(target).startsWith(lexRoot)) return false;
+  const realRoot = `${realpathOfNearest(resolve(root))}${sep}`;
+  return realpathOfNearest(resolve(target)).startsWith(realRoot);
 }
 
 export function createArchiveService(
@@ -229,12 +277,58 @@ export function createArchiveService(
       };
     },
 
-    restorePlan() {
-      throw new ArchiveError(400, 'not_ready', 'restore is implemented in the next task');
+    restorePlan(source, id) {
+      if (source !== 'claude') {
+        throw new ArchiveError(400, 'unsupported_source', 'only Claude transcripts can be restored');
+      }
+      const entries = listArchiveEntries(ctx.db, sessionPk(source, id));
+      if (entries.length === 0) {
+        throw new ArchiveError(404, 'not_archived', `no archived transcript for ${source}:${id}`);
+      }
+      return { targets: entries.map((e) => e.path).sort() };
     },
 
-    async restore() {
-      throw new ArchiveError(400, 'not_ready', 'restore is implemented in the next task');
+    /**
+     * The only code in the app that writes into `~/.claude`. Every check runs and every archive
+     * is decompressed before the first write, so a refusal or a corrupt archive writes nothing.
+     * Existing files are never overwritten (`wx`), and if a write still fails part-way the files
+     * this call created are removed again.
+     */
+    async restore(source, id) {
+      const pk = sessionPk(source, id);
+      svc.restorePlan(source, id);
+      const entries = [...listArchiveEntries(ctx.db, pk)].sort((a, b) => a.path.localeCompare(b.path));
+      const projectsRoot = join(ctx.paths.claudeHome, 'projects');
+      const outside = entries.map((e) => e.path).filter((t) => !isInside(projectsRoot, t));
+      if (outside.length > 0) {
+        throw new ArchiveError(400, 'invalid_target', 'archived path is outside ~/.claude/projects', {
+          paths: outside,
+        });
+      }
+      const existing = entries.map((e) => e.path).filter((t) => existsSync(t));
+      if (existing.length > 0) {
+        throw new ArchiveError(409, 'restore_target_exists', 'refusing to overwrite existing transcripts', {
+          paths: existing,
+        });
+      }
+      const payloads = await Promise.all(
+        entries.map(async (e) => ({
+          target: resolve(e.path),
+          buf: await decompressBuffer(await readFile(e.archivePath), e.codec),
+        })),
+      );
+      const written: string[] = [];
+      try {
+        for (const { target, buf } of payloads) {
+          await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+          await writeFile(target, buf, { flag: 'wx', mode: 0o600 });
+          written.push(target);
+        }
+      } catch (err) {
+        await Promise.all(written.map((p) => rm(p, { force: true })));
+        throw err;
+      }
+      ctx.log.info({ sessionPk: pk, files: written.length }, 'archive restored into ~/.claude/projects');
     },
 
     codec: () => codec,

@@ -3,7 +3,6 @@ import type { OrcConfig, SessionListItem } from '@orc/api-contract';
 import {
   type AgentNode,
   type Availability,
-  deriveAvailability,
   type LiveState,
   type PrRef,
   registryStatusToLive,
@@ -16,6 +15,7 @@ import type { OrcDb } from '../db/client.ts';
 import { escapeLike, ftsPrefixToken, toFtsQuery } from '../db/fts.ts';
 import { sessionPk } from '../db/keys.ts';
 import { listAgents } from '../db/repos/agents.ts';
+import { archivedSessionPks } from '../db/repos/archive.ts';
 import {
   eventSnippet,
   eventTextByRowid,
@@ -25,11 +25,18 @@ import {
 } from '../db/repos/events.ts';
 import { searchHistoryPrompts } from '../db/repos/history.ts';
 import { insertPtySession, markPtyExited } from '../db/repos/pty-sessions.ts';
-import { getSessionByPk, querySessions, type SessionRow, searchSessionText } from '../db/repos/sessions.ts';
+import {
+  getSessionByPk,
+  querySessions,
+  type SessionQueryFilter,
+  type SessionRow,
+  searchSessionText,
+} from '../db/repos/sessions.ts';
 import { labelsFor, pinnedSet } from '../db/repos/user-meta.ts';
 import type { EventBus } from '../live/event-bus.ts';
 import { findRegistryEntry, isPidAlive } from '../live/liveness.ts';
 import type { PtyInfo, PtyManager } from '../pty/pty-manager.ts';
+import { resolveAvailability } from './archive/archive.ts';
 import { ServiceError } from './errors.ts';
 import { type ExternalLauncher, resumeCommandLine } from './external.ts';
 import type { ProjectServiceImpl } from './projects.ts';
@@ -166,12 +173,52 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     };
   }
 
+  /** Computed when read (docs/02 F3): the stored column cannot know a transcript was deleted. */
+  function availabilityOf(
+    row: { pk: string; availability: string; transcriptPath: string | null },
+    archived: ReadonlySet<string>,
+  ): Availability {
+    return resolveAvailability({
+      transcriptExists: row.transcriptPath !== null && existsSync(row.transcriptPath),
+      archived: archived.has(row.pk),
+      hasPrompts: true,
+      remote: row.availability === 'remote',
+    });
+  }
+
+  /**
+   * `availability` other than `remote` depends on the filesystem, so it is filtered after the
+   * query rather than in SQL: rows are read in order, in batches, until `want` matches are found.
+   * `archived` narrows the query to sessions that have archive entries at all.
+   */
+  function scanByAvailability(
+    base: Omit<SessionQueryFilter, 'limit' | 'cursor'>,
+    wanted: Availability,
+    archived: ReadonlySet<string>,
+    want: number,
+    cursor: SessionQueryFilter['cursor'],
+  ): SessionRow[] {
+    const BATCH = 200;
+    const pks =
+      wanted === 'archived' ? (base.pks ?? [...archived]).filter((pk) => archived.has(pk)) : base.pks;
+    const out: SessionRow[] = [];
+    let at = cursor;
+    for (;;) {
+      const chunk = querySessions(db, { ...base, pks, limit: BATCH, cursor: at });
+      for (const r of chunk) {
+        if (availabilityOf(r, archived) === wanted) out.push(r);
+        if (out.length >= want) return out;
+      }
+      const last = chunk.at(-1);
+      if (chunk.length < BATCH || !last) return out;
+      at = { lastActivityAt: last.lastActivityAt, pk: last.pk };
+    }
+  }
+
   function load(pk: string, withRegistry: boolean): Session | null {
     const s = getSessionByPk(db, pk);
     if (!s) return null;
-    const transcriptExists = s.transcriptPath !== null && existsSync(s.transcriptPath);
-    const availability: Availability =
-      s.availability === 'remote' ? 'remote' : deriveAvailability({ transcriptExists, archived: false });
+    const availability = availabilityOf({ ...s, pk }, archivedSessionPks(db));
     const withAvail = { ...s, availability };
     return { ...withAvail, live: live.get(pk) ?? (withRegistry ? observedLive(withAvail) : null) };
   }
@@ -218,6 +265,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
     pinned: boolean,
     labels: string[],
     snippet: string | null,
+    availability: Availability,
   ): SessionListItem {
     const duration = Date.parse(row.lastActivityAt) - Date.parse(row.startedAt);
     return {
@@ -235,7 +283,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
       costUsd: row.costUsd,
       tickets: JSON.parse(row.ticketsJson) as string[],
       prs: JSON.parse(row.prsJson) as PrRef[],
-      availability: row.availability as Availability,
+      availability,
       pinned,
       labels,
       live: live.get(row.pk) ?? null,
@@ -296,14 +344,17 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         }
         pks = [...set];
       }
-      const { q: _q, cursor: _cursor, limit: _limit, ...filters } = q;
-      const rows = querySessions(db, {
+      const { q: _q, cursor: _cursor, limit: _limit, availability: wanted, ...filters } = q;
+      const archived = archivedSessionPks(db);
+      const base = {
         ...filters,
         pks,
-        limit: limit + 1,
-        cursor,
         includeAutomated: q.includeAutomated ?? deps.config().codex.showAutomated,
-      });
+      };
+      const rows =
+        wanted === undefined || wanted === 'remote'
+          ? querySessions(db, { ...base, availability: wanted, limit: limit + 1, cursor })
+          : scanByAvailability(base, wanted, archived, limit + 1, cursor);
       const page = rows.slice(0, limit);
       const pagePks = page.map((r) => r.pk);
       const pinned = pinnedSet(db, pagePks);
@@ -334,7 +385,7 @@ export function createSessionService(deps: SessionServiceDeps): SessionService {
         } else {
           snippet = fallback.get(r.pk) ?? null;
         }
-        return toItem(r, pinned.has(r.pk), labels.get(r.pk) ?? [], snippet);
+        return toItem(r, pinned.has(r.pk), labels.get(r.pk) ?? [], snippet, availabilityOf(r, archived));
       });
       const last = page.at(-1);
       return {

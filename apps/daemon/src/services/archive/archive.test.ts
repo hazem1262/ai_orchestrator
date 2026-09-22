@@ -15,7 +15,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestContext, indexFixtures, type TestContext, useTempHomes } from '../../../test/helpers.ts';
 import { getArchiveEntry } from '../../db/repos/archive.ts';
 import {
-  ArchiveError,
   type ArchiveServiceRuntime,
   createArchiveService,
   listClaudeTranscripts,
@@ -362,24 +361,5 @@ describe('ArchiveService.status', () => {
     expect(readCleanupPeriodDays(homes.claudeHome)).toBeNull();
     writeFileSync(join(homes.claudeHome, 'settings.json'), JSON.stringify({ cleanupPeriodDays: 30 }));
     expect(readCleanupPeriodDays(homes.claudeHome)).toBe(30);
-  });
-});
-
-describe('ArchiveService.restore (completed in Task 15)', () => {
-  it('restorePlan throws ArchiveError 400 not_ready', () => {
-    let err: unknown;
-    try {
-      svc.restorePlan('claude', 's-basic');
-    } catch (e) {
-      err = e;
-    }
-    expect(err).toBeInstanceOf(ArchiveError);
-    expect(err).toMatchObject({ status: 400, code: 'not_ready' });
-  });
-
-  it('restore rejects with ArchiveError 400 not_ready', async () => {
-    const p = svc.restore('claude', 's-basic');
-    await expect(p).rejects.toBeInstanceOf(ArchiveError);
-    await expect(p).rejects.toMatchObject({ status: 400, code: 'not_ready' });
   });
 });

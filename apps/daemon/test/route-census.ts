@@ -62,6 +62,15 @@ export const CENSUS: Record<string, CensusEntry> = {
   'GET /api/views': { guardedBy: 'redactSavedView', reason: '' },
   'POST /api/views': { guardedBy: 'redactSavedView', reason: '' },
   'DELETE /api/views/:id': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/archive/status': {
+    guardedBy: null,
+    reason: 'counts, bytes, the codec, a daemon-derived ISO timestamp and a constant snippet',
+  },
+  'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
+  'POST /api/archive/restore': {
+    guardedBy: 'redactValue',
+    reason: 'the restored paths, and the 409 summary and target list, are transcript paths',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -81,6 +90,7 @@ export const CENSUS: Record<string, CensusEntry> = {
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   // Registers `/api/inbox` routes but is not yet wired into `registerAllRoutes`; Task 16 wires it

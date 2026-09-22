@@ -20,6 +20,7 @@ import {
 import { CENSUS } from '../../test/route-census.ts';
 import { insertHistoryPrompts } from '../db/repos/history.ts';
 import type { Indexer } from '../indexer/indexer.ts';
+import { createArchiveService } from '../services/archive/archive.ts';
 import { createApp } from './app.ts';
 import type { OrcApp } from './types.ts';
 
@@ -695,6 +696,34 @@ describe('route-level redaction, derived from the census', () => {
         expect(body.error.details.summary).toContain(REDACTED);
         ctx.pty.remove(info.id);
         return { bodies: [body], mustContain: REDACTED, mustNotContain: [arg, cwd] };
+      },
+    },
+    'POST /api/archive/restore': {
+      run: async () => {
+        const dir = join(ctx.homes.claudeHome, 'projects', `-work-${S('archdir')}`);
+        mkdirSync(dir, { recursive: true });
+        const target = join(dir, 's-arch.jsonl');
+        writeFileSync(target, '{"type":"user"}\n');
+        ctx.archive = createArchiveService(ctx, { codec: 'gzip' });
+        await ctx.archive.syncAll();
+        rmSync(target);
+        const ask = await call('/api/archive/restore', {
+          method: 'POST',
+          body: { source: 'claude', id: 's-arch' },
+        });
+        expect(ask.status).toBe(409);
+        const ok = await call('/api/archive/restore', {
+          method: 'POST',
+          body: { source: 'claude', id: 's-arch', confirm: true },
+        });
+        expect(ok.status).toBe(200);
+        const again = await call('/api/archive/restore', {
+          method: 'POST',
+          body: { source: 'claude', id: 's-arch', confirm: true },
+        });
+        expect(again.status).toBe(409);
+        const bodies = [await json(ask), await json(ok), await json(again)];
+        return { bodies, mustContain: REDACTED, mustNotContain: [S('archdir')] };
       },
     },
     'GET /api/views': {
