@@ -7,7 +7,7 @@ import { createTestContext, type TestContext, useTempHomes } from '../../../test
 import type { BusEvent } from '../../live/event-bus.ts';
 import { stubSession } from '../../live/stub-session.ts';
 import type { OrcApp } from '../types.ts';
-import { registerHookRoutes } from './hooks.ts';
+import { HOOK_BODY_LIMIT_BYTES, registerHookRoutes } from './hooks.ts';
 import { registerLiveRoutes } from './live.ts';
 
 const homes = useTempHomes();
@@ -138,6 +138,39 @@ describe('POST /api/hooks', () => {
     const res = await app.request('/api/hooks', { method: 'POST', body: 'not json' });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('validation_failed');
+  });
+
+  it('refuses an oversized body, and caps the one field it keeps', async () => {
+    // `message` becomes `LiveState.waitingFor`, which is re-`redact()`ed on every tracker refresh
+    // and re-sent to every WS client, so an unbounded one is a permanent per-refresh cost.
+    const post = (body: string) =>
+      app.request('/api/hooks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': String(body.length) },
+        body,
+      });
+
+    const huge = JSON.stringify({
+      session_id: 's-huge',
+      hook_event_name: 'Notification',
+      prompt: 'x'.repeat(HOOK_BODY_LIMIT_BYTES),
+    });
+    const tooBig = await post(huge);
+    expect(tooBig.status).toBe(413);
+
+    // Under the body limit, but with a message far past what any notification carries.
+    const longMessage = await post(
+      JSON.stringify({ session_id: 's-long', hook_event_name: 'Notification', message: 'y'.repeat(5000) }),
+    );
+    expect(longMessage.status).toBe(400);
+    expect(fake.hooks).toHaveLength(0);
+
+    // A realistic one still goes through.
+    const ok = await post(
+      JSON.stringify({ session_id: 's-ok', hook_event_name: 'Notification', message: 'y'.repeat(400) }),
+    );
+    expect(ok.status).toBe(200);
+    expect(fake.hooks).toHaveLength(1);
   });
 
   it('accepts a hook before the tracker exists', async () => {
