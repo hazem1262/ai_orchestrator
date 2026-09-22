@@ -47,9 +47,9 @@ const SECRET_TAG = redact('secret=x').slice('secret='.length);
  * is matched and tagged: `tokenCount`, `token_count`, `tokens_used`, `maxTokens`, `oauth_scope`,
  * `authorizationHeaderName`. It is also asymmetric — only STRINGS are replaced, so a
  * `{"password": 123456}` is still served as-is. Both are accepted: a cosmetic loss against a
- * served credential, and a number is not a shape a credential normally takes. **Task 16 should
- * note that `usage.updated` is the one wire shape whose entire subject is token counts**; if its
- * snapshot turns out to carry string-valued `*token*` fields, it needs its own redactor rather
+ * served credential, and a number is not a shape a credential normally takes. **`usage.updated`
+ * is the one wire shape whose entire subject is token counts**; `p2-daemon.test.ts` pins that its
+ * numeric counts reach `/ws` intact. If its snapshot turns out to carry string-valued `*token*` fields, it needs its own redactor rather
  * than the generic walker.
  *
  * Exported as `{ source, sample }` PAIRS, not as one regex literal, so the guard can derive a

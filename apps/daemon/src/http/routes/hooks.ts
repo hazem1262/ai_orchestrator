@@ -21,8 +21,6 @@ export const HOOK_BODY_LIMIT_BYTES = 256 * 1024;
  * Only `session_id`, `hook_event_name` and `message` are kept. Everything else is dropped on the
  * floor and never logged — including in the `hook.received` bus payload, which carries no message
  * at all, since bus events reach the WS hub and the log.
- *
- * NOT YET REGISTERED IN PRODUCTION — see the note on `registerLiveRoutes`.
  */
 export function registerHookRoutes(app: OrcApp, ctx: DaemonContext): void {
   app.post(

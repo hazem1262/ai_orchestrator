@@ -53,11 +53,9 @@ function reject(socket: Duplex, status: number, text: string): void {
  * use. `toWire` is an exhaustive switch on purpose: adding a type to `LIVE_EVENT_TYPES` without
  * deciding how it is redacted is a compile error, not a silent passthrough.
  *
- * NOT YET CONSTRUCTED IN PRODUCTION. `http/ws.ts` owns the server's only `upgrade` listener today
- * and destroys any socket that is not `/pty/:ptyId`, so a second listener cannot simply be added
- * alongside it — the pty one would destroy a `/ws` socket the moment after this hub upgraded it.
- * Task 16 owns that dispatch (`attachWebSockets(server, ctx, { liveHub })`); it must route by
- * `LIVE_WS_PATH` before calling either, and pass the daemon's token and `allowedOrigins(port)`.
+ * Constructed by `startPhase2`. `http/ws.ts` owns the server's only `upgrade` listener, and a
+ * second listener cannot be added beside it — the pty one would destroy a `/ws` socket the moment
+ * after this hub upgraded it — so that listener routes `LIVE_WS_PATH` here before its own checks.
  */
 export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): LiveWsHub {
   const now = opts.now ?? (() => new Date());

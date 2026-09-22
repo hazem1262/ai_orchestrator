@@ -10,6 +10,7 @@ import {
 } from '@orc/api-contract';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ZodError, z } from 'zod';
+import { createFakeLive } from '../../test/fake-live.ts';
 import {
   createTestContext,
   FAKE_CLAUDE,
@@ -19,7 +20,9 @@ import {
 } from '../../test/helpers.ts';
 import { CENSUS } from '../../test/route-census.ts';
 import { insertHistoryPrompts } from '../db/repos/history.ts';
+import { createInboxEngine } from '../inbox/engine.ts';
 import type { Indexer } from '../indexer/indexer.ts';
+import { stubSession } from '../live/stub-session.ts';
 import { createArchiveService } from '../services/archive/archive.ts';
 import { createApp } from './app.ts';
 import type { OrcApp } from './types.ts';
@@ -599,7 +602,68 @@ describe('route-level redaction, derived from the census', () => {
     return cwd;
   };
 
+  const seedInbox = () => {
+    const ticket = S('inboxticket');
+    const command = S('inboxcmd');
+    const engine = createInboxEngine(ctx);
+    ctx.inbox = engine;
+    const item = engine.upsert({
+      kind: 'tests_red',
+      scope: { session: 'claude:s-inbox' },
+      ticket,
+      reason: 'r',
+      payload: { command },
+    });
+    return { id: item.id, secrets: [ticket, command] };
+  };
+
   const PROBES: Record<string, Probe> = {
+    'GET /api/live': {
+      run: async () => {
+        const prompt = S('liveprompt');
+        ctx.live = createFakeLive([
+          {
+            ...stubSession({
+              source: 'claude',
+              id: 's-live',
+              cwd: '/tmp/live',
+              startedAt: '2026-09-01T09:00:00.000Z',
+              projectId: null,
+              name: 's-live',
+            }),
+            lastPrompt: prompt,
+          },
+        ]);
+        const body = (await json(await call('/api/live'))) as Array<{ lastPrompt: string }>;
+        expect(body[0]?.lastPrompt).toBe('«redacted:github»');
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [prompt] };
+      },
+    },
+    'GET /api/inbox': {
+      run: async () => {
+        const { id, secrets } = seedInbox();
+        const body = await json(await call('/api/inbox'));
+        expect(JSON.stringify(body)).toContain(id);
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: secrets };
+      },
+    },
+    'POST /api/inbox/:id/:action{done|snooze|reopen}': {
+      run: async () => {
+        const { id, secrets } = seedInbox();
+        const until = new Date(Date.now() + 3_600_000).toISOString();
+        const bodies: unknown[] = [];
+        for (const [action, body] of [
+          ['snooze', { until }],
+          ['done', {}],
+          ['reopen', {}],
+        ] as const) {
+          const res = await call(`/api/inbox/${id}/${action}`, { method: 'POST', body });
+          expect(res.status, action).toBe(200);
+          bodies.push(await json(res));
+        }
+        return { bodies, mustContain: REDACTED, mustNotContain: secrets };
+      },
+    },
     'GET /api/sessions': {
       run: async () => {
         await secretSession();

@@ -44,7 +44,8 @@ export interface ArchiveServiceRuntime extends ArchiveService {
   restorePlan(source: Source, id: string): { targets: string[] };
   codec(): ArchiveCodec;
   start(intervalMs?: number): void;
-  stop(): void;
+  /** Cancels the timers and resolves once any sync already running has finished. */
+  stop(): Promise<void>;
 }
 
 export class ArchiveError extends Error {
@@ -352,6 +353,13 @@ export function createArchiveService(
       endedTimer = null;
       unsub?.();
       unsub = null;
+      // The daemon closes the database right after this; a sync still writing would then throw.
+      return inFlight
+        ? inFlight.then(
+            () => undefined,
+            () => undefined,
+          )
+        : Promise.resolve();
     },
   };
   return svc;

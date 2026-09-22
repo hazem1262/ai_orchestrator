@@ -8,9 +8,15 @@ import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.t
 import { redactedApiError } from './redact-out.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerHealthRoutes } from './routes/health.ts';
+import { registerHookRoutes } from './routes/hooks.ts';
+import { registerInboxRoutes } from './routes/inbox.ts';
+import { registerLaunchRoutes } from './routes/launch.ts';
+import { registerLiveRoutes } from './routes/live.ts';
+import { registerNotificationRoutes } from './routes/notifications.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPtyRoutes } from './routes/pty.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
+import { registerTemplateRoutes } from './routes/templates.ts';
 import { registerViewRoutes } from './routes/views.ts';
 import { registerStatic } from './static.ts';
 import type { OrcApp } from './types.ts';
@@ -31,9 +37,9 @@ export interface AppOptions {
  *
  * Do NOT add a route-registration hook to `createApp`'s options. A `registerExtra` callback passed
  * from `main.ts` was demonstrated to put an unredacted `/api/brand-new` into the live daemon with
- * the entire suite passing, because the census calls `createApp` without it. Task 16's
- * `registerPhase2Routes` (live, hooks, inbox, launch, archive, templates, notifications) belongs
- * in the block below, above the catch-all.
+ * the entire suite passing, because the census calls `createApp` without it. The phase 2 routes
+ * (live, hooks, inbox, templates, launch, archive, notifications) are registered here too, above
+ * the catch-all; their services are set on `ctx` by `startPhase2` and read per request.
  */
 export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerHealthRoutes(app);
@@ -41,7 +47,13 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerSessionRoutes(app, ctx);
   registerViewRoutes(app, ctx);
   registerPtyRoutes(app, ctx);
+  registerLiveRoutes(app, ctx);
+  registerHookRoutes(app, ctx);
+  registerInboxRoutes(app, ctx);
+  registerTemplateRoutes(app, ctx);
+  registerLaunchRoutes(app, ctx);
   registerArchiveRoutes(app, ctx);
+  registerNotificationRoutes(app, ctx);
   // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
   // catch-all, so anything registered after it is shadowed and answers 404.
   app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
