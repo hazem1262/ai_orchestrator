@@ -10,6 +10,7 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const sockRef = useRef<PtySocket | null>(null);
+  const wasActiveRef = useRef<boolean | null>(null);
   const [status, setStatus] = useState<PtySocketStatus>('connecting');
   const [exitCode, setExitCode] = useState<number | null | undefined>(undefined);
 
@@ -64,6 +65,8 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
   }, [ptyId]);
 
   useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = active;
     if (!active) return;
     const term = termRef.current;
     const fit = fitRef.current;
@@ -74,7 +77,10 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
     } catch {
       // not laid out yet; the ResizeObserver will retry
     }
-    term.focus();
+    // Only a switch to this tab takes the keyboard. A tab that is active on its first render was
+    // opened for the user by a launch or a resume, and stealing focus there would send the next
+    // keystrokes — inbox triage keys, board shortcuts — into a live agent's stdin.
+    if (wasActive === false) term.focus();
   }, [active]);
 
   return (

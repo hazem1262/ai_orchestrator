@@ -1,4 +1,5 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OrcConfig } from '@orc/api-contract';
 import { saveConfig } from '../src/config.ts';
@@ -7,17 +8,26 @@ import { projectConfigFor } from '../src/services/projects.ts';
 import { FAKE_CLAUDE, makeTempHomes, writeClaudeSession } from './homes.ts';
 
 const port = Number(process.env.ORC_E2E_PORT ?? 4399);
-const homes = makeTempHomes();
-const work = join(homes.root, 'work', 'Wakecap');
+// A fixed root, resolved through realpath because a launched child reports its physical cwd on
+// macOS: the Playwright spec computes the same path and asserts the launch dialog offers it.
+const root = join(realpathSync(tmpdir()), 'orc-e2e');
+const homes = makeTempHomes({ root });
+// A launched PTY inherits the daemon's own environment (`sanitizedChildEnv`), so the temp homes
+// have to be on it: without CLAUDE_HOME the fake `claude` falls back to echo mode, writes no
+// registry entry, and every launch blocks for the full discovery timeout before returning a null
+// sessionId.
+Object.assign(process.env, homes.env);
+const work = process.env.ORC_E2E_WORK ?? join(root, 'work', 'Wakecap');
 mkdirSync(work, { recursive: true });
 
-const wakecap = projectConfigFor({ id: 'wakecap', name: 'Wakecap', pathPrefix: '/Users/test/Wakecap' });
+const wakecap = projectConfigFor({ id: 'wakecap', name: 'Wakecap', pathPrefix: work });
 saveConfig(
   homes.paths,
   OrcConfig.parse({
     port,
     resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE },
-    projects: [{ ...wakecap, pathPrefixes: ['/Users/test/Wakecap', work] }],
+    // `work` comes first: it is the directory the launch dialog offers by default.
+    projects: [{ ...wakecap, pathPrefixes: [work, '/Users/test/Wakecap'] }],
   }),
 );
 writeClaudeSession(homes, {
