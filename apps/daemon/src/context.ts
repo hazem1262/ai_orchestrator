@@ -10,6 +10,7 @@ import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
+import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { TemplateRegistry } from './services/templates.ts';
@@ -36,6 +37,8 @@ export interface DaemonContext {
   updateConfig?: (fn: (cfg: OrcConfig) => OrcConfig) => OrcConfig;
   /** P2 — workflow templates and task presets (Task 12; Task 16 wires it). */
   templates?: TemplateRegistry;
+  /** P2 — app-owned session launch and kill (Task 13; Task 16 wires it). */
+  launcher?: LaunchService;
 }
 
 export interface BuildContextOptions {

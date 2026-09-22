@@ -1,5 +1,101 @@
-#!/bin/sh
-# Fake `claude` for tests: prints its arguments and cwd, then echoes stdin until killed.
+#!/usr/bin/env bash
+# Fake `claude` for tests. It is never the real CLI and it never runs a model.
+#
+# It always prints two lines first, which the phase-1 resume tests read:
+#   fake-claude <args>
+#   cwd=<physical cwd>
+#
+# Echo mode (the default): echoes stdin until killed and writes no files.
+#
+# Scenario mode: only when $CLAUDE_HOME is set AND sits under a temp directory ($TMPDIR, /tmp,
+# /private/tmp, /var/folders, /private/var/folders). It emulates what the real CLI leaves on disk:
+# a registry entry in $CLAUDE_HOME/sessions/<pid>.json and a transcript under
+# $CLAUDE_HOME/projects/-fake-project/<sessionId>.jsonl. It only ever writes into $CLAUDE_HOME, so
+# a $CLAUDE_HOME pointing at a real home falls back to echo mode instead of writing there.
+# The scenario is picked from the prompt (the last non-flag argument):
+#   contains "wait" -> registry status "waiting"
+#   contains "fail" -> an edit, a passing test run, then a failing run, then idle
+#   anything else   -> an edit, then idle (-> review)
+set -u
 echo "fake-claude $*"
 echo "cwd=$(pwd -P)"
-exec cat
+
+home="${CLAUDE_HOME:-}"
+tmp_root="${TMPDIR:-}"
+tmp_root="${tmp_root%/}"
+[ -n "$tmp_root" ] || tmp_root="/nonexistent-tmpdir"
+scenario=0
+case "$home" in
+  */../*|*/..) scenario=0 ;;
+  "$tmp_root"/*|/tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*) scenario=1 ;;
+esac
+if [ -z "$home" ] || [ "$scenario" != 1 ]; then
+  exec cat
+fi
+
+pid=$$
+sid="fake-${pid}"
+cwd="$(pwd -P)"
+prompt=""
+skip_next=0
+for a in "$@"; do
+  if [ "$skip_next" = 1 ]; then skip_next=0; continue; fi
+  case "$a" in
+    --model|--resume|-r) skip_next=1 ;;
+    -*) ;;
+    *) prompt="$a" ;;
+  esac
+done
+
+reg_dir="$home/sessions"
+proj_dir="$home/projects/-fake-project"
+mkdir -p "$reg_dir" "$proj_dir"
+reg="$reg_dir/$pid.json"
+tr="$proj_dir/$sid.jsonl"
+json() { node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"; }
+iso() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
+# Real Claude Code writes procStart in UTC, and parseProcStart reads it as UTC.
+proc_start_j="$(json "$(LC_ALL=C TZ=UTC ps -o lstart= -p "$pid" | sed 's/^ *//; s/ *$//')")"
+cwd_j="$(json "$cwd")"
+prompt_j="$(json "$prompt")"
+file_j="$(json "$cwd/file.txt")"
+started="$(date +%s)000"
+
+write_reg() { # $1 = status, $2 = waitingFor as JSON (or null)
+  local now
+  now="$(date +%s)000"
+  printf '{"pid":%s,"procStart":%s,"sessionId":"%s","cwd":%s,"startedAt":%s,"version":"fake","kind":"interactive","entrypoint":"cli","name":"fake session","status":"%s","waitingFor":%s,"statusUpdatedAt":%s,"updatedAt":%s}' \
+    "$pid" "$proc_start_j" "$sid" "$cwd_j" "$started" "$1" "$2" "$now" "$now" > "$reg.tmp"
+  mv "$reg.tmp" "$reg"
+}
+append() { printf '%s\n' "$1" >> "$tr"; }
+bash_run() { # $1 = tool id, $2 = output text
+  append "{\"type\":\"assistant\",\"uuid\":\"a-$1\",\"parentUuid\":null,\"sessionId\":\"$sid\",\"timestamp\":\"$(iso)\",\"cwd\":$cwd_j,\"message\":{\"id\":\"m-$1\",\"role\":\"assistant\",\"model\":\"fake-model\",\"content\":[{\"type\":\"tool_use\",\"id\":\"$1\",\"name\":\"Bash\",\"input\":{\"command\":\"pnpm vitest run\"}}]}}"
+  append "{\"type\":\"user\",\"uuid\":\"r-$1\",\"parentUuid\":null,\"sessionId\":\"$sid\",\"timestamp\":\"$(iso)\",\"cwd\":$cwd_j,\"toolUseResult\":{},\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"$1\",\"content\":\"$2\"}]}}"
+}
+cleanup() { rm -f "$reg" "$reg.tmp"; exit 0; }
+trap cleanup TERM HUP INT
+
+echo "fake claude $sid in $cwd"
+write_reg busy null
+append "{\"type\":\"user\",\"uuid\":\"u1\",\"parentUuid\":null,\"sessionId\":\"$sid\",\"timestamp\":\"$(iso)\",\"cwd\":$cwd_j,\"message\":{\"role\":\"user\",\"content\":$prompt_j}}"
+append "{\"type\":\"agent-name\",\"agentName\":\"fake session\",\"sessionId\":\"$sid\"}"
+sleep 1
+case "$prompt" in
+  *wait*)
+    write_reg waiting '"input needed"'
+    ;;
+  *)
+    append "{\"type\":\"assistant\",\"uuid\":\"a1\",\"parentUuid\":\"u1\",\"sessionId\":\"$sid\",\"timestamp\":\"$(iso)\",\"cwd\":$cwd_j,\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"fake-model\",\"content\":[{\"type\":\"tool_use\",\"id\":\"e1\",\"name\":\"Edit\",\"input\":{\"file_path\":$file_j}}]}}"
+    case "$prompt" in
+      *fail*)
+        bash_run t1 "      Tests  3 passed (3)"
+        sleep 1
+        bash_run t2 "      Tests  1 failed | 2 passed (3)"
+        ;;
+    esac
+    append "{\"type\":\"system\",\"subtype\":\"turn_duration\",\"uuid\":\"s1\",\"parentUuid\":null,\"sessionId\":\"$sid\",\"timestamp\":\"$(iso)\",\"durationMs\":1000}"
+    write_reg idle null
+    ;;
+esac
+while true; do sleep 1 & wait $!; done

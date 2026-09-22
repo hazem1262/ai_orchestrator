@@ -3,6 +3,7 @@ import type { HttpBindings } from '@hono/node-server';
 import {
   AgentNodeSchema,
   InboxItemSchema,
+  LaunchResponse,
   ProjectSchema,
   PtyInfoSchema,
   SavedViewSchema,
@@ -329,6 +330,20 @@ const CASES: BoundaryCase[] = [
       // it is the one search redaction would destroy. See `redactSavedView`.
       'query.[key]': 'user-authored search string; must round-trip byte-exact (see redactSavedView)',
       'query.[value]': 'user-authored search string; must round-trip byte-exact (see redactSavedView)',
+    },
+  },
+  {
+    // `POST /api/sessions/launch` serves its result as-is, with no redactor: both fields are ids.
+    // Declared here so a free-text field added to `LaunchResponse` fails this walk instead of
+    // being served raw. The two other launch-route bodies carry no strings at all:
+    // `KillResponse` is `{ killed: 'pty' | 'pid' }` and open-in answers `{ ok: true }`. Their
+    // error bodies go through `redactedApiError`.
+    name: 'LaunchResponse (served unredacted)',
+    schema: LaunchResponse,
+    run: (r) => r,
+    structural: {
+      ptyId: 'app-generated PTY id; the client opens /pty/:ptyId with it',
+      sessionId: IDS_AND_CLOCKS.sessionId,
     },
   },
 ];

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake `codex` for tests: prints its arguments and idles until killed. It writes no files.
+echo "fake codex in $(pwd -P) args: $*"
+trap 'exit 0' TERM HUP INT
+while true; do sleep 1 & wait $!; done
