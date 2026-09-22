@@ -150,6 +150,13 @@ describe('POST /api/hooks', () => {
         body,
       });
 
+    // The payload below is derived from the constant, so on its own it would pass at any limit —
+    // raising HOOK_BODY_LIMIT_BYTES 1000x would not fail a single test. The constant is a
+    // tunable, so its exact value is not pinned, but its ORDER OF MAGNITUDE is: the point of the
+    // limit is that a body cannot be used to make the daemon buffer.
+    expect(HOOK_BODY_LIMIT_BYTES).toBeLessThanOrEqual(1024 * 1024);
+    expect(HOOK_BODY_LIMIT_BYTES).toBeGreaterThanOrEqual(16 * 1024);
+
     const huge = JSON.stringify({
       session_id: 's-huge',
       hook_event_name: 'Notification',

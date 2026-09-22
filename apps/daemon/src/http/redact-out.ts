@@ -38,29 +38,68 @@ const SECRET_TAG = redact('secret=x').slice('secret='.length);
  * same walker now also serves `InboxItem.payload` and the `usage.updated` snapshot.
  *
  * Deliberately broader than `redact()`'s inline keyword set: with no `=` to anchor on, the key
- * name is the only signal there is. `auth(?!or)` keeps an `author` field out of it. The cost is
- * over-redaction — a `"tokenCount": "5"` rendered as a tag — which is a cosmetic loss against a
- * served credential, so the trade is deliberate.
+ * name is the only signal there is. `auth(?!or)` keeps an `author` field out of it, and the
+ * separators mirror the `api[_-]?key` alternative so `pass_word` and `pass-word` are covered too.
+ *
+ * **The over-redaction this causes is real and wider than a single example.** Every one of these
+ * is matched and tagged: `tokenCount`, `token_count`, `tokens_used`, `maxTokens`, `oauth_scope`,
+ * `authorizationHeaderName`. It is also asymmetric — only STRINGS are replaced, so a
+ * `{"password": 123456}` is still served as-is. Both are accepted: a cosmetic loss against a
+ * served credential, and a number is not a shape a credential normally takes. **Task 16 should
+ * note that `usage.updated` is the one wire shape whose entire subject is token counts**; if its
+ * snapshot turns out to carry string-valued `*token*` fields, it needs its own redactor rather
+ * than the generic walker.
  */
 const SECRET_KEY =
-  /pass(?:word|wd|phrase)|pwd|secret|token|api[_-]?key|apikey|authorization|auth(?!or)|credentials?|private[_-]?key|access[_-]?key/i;
+  /pass[_-]?(?:word|wd|phrase)|pwd|secret|token|api[_-]?key|apikey|authorization|auth(?!or)|credentials?|private[_-]?key|access[_-]?key/i;
 
-/** The value sitting under a secret-ish key. An object's own keys are still judged on their merits. */
-function redactUnderSecretKey(v: unknown): unknown {
-  if (typeof v === 'string') return SECRET_TAG;
-  if (Array.isArray(v)) return v.map(redactUnderSecretKey);
-  return redactValue(v);
-}
+/**
+ * The other half of the same defect. A tool call just as often records a credential as a
+ * `{name, value}` (or `{key, value}`) pair — HTTP headers, env vars, query parameters are all
+ * serialised that way — and then NO key in the object is secret-ish: the signal sits in the
+ * *value* of `name`. Measured before this rule, all of these passed through untouched:
+ *
+ * ```
+ * {headers:[{name:'Authorization', value:'Bearer abc123xyz789'}]}
+ * {env:[{name:'PGPASSWORD', value:'hunter2'}]}
+ * {key:'PGPASSWORD', value:'hunter2'}
+ * ```
+ */
+const PAIR_NAME_KEYS = new Set(['name', 'key']);
+const PAIR_VALUE_KEY = 'value';
 
-export function redactValue(v: unknown): unknown {
-  if (typeof v === 'string') return redact(v);
-  if (Array.isArray(v)) return v.map(redactValue);
+/**
+ * `underSecretKey` is carried DOWN through objects, not dropped at the first one. `{auth:{type:
+ * 'bearer', value:'abc123'}}` used to lose the signal the moment the value turned out to be an
+ * object, because the recursion handed back to the top-level walker. Everything below a
+ * secret-ish key is now treated as secret, which does over-redact a sibling like
+ * `credentials.username` — the safe direction, and the one the shape is named for.
+ */
+function walk(v: unknown, underSecretKey: boolean): unknown {
+  if (typeof v === 'string') return underSecretKey ? SECRET_TAG : redact(v);
+  if (Array.isArray(v)) return v.map((x) => walk(x, underSecretKey));
   if (typeof v === 'object' && v !== null) {
+    const entries = Object.entries(v);
+    const pairIsSecret = entries.some(
+      ([k, x]) => PAIR_NAME_KEYS.has(k) && typeof x === 'string' && SECRET_KEY.test(x),
+    );
     return Object.fromEntries(
-      Object.entries(v).map(([k, x]) => [k, SECRET_KEY.test(k) ? redactUnderSecretKey(x) : redactValue(x)]),
+      entries.map(([k, x]) => {
+        const secret = underSecretKey || SECRET_KEY.test(k) || (pairIsSecret && k === PAIR_VALUE_KEY);
+        // Keys reach the client too, and in `TimelineEvent.input` they are raw MCP/Bash argument
+        // names rather than a fixed vocabulary, so they are redacted as well. `redact()` is a
+        // no-op on every ordinary key name (`command`, `file_path`, even `PGPASSWORD`, which is a
+        // secret's NAME and not a secret), so this costs nothing in practice. The one caveat: two
+        // keys that both redact to the same tag would collapse into one entry.
+        return [redact(k), walk(x, secret)];
+      }),
     );
   }
   return v;
+}
+
+export function redactValue(v: unknown): unknown {
+  return walk(v, false);
 }
 
 /**

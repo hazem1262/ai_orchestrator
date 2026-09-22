@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import type { HttpBindings } from '@hono/node-server';
 import {
   AgentNodeSchema,
   InboxItemSchema,
@@ -9,9 +10,10 @@ import {
   SessionSchema,
   TimelineEventSchema,
 } from '@orc/api-contract';
+import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { DaemonContext } from '../context.ts';
-import { createApp } from './app.ts';
+import { createApp, registerAllRoutes } from './app.ts';
 import * as boundary from './redact-out.ts';
 import {
   redactAgent,
@@ -119,6 +121,12 @@ const fillUnknown = (path: string, leaves: Leaves): unknown => ({
   headers: { Authorization: `Bearer ${seedBare(leaves, `${path}.headers.Authorization`)}` },
   api_key: seedBare(leaves, `${path}.api_key`),
   nestedSecret: { credentials: [seedBare(leaves, `${path}.nestedSecret.credentials.0`)] },
+  // The pair form: no KEY here is secret-ish, the signal is the VALUE of `name`/`key`.
+  headerList: [{ name: 'Authorization', value: seedBare(leaves, `${path}.headerList.0.value`) }],
+  envList: [{ name: 'PGPASSWORD', value: seedBare(leaves, `${path}.envList.0.value`) }],
+  pair: { key: 'PGPASSWORD', value: seedBare(leaves, `${path}.pair.value`) },
+  // A secret-ish key whose value is an OBJECT — the signal must survive the recursion.
+  authObject: { type: 'bearer', value: seedBare(leaves, `${path}.authObject.value`) },
 });
 
 function populate(schema: unknown, path: string, leaves: Leaves): unknown {
@@ -259,9 +267,10 @@ const CASES: BoundaryCase[] = [
       createdAt: 'ISO timestamp',
       updatedAt: 'ISO timestamp',
       snoozeUntil: 'ISO timestamp',
-      // redactValue walks values, not keys. Payload keys are written by the inbox rules
-      // themselves (`sessionPk`, `message`, …), never copied from a transcript.
-      'payload.[key]': 'rule-authored payload key, not transcript text',
+      // `payload.[key]` is deliberately NOT here: `redactValue` now redacts object keys as well
+      // as values. Inbox payload keys are rule-authored and `redact()` is a no-op on them, but
+      // `TimelineEvent.input` shares the same walker and ITS keys are raw MCP/Bash argument
+      // names, so the channel is closed rather than declared away.
     },
   },
   {
@@ -291,9 +300,8 @@ const CASES: BoundaryCase[] = [
     structural: {
       id: 'saved-view row id',
       createdAt: 'ISO timestamp',
-      // The keys are filter names from SessionListQuerySchema (q, projectId, source, …), written
-      // by the web client; only the VALUES are whatever the user last typed.
-      'query.[key]': 'filter parameter name, a fixed vocabulary',
+      // `query.[key]` is likewise absent: keys go through `redact()` too, which is a no-op on
+      // every real filter name (q, projectId, source, …).
     },
   },
 ];
@@ -387,6 +395,13 @@ describe('live.waitingFor', () => {
 //   1. the routes the daemon actually registers must all be declared here (a new route fails);
 //   2. every redactor a declaration names must really be exported by `redact-out.ts`;
 //   3. every SHAPE redactor `redact-out.ts` exports must appear in `CASES` (a new shape fails).
+//
+// The census can only see SUCCESS bodies. Error bodies are a second response channel, and one of
+// them (`cwd_missing`) was serving `startCwd` raw on a route this table calls guarded. That is
+// handled where it belongs — `app.ts`'s `onError` walks every `ServiceError` message and details
+// through `redactValue` — rather than by enumerating each route's possible errors here.
+// `app.test.ts > route-level redaction` is the third link: it hits the real routes, success and
+// error alike, with sentinels seeded into every shape below.
 // ---------------------------------------------------------------------------------------------
 
 interface CensusEntry {
@@ -450,13 +465,70 @@ const EXPORT_KINDS: Record<string, 'shape' | 'primitive'> = {
   redactSnippet: 'primitive',
 };
 
+/**
+ * The only route `createApp` registers outside `registerAllRoutes`. (`ALL /api/*` appears on both
+ * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
+ * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
+ * has been routed around the single registration path, and fails the test below.
+ */
+const CREATE_APP_LOCAL = ['GET /bootstrap.js'];
+
 describe('the boundary census', () => {
   // Registration never touches `ctx` — only the handlers do, and none run here.
-  const app = createApp({ ctx: {} as DaemonContext, token: 't', port: () => 4317, env: {} });
-  const served = [...new Set(app.routes.map((r) => `${r.method} ${r.path}`))].sort();
+  const stub = {} as DaemonContext;
+  const routesOf = (a: { routes: Array<{ method: string; path: string }> }) =>
+    [...new Set(a.routes.map((r) => `${r.method} ${r.path}`))].sort();
+  const served = routesOf(createApp({ ctx: stub, token: 't', port: () => 4317, env: {} }));
 
   it('declares every route the daemon actually registers, and no route it does not', () => {
     expect(served).toEqual(Object.keys(CENSUS).sort());
+  });
+
+  it('registers HTTP routes only in files this census knows about', () => {
+    // The structural half of the same guarantee. Asserting `createApp` and `registerAllRoutes`
+    // agree does NOT catch a `registerExtra` hook — the census calls `createApp` without it, so
+    // both sides stay equally blind, which is exactly how an unredacted `/api/brand-new` reached
+    // the live daemon with the suite green. What does catch it: such a hook's body has to call
+    // `app.get(...)` SOMEWHERE, and that somewhere must be listed here. Task 16's
+    // `registerPhase2Routes` will have to add its file to this list, which is the moment to add
+    // its routes to CENSUS as well.
+    const REGISTRARS = [
+      'apps/daemon/src/http/app.ts',
+      'apps/daemon/src/http/routes/health.ts',
+      'apps/daemon/src/http/routes/hooks.ts',
+      'apps/daemon/src/http/routes/live.ts',
+      'apps/daemon/src/http/routes/projects.ts',
+      'apps/daemon/src/http/routes/pty.ts',
+      'apps/daemon/src/http/routes/sessions.ts',
+      'apps/daemon/src/http/routes/views.ts',
+      'apps/daemon/src/http/static.ts',
+    ];
+    // `.<method>(` with a string-literal first argument starting `/` or `*`: a Hono route
+    // registration, and essentially nothing else.
+    const REGISTRATION = /\.(?:get|post|put|patch|delete|all|use|route|mount|on)\(\s*['"`][/*]/;
+    const repo = new URL('../../../../', import.meta.url).pathname;
+    const found: string[] = [];
+    const walk = (dir: URL): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const child = new URL(e.isDirectory() ? `${e.name}/` : e.name, dir);
+        if (e.isDirectory()) walk(child);
+        else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) {
+          if (REGISTRATION.test(readFileSync(child, 'utf8'))) found.push(child.pathname.slice(repo.length));
+        }
+      }
+    };
+    walk(new URL('../../../../apps/daemon/src/', import.meta.url));
+    expect(found.sort()).toEqual([...REGISTRARS].sort());
+  });
+
+  it('registers every API route through the one path the census can see', () => {
+    // `createApp` taking a `registerExtra` hook was demonstrated to put an unredacted route into
+    // the live daemon with the whole suite green, because the census calls `createApp` without
+    // it. Asserting the two agree means a route can only reach the daemon through
+    // `registerAllRoutes`, which is the function this file calls directly.
+    const viaSinglePath = new Hono<{ Bindings: HttpBindings }>();
+    registerAllRoutes(viaSinglePath, stub);
+    expect(routesOf(viaSinglePath)).toEqual(served.filter((r) => !CREATE_APP_LOCAL.includes(r)));
   });
 
   it('names only redactors that `redact-out.ts` really exports', () => {
@@ -516,10 +588,57 @@ describe('redactValue is key-aware', () => {
     expect(redactValue({ credentials: ['a', 'b'] })).toEqual({
       credentials: ['«redacted:secret»', '«redacted:secret»'],
     });
-    // An object under a secret-ish key keeps its own structure; its keys are judged on their merits.
+    // The flag is carried DOWN: everything below a secret-ish key is secret, siblings included.
+    // `{auth:{type:'bearer', value:'abc'}}` used to lose the signal the moment the value was an
+    // object, which is why `credentials.username` is over-redacted here on purpose.
     expect(redactValue({ credentials: { username: 'bob', password: 'x', realm: 'internal' } })).toEqual({
-      credentials: { username: 'bob', password: '«redacted:secret»', realm: 'internal' },
+      credentials: {
+        username: '«redacted:secret»',
+        password: '«redacted:secret»',
+        realm: '«redacted:secret»',
+      },
     });
+    expect(redactValue({ auth: { type: 'bearer', value: 'abc123xyz789' } })).toEqual({
+      auth: { type: '«redacted:secret»', value: '«redacted:secret»' },
+    });
+  });
+
+  it('redacts the {name,value} / {key,value} pair form, where no KEY is secret-ish', () => {
+    // How a tool call records HTTP headers, env vars and query parameters. The signal sits in the
+    // VALUE of `name`, so the key-based rule alone sees nothing here.
+    expect(redactValue({ headers: [{ name: 'Authorization', value: 'Bearer abc123xyz789' }] })).toEqual({
+      headers: [{ name: 'Authorization', value: '«redacted:secret»' }],
+    });
+    expect(redactValue({ env: [{ name: 'PGPASSWORD', value: 'hunter2' }] })).toEqual({
+      env: [{ name: 'PGPASSWORD', value: '«redacted:secret»' }],
+    });
+    expect(redactValue({ key: 'PGPASSWORD', value: 'hunter2' })).toEqual({
+      key: 'PGPASSWORD',
+      value: '«redacted:secret»',
+    });
+    // The name itself is kept: which header was set is not the secret, and losing it would make
+    // the timeline unreadable.
+    expect(redactValue({ name: 'Accept', value: 'application/json' })).toEqual({
+      name: 'Accept',
+      value: 'application/json',
+    });
+  });
+
+  it('covers the separator forms of the password keyword', () => {
+    for (const k of ['pass_word', 'pass-word', 'pass_phrase', 'passphrase', 'PASSWD']) {
+      expect(redactValue({ [k]: 'hunter2' })).toEqual({ [k]: '«redacted:secret»' });
+    }
+  });
+
+  it('redacts object KEYS as well as values', () => {
+    expect(redactValue({ ghp_abcdefghijklmnopqrstuvwxyz0123456789: 1 })).toEqual({
+      '«redacted:github»': 1,
+    });
+    // A no-op on every ordinary argument name, which is why this costs nothing.
+    expect(Object.keys(redactValue({ command: 'ls', file_path: '/a' }) as object)).toEqual([
+      'command',
+      'file_path',
+    ]);
   });
 
   it('leaves `author` alone, and never touches non-strings', () => {
