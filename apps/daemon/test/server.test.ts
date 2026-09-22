@@ -158,11 +158,30 @@ describe('daemon server', () => {
     const decoy = daemon.ctx.pty.spawn({ command: FAKE_CLAUDE, args: [], cwd: homes.root });
     const statuses: string[] = [];
     for (const t of [
+      // (a) Node's parser accepts these; `new URL` throws on them.
       'http://[',
       '//[/ws',
       '//',
+      // (b) These parse, but onto a FOREIGN authority with pathname `/pty/<id>`. They carry a
+      //     valid token, this server's own Origin and a REAL pty id, so only the refusal to
+      //     normalise an authority stands between them and a handshake.
       `//evil.example/pty/${decoy.id}?token=${daemon.token}`,
       `/\\evil.example/pty/${decoy.id}?token=${daemon.token}`,
+      // (c) These parse and resolve here, but the SEGMENT does not percent-decode. Every one of
+      //     them threw URIError out of `decodeURIComponent` one line below the round-1 parse fix
+      //     and still before the token check, so they killed the daemon unauthenticated — and
+      //     leaked a temp home per crash, since `afterEach` never ran.
+      '/pty/%',
+      '/pty/%zz',
+      '/pty/a%',
+      '/pty/x%2',
+      '/pty/%FF%FE',
+      '/pty/%C0%80',
+      '/pty/%ed%a0%80',
+      '/pty/%E0%A4%A',
+      `/pty/${decoy.id}%`,
+      `/pty/%?token=${daemon.token}`,
+      `/pty/${decoy.id}%?token=${daemon.token}`,
     ]) {
       statuses.push(await rawUpgrade(t));
     }

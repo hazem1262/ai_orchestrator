@@ -34,12 +34,15 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
       socket.destroy();
       return;
     }
-    const match = /^\/pty\/([^/]+)$/.exec(target.path);
-    if (!match?.[1]) {
+    // The match is on the still-encoded path, so the accepted shape is byte-for-byte what it
+    // always was; the id itself comes from `segments`, already decoded by the helper. Decoding it
+    // here is what used to kill the daemon on `GET /pty/%` — after the parse fix, still before
+    // the token check.
+    const ptyId = /^\/pty\/([^/]+)$/.test(target.path) ? target.segments[1] : undefined;
+    if (!ptyId) {
       socket.destroy();
       return;
     }
-    const ptyId = decodeURIComponent(match[1]);
     const headerToken = req.headers['x-orc-token'];
     const token = (typeof headerToken === 'string' ? headerToken : null) ?? target.query.get('token');
     if (!tokenMatches(o.token, token)) {

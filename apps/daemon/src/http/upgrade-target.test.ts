@@ -45,8 +45,45 @@ describe('parseUpgradeTarget', () => {
     expect(parseUpgradeTarget(raw as string | undefined | null)).toBeNull();
   });
 
+  it.each([
+    // Accepted by Node's HTTP parser, `URIError` out of `decodeURIComponent`. Each of these
+    // killed the daemon unauthenticated at `ws.ts`'s own decode, one line below the round-1 fix.
+    ['/pty/%'],
+    ['/pty/%zz'],
+    ['/pty/a%'],
+    ['/pty/x%2'],
+    ['/pty/%FF%FE'],
+    ['/pty/%C0%80'],
+    ['/pty/%ed%a0%80'],
+    ['/pty/%E0%A4%A'],
+    ['/pty/realpty%'],
+    ['/pty/%?token=t'],
+  ])('rejects %s, whose segment cannot be percent-decoded', (raw) => {
+    expect(parseUpgradeTarget(raw)).toBeNull();
+  });
+
+  it('hands back decoded segments, so no caller needs decodeURIComponent', () => {
+    expect(parseUpgradeTarget('/pty/a%20b')?.segments).toEqual(['pty', 'a b']);
+    // `[^/]+` in a caller's regex captures exactly one segment, so an encoded slash inside an id
+    // still belongs to that segment and decodes the same way the old caller-side decode did.
+    expect(parseUpgradeTarget('/pty/a%2Fb')?.segments).toEqual(['pty', 'a/b']);
+    expect(parseUpgradeTarget('/ws')?.segments).toEqual(['ws']);
+    expect(parseUpgradeTarget('/pty/x/y')?.segments).toEqual(['pty', 'x', 'y']);
+  });
+
   it('never throws, whatever it is handed', () => {
-    const hostile = ['http://[', '//[/ws', '%', '/%', '/%zz', `/${'a'.repeat(100_000)}`, '/\0'];
+    const hostile = [
+      'http://[',
+      '//[/ws',
+      '%',
+      '/%',
+      '/%zz',
+      '/%C0%80',
+      '/%ed%a0%80',
+      `/${'a'.repeat(100_000)}`,
+      `/${'%'.repeat(5000)}`,
+      '/\0',
+    ];
     for (const raw of hostile) expect(() => parseUpgradeTarget(raw)).not.toThrow();
   });
 });
@@ -100,10 +137,12 @@ describe('an upgrade listener built on it', () => {
     await new Promise<void>((r) => server?.listen(0, '127.0.0.1', r));
     const port = (server.address() as AddressInfo).port;
 
-    for (const t of ['http://[', '//[/ws', '//evil.example/ws', '/ws']) await rawUpgrade(port, t);
+    for (const t of ['http://[', '//[/ws', '//evil.example/ws', '/pty/%', '/pty/%C0%80', '/ws']) {
+      await rawUpgrade(port, t);
+    }
 
     expect(thrown).toEqual([]);
-    // The three hostile targets are rejected; only the honest one yields a path.
-    expect(seen).toEqual([null, null, null, '/ws']);
+    // Five hostile targets rejected; only the honest one yields a path.
+    expect(seen).toEqual([null, null, null, null, null, '/ws']);
   });
 });
