@@ -11,7 +11,14 @@ import type { DaemonContext } from '../../context.ts';
 import { ServiceError } from '../../services/errors.ts';
 import { sessionPk } from '../../services/sessions.ts';
 import { parseWith, readJson } from '../json.ts';
-import { redactAgent, redactEvent, redactListItem, redactSession } from '../redact-out.ts';
+import {
+  redactAgent,
+  redactEvent,
+  redactLabels,
+  redactListItem,
+  redactResume,
+  redactSession,
+} from '../redact-out.ts';
 import type { OrcApp } from '../types.ts';
 
 const Params = z.object({ source: SourceSchema, id: z.string().min(1) });
@@ -49,7 +56,7 @@ export function registerSessionRoutes(app: OrcApp, ctx: DaemonContext): void {
   app.post('/api/sessions/:source/:id/resume', async (c) => {
     const p = parseWith(Params, c.req.param());
     const body = await readJson(c, ResumeRequestSchema);
-    return c.json(await ctx.sessions.resume(p.source, p.id, body));
+    return c.json(redactResume(await ctx.sessions.resume(p.source, p.id, body)));
   });
 
   app.post('/api/sessions/:source/:id/pin', async (c) => {
@@ -61,8 +68,8 @@ export function registerSessionRoutes(app: OrcApp, ctx: DaemonContext): void {
   app.post('/api/sessions/:source/:id/label', async (c) => {
     const p = parseWith(Params, c.req.param());
     const body = await readJson(c, LabelRequestSchema);
-    return c.json({ labels: ctx.userMeta.setLabels(sessionPk(p.source, p.id), body.labels) });
+    return c.json({ labels: redactLabels(ctx.userMeta.setLabels(sessionPk(p.source, p.id), body.labels)) });
   });
 
-  app.get('/api/labels', (c) => c.json(ctx.userMeta.labels()));
+  app.get('/api/labels', (c) => c.json(redactLabels(ctx.userMeta.labels())));
 }

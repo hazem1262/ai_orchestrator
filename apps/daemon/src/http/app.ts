@@ -64,6 +64,10 @@ export function createApp(o: AppOptions): OrcApp {
   registerSessionRoutes(app, o.ctx);
   registerViewRoutes(app, o.ctx);
   registerPtyRoutes(app, o.ctx);
+  // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
+  // catch-all, so anything registered after it is shadowed and answers 404. Task 16's
+  // `registerPhase2Routes` (live, hooks, inbox, launch, archive, templates, notifications) goes
+  // with the calls above, not below.
   app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
 
   if (o.webDist) registerStatic(app, o.webDist);

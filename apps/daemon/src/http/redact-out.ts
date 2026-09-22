@@ -1,8 +1,16 @@
-import { type SessionListItem, SNIPPET_CLOSE, SNIPPET_OPEN } from '@orc/api-contract';
+import {
+  type PtyInfo,
+  type ResumeResponse,
+  type SavedView,
+  type SessionListItem,
+  SNIPPET_CLOSE,
+  SNIPPET_OPEN,
+} from '@orc/api-contract';
 import {
   type AgentNode,
   type InboxItem,
   type LiveState,
+  type Project,
   type PrRef,
   redact,
   type Session,
@@ -11,11 +19,46 @@ import {
 
 const r = (t: string | null): string | null => (t === null ? null : redact(t));
 
+/**
+ * Derived rather than written out, so it cannot drift from `redact()`'s own `secret` tag.
+ * `redact('secret=x')` is `'secret=«redacted:secret»'`.
+ */
+const SECRET_TAG = redact('secret=x').slice('secret='.length);
+
+/**
+ * Object keys whose string value is a credential *by virtue of the key*, whatever the value looks
+ * like.
+ *
+ * `redact()` works on one string at a time and its patterns need `KEYWORD=VALUE` inside that
+ * string to anchor on. JSON splits the two apart, so `{"env":{"PGPASSWORD":"hunter2"}}` and
+ * `{"headers":{"Authorization":"Bearer abc123xyz"}}` passed through completely untouched while
+ * the very same secrets written as `'PGPASSWORD=hunter2 psql'` were caught. That is the same
+ * defect class as phase 1's `SSWORD=hunter2`: a secret split so that no pattern anchors on it.
+ * It matters because `TimelineEvent.input` is a raw MCP/Bash tool-call argument object, and the
+ * same walker now also serves `InboxItem.payload` and the `usage.updated` snapshot.
+ *
+ * Deliberately broader than `redact()`'s inline keyword set: with no `=` to anchor on, the key
+ * name is the only signal there is. `auth(?!or)` keeps an `author` field out of it. The cost is
+ * over-redaction — a `"tokenCount": "5"` rendered as a tag — which is a cosmetic loss against a
+ * served credential, so the trade is deliberate.
+ */
+const SECRET_KEY =
+  /pass(?:word|wd|phrase)|pwd|secret|token|api[_-]?key|apikey|authorization|auth(?!or)|credentials?|private[_-]?key|access[_-]?key/i;
+
+/** The value sitting under a secret-ish key. An object's own keys are still judged on their merits. */
+function redactUnderSecretKey(v: unknown): unknown {
+  if (typeof v === 'string') return SECRET_TAG;
+  if (Array.isArray(v)) return v.map(redactUnderSecretKey);
+  return redactValue(v);
+}
+
 export function redactValue(v: unknown): unknown {
   if (typeof v === 'string') return redact(v);
   if (Array.isArray(v)) return v.map(redactValue);
   if (typeof v === 'object' && v !== null) {
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, redactValue(x)]));
+    return Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [k, SECRET_KEY.test(k) ? redactUnderSecretKey(x) : redactValue(x)]),
+    );
   }
   return v;
 }
@@ -127,4 +170,46 @@ export function redactInboxItem(i: InboxItem): InboxItem {
     ticket: r(i.ticket),
     payload: redactValue(i.payload) as Record<string, unknown>,
   };
+}
+
+/**
+ * `pathPrefixes` are literally the cwd prefixes that `Session.startCwd`/`cwds[]` are matched
+ * against and are redacted for the same reason; `name` is user-typed. This is the LIST shape,
+ * which is display-only. The single-project config echo behind `GET /api/projects/:id` is
+ * deliberately NOT redacted — see the census in `redact-out.test.ts` for why.
+ */
+export function redactProject(p: Project): Project {
+  return { ...p, name: redact(p.name), pathPrefixes: p.pathPrefixes.map((x) => redact(x)) };
+}
+
+/**
+ * A PTY's argv is the highest-risk unredacted field in the daemon: a phase-2 launch route that
+ * spawns with a token-bearing flag puts that token straight into `args[]`, and `GET /api/pty`
+ * serves it. `cwd` is the same class as `Session.startCwd`.
+ */
+export function redactPtyInfo(i: PtyInfo): PtyInfo {
+  return { ...i, command: redact(i.command), args: i.args.map((a) => redact(a)), cwd: redact(i.cwd) };
+}
+
+/** `name` is user-typed and `query` is a saved filter — whatever the user last searched for. */
+export function redactSavedView(v: SavedView): SavedView {
+  return { ...v, name: redact(v.name), query: redactValue(v.query) as Record<string, string> };
+}
+
+/**
+ * The external-launch branch echoes the full command line the daemon just ran — the same argv
+ * class as `PtyInfo`, and the branch a phase-2 launch route grows flags on. The `ptyId` branch
+ * carries only an id.
+ */
+export function redactResume(r: ResumeResponse): ResumeResponse {
+  return 'command' in r ? { ...r, command: redact(r.command) } : r;
+}
+
+/**
+ * User-typed labels, served bare by `GET /api/labels` and echoed by the label mutation.
+ * `redactListItem` already redacts the same strings inside a session row; these are the two
+ * places the same values are served on their own.
+ */
+export function redactLabels(labels: string[]): string[] {
+  return labels.map((l) => redact(l));
 }

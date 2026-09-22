@@ -1,12 +1,29 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import {
   AgentNodeSchema,
   InboxItemSchema,
+  ProjectSchema,
+  PtyInfoSchema,
+  SavedViewSchema,
   SessionListItemSchema,
   SessionSchema,
   TimelineEventSchema,
 } from '@orc/api-contract';
 import { describe, expect, it } from 'vitest';
-import { redactAgent, redactEvent, redactInboxItem, redactListItem, redactSession } from './redact-out.ts';
+import type { DaemonContext } from '../context.ts';
+import { createApp } from './app.ts';
+import * as boundary from './redact-out.ts';
+import {
+  redactAgent,
+  redactEvent,
+  redactInboxItem,
+  redactListItem,
+  redactProject,
+  redactPtyInfo,
+  redactSavedView,
+  redactSession,
+  redactValue,
+} from './redact-out.ts';
 
 /**
  * The exhaustive guard for the daemon's single redaction boundary.
@@ -62,6 +79,18 @@ const defOf = (schema: unknown): ZodDef => {
 const sentinelFor = (ordinal: number, path: string): string =>
   `ghp_${ordinal}z${path.replace(/[^A-Za-z0-9]/g, '')}`.padEnd(24, 'x');
 
+/**
+ * The second sentinel family, and the reason there are two. A `ghp_…` token is caught by
+ * `redact()` on its own, so it can only ever prove that a field *reaches* the boundary. A bare
+ * sentinel matches no pattern at all: the only thing that can redact it is the key it sits under.
+ * Phase 1's leaks were value-shape leaks — a secret split so nothing anchors on it — and a guard
+ * built only from self-contained tokens is constitutionally blind to that class.
+ */
+const bareSentinelFor = (ordinal: number, path: string): string =>
+  `bare_${ordinal}z${path.replace(/[^A-Za-z0-9]/g, '')}`;
+
+const ANY_SENTINEL = /(?:ghp_|bare_)[A-Za-z0-9]+/g;
+
 type Leaves = Map<string, string>;
 
 const seed = (leaves: Leaves, path: string): string => {
@@ -70,11 +99,26 @@ const seed = (leaves: Leaves, path: string): string => {
   return s;
 };
 
-/** `z.unknown()` has no shape to walk, so it gets a fixed nesting that exercises the generic walker. */
+const seedBare = (leaves: Leaves, path: string): string => {
+  const s = bareSentinelFor(leaves.size, path);
+  leaves.set(path, s);
+  return s;
+};
+
+/**
+ * `z.unknown()` has no shape to walk, so it gets a fixed nesting that exercises the generic
+ * walker. The lower half is the split-shape class: the key carries the whole signal and the value
+ * matches no redaction pattern by itself, which is exactly how an MCP tool call records an
+ * `Authorization` header or a `PGPASSWORD` env var.
+ */
 const fillUnknown = (path: string, leaves: Leaves): unknown => ({
   text: seed(leaves, `${path}.text`),
   list: [seed(leaves, `${path}.list.0`)],
   nested: { deep: seed(leaves, `${path}.nested.deep`) },
+  env: { PGPASSWORD: seedBare(leaves, `${path}.env.PGPASSWORD`) },
+  headers: { Authorization: `Bearer ${seedBare(leaves, `${path}.headers.Authorization`)}` },
+  api_key: seedBare(leaves, `${path}.api_key`),
+  nestedSecret: { credentials: [seedBare(leaves, `${path}.nestedSecret.credentials.0`)] },
 });
 
 function populate(schema: unknown, path: string, leaves: Leaves): unknown {
@@ -208,13 +252,48 @@ const CASES: BoundaryCase[] = [
       id: 'inbox row id',
       sessionId: IDS_AND_CLOCKS.sessionId,
       projectId: IDS_AND_CLOCKS.projectId,
-      dedupeKey: 'composed from kind + session pk; the unique index is on this literal string',
+      // NOTE: nothing composes this yet — tasks 9-15 own the inbox rules. The claim below is a
+      // CONSTRAINT ON THOSE TASKS, re-asserted by `dedupeKey is composed, never copied` below,
+      // which fails the moment a producer appears that does not satisfy it.
+      dedupeKey: 'composed from kind + session pk by the inbox engine; never copied from free text',
       createdAt: 'ISO timestamp',
       updatedAt: 'ISO timestamp',
       snoozeUntil: 'ISO timestamp',
       // redactValue walks values, not keys. Payload keys are written by the inbox rules
       // themselves (`sessionPk`, `message`, …), never copied from a transcript.
       'payload.[key]': 'rule-authored payload key, not transcript text',
+    },
+  },
+  {
+    name: 'redactProject',
+    schema: ProjectSchema,
+    run: (p) => redactProject(p),
+    structural: {
+      id: 'project slug; every other route is addressed by it',
+      lastActivityAt: IDS_AND_CLOCKS.lastActivityAt,
+    },
+  },
+  {
+    name: 'redactPtyInfo',
+    schema: PtyInfoSchema,
+    run: (i) => redactPtyInfo(i),
+    structural: {
+      id: 'app-generated PTY id; the client opens /pty/:ptyId with it',
+      sessionPk: IDS_AND_CLOCKS.pk,
+      startedAt: IDS_AND_CLOCKS.startedAt,
+      exitedAt: 'ISO timestamp',
+    },
+  },
+  {
+    name: 'redactSavedView',
+    schema: SavedViewSchema,
+    run: (v) => redactSavedView(v),
+    structural: {
+      id: 'saved-view row id',
+      createdAt: 'ISO timestamp',
+      // The keys are filter names from SessionListQuerySchema (q, projectId, source, …), written
+      // by the web client; only the VALUES are whatever the user last typed.
+      'query.[key]': 'filter parameter name, a fixed vocabulary',
     },
   },
 ];
@@ -260,7 +339,7 @@ describe('the redaction boundary is exhaustive', () => {
             .map((p) => leaves.get(p))
             .filter((v): v is string => v !== undefined),
         );
-        const found = json.match(/ghp_[A-Za-z0-9]+/g) ?? [];
+        const found = json.match(ANY_SENTINEL) ?? [];
         expect(found.filter((m) => !allowed.has(m))).toEqual([]);
       });
     });
@@ -296,4 +375,251 @@ describe('live.waitingFor', () => {
     const i = SessionListItemSchema.parse(populate(SessionListItemSchema, '', new Map()));
     expect(redactListItem({ ...i, live }).live?.waitingFor).toBe(expected);
   });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The meta-gap: the guard above is exhaustive WITHIN a shape, but `CASES` is a hand-written list.
+// Nothing above notices a sixth shape that crosses the boundary with no redactor at all — which
+// is how `Project.pathPrefixes`, `PtyInfo.args` and `SavedView.query` were served raw for a whole
+// phase. "Someone must remember", moved up one level, is still the failure mode that cost us
+// thirteen fields. These three tests chain route -> redactor -> case so it cannot recur:
+//
+//   1. the routes the daemon actually registers must all be declared here (a new route fails);
+//   2. every redactor a declaration names must really be exported by `redact-out.ts`;
+//   3. every SHAPE redactor `redact-out.ts` exports must appear in `CASES` (a new shape fails).
+// ---------------------------------------------------------------------------------------------
+
+interface CensusEntry {
+  /** The `redact-out.ts` export that guards this response, or null when there is no free text. */
+  guardedBy: string | null;
+  reason: string;
+}
+
+const CENSUS: Record<string, CensusEntry> = {
+  'ALL /api/*': { guardedBy: null, reason: 'the auth middleware and the 404 catch-all; apiError only' },
+  'GET /api/health': { guardedBy: null, reason: 'version, uptime and counts' },
+  'GET /bootstrap.js': {
+    guardedBy: null,
+    reason: 'deliberately serves the loopback token itself to a same-origin local request',
+  },
+  'GET /api/sessions': { guardedBy: 'redactListItem', reason: '' },
+  'GET /api/sessions/:source/:id': { guardedBy: 'redactSession', reason: '' },
+  'GET /api/sessions/:source/:id/events': { guardedBy: 'redactEvent', reason: '' },
+  'GET /api/sessions/:source/:id/agents': { guardedBy: 'redactAgent', reason: '' },
+  'POST /api/sessions/:source/:id/resume': { guardedBy: 'redactResume', reason: '' },
+  'POST /api/sessions/:source/:id/pin': { guardedBy: null, reason: '{ pinned: boolean }' },
+  'POST /api/sessions/:source/:id/label': { guardedBy: 'redactLabels', reason: '' },
+  'GET /api/labels': { guardedBy: 'redactLabels', reason: '' },
+  'GET /api/projects': { guardedBy: 'redactProject', reason: '' },
+  'GET /api/projects/:id': {
+    guardedBy: null,
+    reason:
+      'the settings editor round-trip: the client GETs this, edits a field and PATCHes the whole ' +
+      'object back, so a tag written here would land in the user’s own config.json as the new ' +
+      'pathPrefixes and unbind the project. User-authored config, not transcript-derived.',
+  },
+  'PATCH /api/projects/:id': { guardedBy: null, reason: 'echoes the config the client just sent; see above' },
+  'GET /api/pty': { guardedBy: 'redactPtyInfo', reason: '' },
+  'DELETE /api/pty/:ptyId': {
+    guardedBy: 'redactPtyInfo',
+    reason: 'the 409 confirmation summary embeds the same argv and cwd, built from the redacted view',
+  },
+  'GET /api/views': { guardedBy: 'redactSavedView', reason: '' },
+  'POST /api/views': { guardedBy: 'redactSavedView', reason: '' },
+  'DELETE /api/views/:id': { guardedBy: null, reason: '{ ok: true }' },
+};
+
+/**
+ * Every export of `redact-out.ts`, split by what it is. `shape` members must each have a `CASES`
+ * entry and are then walked exhaustively. `primitive` members have no schema to walk — a bare
+ * `string[]`, a two-branch union, a raw value — so each one has a focused test in this file
+ * instead; `every primitive redactor has a focused test` below pins that.
+ */
+const EXPORT_KINDS: Record<string, 'shape' | 'primitive'> = {
+  redactSession: 'shape',
+  redactListItem: 'shape',
+  redactEvent: 'shape',
+  redactAgent: 'shape',
+  redactInboxItem: 'shape',
+  redactProject: 'shape',
+  redactPtyInfo: 'shape',
+  redactSavedView: 'shape',
+  redactResume: 'primitive',
+  redactLabels: 'primitive',
+  redactValue: 'primitive',
+  redactSnippet: 'primitive',
+};
+
+describe('the boundary census', () => {
+  // Registration never touches `ctx` — only the handlers do, and none run here.
+  const app = createApp({ ctx: {} as DaemonContext, token: 't', port: () => 4317, env: {} });
+  const served = [...new Set(app.routes.map((r) => `${r.method} ${r.path}`))].sort();
+
+  it('declares every route the daemon actually registers, and no route it does not', () => {
+    expect(served).toEqual(Object.keys(CENSUS).sort());
+  });
+
+  it('names only redactors that `redact-out.ts` really exports', () => {
+    const exported = new Set(Object.keys(boundary));
+    const named = Object.values(CENSUS)
+      .map((e) => e.guardedBy)
+      .filter((n): n is string => n !== null);
+    expect([...new Set(named)].filter((n) => !exported.has(n))).toEqual([]);
+  });
+
+  it('gives every unguarded route a written reason', () => {
+    const missing = Object.entries(CENSUS)
+      .filter(([, e]) => e.guardedBy === null && e.reason.trim() === '')
+      .map(([k]) => k);
+    expect(missing).toEqual([]);
+  });
+
+  it('every primitive redactor has a focused test that fails if it stops redacting', () => {
+    // The schema walk cannot reach these, so without this list a neutered `redactLabels` passes
+    // every other test in the file — verified by neutering it.
+    const covered = new Set(PRIMITIVE_TESTS.map((t) => t.name));
+    const primitives = Object.entries(EXPORT_KINDS)
+      .filter(([, kind]) => kind === 'primitive')
+      .map(([name]) => name);
+    expect(primitives.filter((n) => !covered.has(n))).toEqual([]);
+  });
+
+  it('classifies every export, and covers every shape redactor with a CASES entry', () => {
+    expect(Object.keys(boundary).sort()).toEqual(Object.keys(EXPORT_KINDS).sort());
+    const guarded = new Set(CASES.map((c) => c.name));
+    const shapes = Object.entries(EXPORT_KINDS)
+      .filter(([, kind]) => kind === 'shape')
+      .map(([name]) => name);
+    expect(shapes.filter((n) => !guarded.has(n))).toEqual([]);
+  });
+});
+
+describe('redactValue is key-aware', () => {
+  // The bug class the schema walk alone cannot see: `redact()` needs KEYWORD=VALUE inside one
+  // string, and JSON splits the two apart. `TimelineEvent.input` is a raw tool-call argument
+  // object, so this is the shape a real MCP call records.
+  it('redacts a value whose key names a credential, whatever the value looks like', () => {
+    expect(
+      redactValue({
+        env: { PGPASSWORD: 'hunter2' },
+        headers: { Authorization: 'Bearer abc123xyz' },
+        api_key: 's3cr3tvalue',
+      }),
+    ).toEqual({
+      env: { PGPASSWORD: '«redacted:secret»' },
+      headers: { Authorization: '«redacted:secret»' },
+      api_key: '«redacted:secret»',
+    });
+  });
+
+  it('reaches into arrays and nested objects under such a key', () => {
+    expect(redactValue({ credentials: ['a', 'b'] })).toEqual({
+      credentials: ['«redacted:secret»', '«redacted:secret»'],
+    });
+    // An object under a secret-ish key keeps its own structure; its keys are judged on their merits.
+    expect(redactValue({ credentials: { username: 'bob', password: 'x', realm: 'internal' } })).toEqual({
+      credentials: { username: 'bob', password: '«redacted:secret»', realm: 'internal' },
+    });
+  });
+
+  it('leaves `author` alone, and never touches non-strings', () => {
+    expect(redactValue({ author: 'Jane Doe', authors: ['Jane'] })).toEqual({
+      author: 'Jane Doe',
+      authors: ['Jane'],
+    });
+    expect(redactValue({ input_tokens: 1200, total_token_usage: 500, ok: true })).toEqual({
+      input_tokens: 1200,
+      total_token_usage: 500,
+      ok: true,
+    });
+  });
+
+  it('still catches the single-string form it always did', () => {
+    expect(redactValue({ cmd: 'PGPASSWORD=hunter2 psql' })).toEqual({
+      cmd: 'PGPASSWORD=«redacted:secret» psql',
+    });
+  });
+});
+
+describe('dedupeKey is composed, never copied', () => {
+  // `InboxItem.dedupeKey` is allowlisted as structural on the strength of how it WILL be built.
+  // Nothing builds one yet — tasks 9-15 own the inbox rules — so the allowlist entry currently
+  // rests on a promise. This pins the promise: the moment a producer appears, this fails and
+  // whoever wrote it has to either satisfy the claim or move `dedupeKey` to the redacted side.
+  it('has no producer outside the schema and the repository', () => {
+    const roots = [
+      new URL('../../../../apps/daemon/src/', import.meta.url),
+      new URL('../../../../packages/core/src/', import.meta.url),
+      new URL('../../../../packages/api-contract/src/', import.meta.url),
+    ];
+    const repo = new URL('../../../../', import.meta.url).pathname;
+    const hits: string[] = [];
+    const walk = (dir: URL): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const child = new URL(e.isDirectory() ? `${e.name}/` : e.name, dir);
+        if (e.isDirectory()) {
+          walk(child);
+        } else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) {
+          if (/dedupeKey|dedupe_key/.test(readFileSync(child, 'utf8'))) {
+            hits.push(child.pathname.slice(repo.length));
+          }
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+    expect(hits.sort()).toEqual([
+      'apps/daemon/src/db/repos/inbox.ts', // reads and writes the column
+      'apps/daemon/src/db/schema.ts', // declares the column and its unique index
+      'packages/api-contract/src/routes/inbox.ts', // the wire schema
+      'packages/core/src/types/inbox.ts', // the type
+    ]);
+  });
+});
+
+/** One entry per `primitive` export; the census asserts this list covers all of them. */
+const PRIMITIVE_TESTS: Array<{ name: string; run: () => void }> = [
+  {
+    name: 'redactResume',
+    run: () => {
+      // The external-launch branch echoes the argv the daemon just ran.
+      expect(
+        boundary.redactResume({ launched: 'external', command: 'claude --api-key sk-ant-aaaaaaaaaaaa' }),
+      ).toEqual({ launched: 'external', command: 'claude --api-key «redacted:anthropic»' });
+      // The pty branch is an id and must survive untouched.
+      expect(boundary.redactResume({ ptyId: 'p-1' })).toEqual({ ptyId: 'p-1' });
+    },
+  },
+  {
+    name: 'redactLabels',
+    run: () => {
+      expect(boundary.redactLabels(['release', 'token=abc123'])).toEqual([
+        'release',
+        'token=«redacted:secret»',
+      ]);
+    },
+  },
+  {
+    name: 'redactValue',
+    run: () => {
+      expect(redactValue('ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toBe('«redacted:github»');
+      expect(redactValue({ password: 'x' })).toEqual({ password: '«redacted:secret»' });
+    },
+  },
+  {
+    name: 'redactSnippet',
+    run: () => {
+      // The phase-1 ordering bug: highlight markers split a secret, so `PGPASSWORD=hunter2` became
+      // `⟦PGPASSWORD⟧=hunter2` and the pattern no longer anchored — `SSWORD=hunter2` escaped.
+      // Redaction therefore runs on the marker-stripped text.
+      expect(boundary.redactSnippet('run ⟦PGPASSWORD⟧=hunter2 now')).toBe(
+        'run PGPASSWORD=«redacted:secret» now',
+      );
+      // No secret: the markers must be preserved for the UI to highlight.
+      expect(boundary.redactSnippet('ran ⟦pnpm⟧ test')).toBe('ran ⟦pnpm⟧ test');
+    },
+  },
+];
+
+describe('primitive redactors', () => {
+  for (const t of PRIMITIVE_TESTS) it(t.name, t.run);
 });
