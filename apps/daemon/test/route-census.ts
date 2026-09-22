@@ -87,6 +87,9 @@ export const REGISTRAR_FILES = [
   // and adds its routes to `CENSUS`.
   'apps/daemon/src/http/routes/inbox.ts',
   'apps/daemon/src/http/routes/live.ts',
+  // Registers `/api/config/notifications` but is not yet wired into `registerAllRoutes`; Task 16
+  // wires it and adds its routes to `CENSUS`.
+  'apps/daemon/src/http/routes/notifications.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/sessions.ts',

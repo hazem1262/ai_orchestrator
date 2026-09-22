@@ -31,6 +31,8 @@ export interface DaemonContext {
   inbox?: InboxEngine;
   /** P2 — desktop/push/Slack notifications (Task 11 implements; Task 9 only calls `notify`). */
   notifier?: Notifier;
+  /** P2 — replace the config and persist it (Task 11's notification prefs route; Task 16 wires it). */
+  updateConfig?: (fn: (cfg: OrcConfig) => OrcConfig) => OrcConfig;
 }
 
 export interface BuildContextOptions {

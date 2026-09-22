@@ -726,6 +726,8 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
       'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
+      'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
+      'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type
     ]);
@@ -761,6 +763,50 @@ describe('dedupeKey is composed, never copied', () => {
             `sessions share one inbox row and silently suppress each other. Allowed forms: ` +
             ALLOWED.map(([form, why]) => `${form.source} (${why})`).join('; '),
         ).toBe(true);
+      }
+    }
+  });
+  it('the notify files only read the key off the item', () => {
+    // The notifier debounces per key and the macOS channel groups banners per key, so both need
+    // the value. They may only READ it off the inbox item the engine produced: never compose one
+    // (no composer import), never assign one, never build one from other fields.
+    const READ = /^\s*(?:[A-Za-z_$][\w$]*\.)*[A-Za-z_$][\w$]*\.dedupeKey(?:\)|,)/;
+    for (const file of ['../notify/notifier.ts', '../notify/macos.ts']) {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      expect(code, `${file} must not import the key composer`).not.toMatch(/inboxDedupeKey|dedupe-key/);
+      let uses = 0;
+      for (const m of code.matchAll(/[^\s(]*\bdedupeKey\b.*$/gm)) {
+        uses += 1;
+        expect(
+          READ.test(m[0]) && !/[`+]/.test(m[0]),
+          `${file}: \`${m[0].trim()}\` is not a plain read of item.dedupeKey. The notify files may ` +
+            `pass the engine's composed key along as an argument or a field value, and nothing else.`,
+        ).toBe(true);
+      }
+      expect(uses, `${file} no longer reads dedupeKey; drop it from the producer list`).toBeGreaterThan(0);
+    }
+    // A key built by hand need not mention `dedupeKey` at all, so the scan above cannot see it.
+    // Pin the two places a key is consumed instead: every debounce-map key and the banner group
+    // must be the item's own key (eviction may also delete a key already in the map).
+    const KEY_SITES: Array<[file: string, site: RegExp, allowed: string[]]> = [
+      [
+        '../notify/notifier.ts',
+        /\blastSent\.(?:get|set|delete|has)\(\s*([^,)]*)/g,
+        ['item.dedupeKey', 'oldest.value'],
+      ],
+      ['../notify/macos.ts', /\bgroup:\s*([^,\n}]*)/g, ['item.dedupeKey']],
+    ];
+    for (const [file, site, allowed] of KEY_SITES) {
+      const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+      const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const keys = [...code.matchAll(site)].map((m) => (m[1] ?? '').trim());
+      expect(keys.length, `${file}: no key site found; update this guard with the file`).toBeGreaterThan(0);
+      for (const k of keys) {
+        expect(
+          allowed,
+          `${file}: \`${k}\` is used as a notification key; only item.dedupeKey may be`,
+        ).toContain(k);
       }
     }
   });
