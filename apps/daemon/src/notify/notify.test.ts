@@ -449,4 +449,76 @@ describe('createMacosChannel', () => {
       'no permission',
     );
   });
+
+  /**
+   * node-notifier's `lib/utils.js#fileCommandJson` runs `JSON.parse` over the whole of
+   * terminal-notifier's stdout and, when that throws, hands the SyntaxError to our callback as the
+   * error. The helper only writes that stdout once the banner has been delivered, so the throw
+   * reports an unreadable after-the-fact activation record, never an undelivered banner.
+   */
+  const UNPARSABLE_HELPER_STDOUT = `{
+  "activationType" : "timeout",
+  "activationValue" : "orchestrator",
+  "activationAt" : "2026-09-23 09:55:44 +0300",
+  "deliveredAt" : "2026-09-23 09:55:40 +0300"
+}{
+  "activationType" : "timeout",
+  "activationAt" : "2026-09-23 09:55:54 +0300",
+  "deliveredAt" : "2026-09-23 09:55:44 +0300"
+}`;
+
+  const helperParseError = (): SyntaxError => {
+    try {
+      JSON.parse(UNPARSABLE_HELPER_STDOUT);
+    } catch (err) {
+      return err as SyntaxError;
+    }
+    throw new Error('fixture parses as JSON; it must not');
+  };
+
+  it('reproduces the daemon log error out of the helper stdout fixture', () => {
+    expect(helperParseError().message).toMatch(/Unexpected non-whitespace character after JSON/);
+  });
+
+  it('resolves and warns when node-notifier cannot parse its helper output', async () => {
+    const warn = vi.fn();
+    const impl: NodeNotifierLike = {
+      notify: (_o, cb) => cb?.(helperParseError(), UNPARSABLE_HELPER_STDOUT),
+    };
+    await expect(
+      createMacosChannel({ impl, platform: 'darwin', log: { warn } }).send(item(), 'u'),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledOnce();
+    const logged = warn.mock.calls[0]?.[0] as { err: string; helperOutput: string };
+    expect(logged).toMatchObject({ channel: 'macos', kind: 'waiting' });
+    expect(logged.err).toMatch(/SyntaxError: Unexpected non-whitespace character after JSON/);
+    expect(logged.helperOutput).toBe(UNPARSABLE_HELPER_STDOUT);
+  });
+
+  it('resolves without a logger when node-notifier cannot parse its helper output', async () => {
+    const impl: NodeNotifierLike = { notify: (_o, cb) => cb?.(helperParseError()) };
+    await expect(createMacosChannel({ impl, platform: 'darwin' }).send(item(), 'u')).resolves.toBeUndefined();
+  });
+
+  it('still rejects a non-SyntaxError that carries helper output', async () => {
+    const impl: NodeNotifierLike = {
+      notify: (_o, cb) => cb?.(new Error('Notifier not found on system.'), 'partial output'),
+    };
+    await expect(createMacosChannel({ impl, platform: 'darwin' }).send(item(), 'u')).rejects.toThrow(
+      'Notifier not found on system.',
+    );
+  });
+
+  it('keeps the notifier from releasing the dedupe claim on an unparsable helper output', async () => {
+    const macos = createMacosChannel({
+      impl: { notify: (_o, cb) => cb?.(helperParseError()) },
+      platform: 'darwin',
+    });
+    const warn = vi.fn();
+    const n = createNotifier({ config: () => OrcConfig.parse({}), log: { warn }, now: () => 1000 });
+    n.register(macos);
+    await n.notify(item());
+    await n.notify(item());
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

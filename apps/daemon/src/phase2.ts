@@ -37,7 +37,8 @@ export interface Phase2Options {
  */
 export async function startPhase2(ctx: DaemonContext, opts: Phase2Options): Promise<Phase2Handle> {
   const notifier = createNotifier({ config: ctx.config, log: ctx.log });
-  const channels = opts.notifyChannels ?? (process.env.ORC_NOTIFY === 'off' ? [] : [createMacosChannel()]);
+  const channels =
+    opts.notifyChannels ?? (process.env.ORC_NOTIFY === 'off' ? [] : [createMacosChannel({ log: ctx.log })]);
   for (const ch of channels) notifier.register(ch);
   ctx.notifier = notifier;
 
