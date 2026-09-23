@@ -16,6 +16,56 @@ The web app adds a tabbed Session Detail (Timeline, Agents, Usage, Files, Links,
 
 **Spec:** `docs/02-features.md` (F2, F8, F9, F24), `docs/03-architecture-and-stack.md` (Security & privacy), `docs/04-data-sources.md` (A2 derivations, A4, D), `docs/05-roadmap.md` (M3), `docs/06-landscape-and-inspiration.md` (DeepSeek Harness, Omnara), `plan/00-contracts.md` (§4, §5, §6, §8, §11, §12)
 
+## Starting state (what Phase 3 builds on)
+
+**Branch:** cut `phase/3-session-detail-safety-audit` from `main`. Phases 0, 1 and 2 are done and
+merged; Phase 2 merged as `e817f1b`.
+
+**Read first:** [`00-contracts.md`](00-contracts.md) — Phase 2's contract additions are already
+merged into §3, §4, §5, §6, §11 and §12 — this file, and the spike reports in [`spikes/`](spikes/).
+
+**Baseline on `main`** (measured 2026-09-23 at `036e5c0`):
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `pnpm run lint` | clean — `Checked 326 files`, 1 info (biome asks for `biome migrate` on its own config) |
+| Typecheck | `pnpm run typecheck` | clean, 4 of 5 workspace projects |
+| Unit tests | `pnpm run test` | `Test Files 87 passed (87)`, `Tests 1116 passed (1116)` |
+| Fixtures | `pnpm run check:fixtures` | clean |
+| E2E | `pnpm --filter @orc/web e2e` | 7 passed across `apps/web/e2e/history.spec.ts` and `apps/web/e2e/live-inbox.spec.ts` |
+
+Test count over time: 289 at the Phase 1 exit → 1116 at the Phase 2 exit.
+
+**Call sites waiting on this phase:** Phase 3 wraps every write path with `audit.record()`. The
+Phase 2 routes waiting for it are launch, kill and archive-restore, in
+`apps/daemon/src/http/routes/`.
+
+**Deferred, not defects** — each is a known gap Phase 3 inherits rather than causes:
+- `repos[].setup/run/archive` are served unredacted on `GET /api/projects/:id`. This is a declared
+  round-trip exemption; revisit when Phase 4 starts executing those commands.
+- Pair-form redaction gaps are listed in `apps/daemon/src/http/redact-out.ts`: `{name,val}`,
+  `{k,v}`, `{header,value}`, OpenAPI `schema.default`, tuple pairs, sibling-object splits.
+- `apps/daemon/src/services/sessions.test.ts:237` fails under parallel load and passes when run
+  alone — a timing race in the test, not a product regression. It passed in the full run above.
+- The Phase 4, 5 and 7 plan files carry roughly 31 stale `inbox.upsert({ dedupeKey })` call sites.
+  Each of those files carries a `SUPERSEDED CALL SHAPE` banner at the top rather than a rewrite:
+  `plan/phase-4-worktrees-review-merge.md:30`, `plan/phase-5-streams-analytics-limits-recaps-goals.md:102`,
+  `plan/phase-7-automations-compare-supervisor.md:32`.
+- `usage.updated` still needs a key-aware over-redaction check when that event is first produced
+  (Phase 5).
+
+**Phase 2 exit criteria still unconfirmed by eye** — recorded in
+[`phase-2-evidence.md`](phase-2-evidence.md), carried forward rather than blocking:
+- Criterion 5: a macOS notification banner has never been confirmed by a human. A probe was fired
+  on 2026-09-23 at 10:06:30 +03 with the title `Orchestrator · Waiting for you`.
+- Criterion 4: the card agents badge was never seen with a live subagent running.
+- Criterion 6: no template launch with a real prompt was run, because it spends model tokens on the
+  user's account. `apps/daemon/test/launch-integration.test.ts` covers the rendered-prompt path.
+
+**Checkbox state in [`phase-2-live-board-inbox-archive.md`](phase-2-live-board-inbox-archive.md) is
+not a progress signal.** 126 step checkboxes there were never ticked even though all 20 tasks
+shipped. The shipped state is the commit history and [`phase-2-evidence.md`](phase-2-evidence.md).
+
 ## Global Constraints
 - Node `>=22.12 <23`, pnpm `10.18.3`, TypeScript `~6.0.3` strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`), Vitest `^5.0.1`, Biome `^2.5.14`.
 - `@orc/core` stays pure: no `node:fs`/`node:net`/`node:child_process` imports outside `src/io/*`. Every new core module is exported from **both** `src/index.ts` and `src/browser.ts`. The web app imports core **values** from `@orc/core/browser`, and types from `@orc/core`.
