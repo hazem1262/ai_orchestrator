@@ -29,31 +29,41 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 |---|---|---|---|---|---|
 | 0 | [Foundations & spikes](phase-0-foundations-and-spikes.md) | M0 | scaffold, core parser base, spikes S1–S3, S5–S8 | 11 | ✅ done (S6 blocked on `gh auth refresh -s read:packages`) |
 | 1 | [History, search & resume](phase-1-history-search-resume.md) | M1 | F3, F4 (resume/fork/adopt), F13, F2 (basic) | 20 | ☑ done (2026-09-21) — 20/20 tasks, 289 unit tests + 1 perf suite + 3 Playwright e2e, all green |
-| 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☑ done (2026-09-23) — 20/20 tasks, 1111 unit tests + 7 Playwright e2e (6 green, 1 stale P1 assertion), exit check in [phase-2-evidence.md](phase-2-evidence.md) |
+| 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☑ done (2026-09-23) — 20/20 tasks, merged as `e817f1b`; 1116 unit tests + 7 Playwright e2e, all green; exit check in [phase-2-evidence.md](phase-2-evidence.md) |
 | 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☐ |
 | 4 | [Worktrees, review & merge](phase-4-worktrees-review-merge.md) | M4 | F17, F18, F11 (GitHub), plan approval | 22 | ☐ |
 | 5 | [Streams, analytics, limits, recaps, goals](phase-5-streams-analytics-limits-recaps-goals.md) | M5 | F6, F7, F19, F14, F16, F10 | 22 | ☐ |
 | 6 | [Linear, Slack & remote](phase-6-linear-slack-remote.md) | M6 | F11 (Linear, Slack), F22, spike S9 | 22 | ☐ |
 | 7 | [Automations, compare, supervisor](phase-7-automations-compare-supervisor.md) | M7 | F20, F21, F23, AGNC (S4), Tauri, MCP server, F12 picks | 25 | ☐ |
 
-## Phase 3 — start here
+## Resume here
 
-**Branch:** cut `phase/3-session-detail-safety-audit` from `main` once Phase 2 is merged. Phases 0, 1 and 2 are done; Phase 2's contract additions are merged into [`00-contracts.md`](00-contracts.md) (§3, §4, §5, §6, §11, §12) and its exit check is recorded in [`phase-2-evidence.md`](phase-2-evidence.md).
+**Where the work stands:** Phases 0, 1 and 2 are done and merged. Phase 3 is the next phase and has
+not started.
 
-**Read first:** [`00-contracts.md`](00-contracts.md), [`phase-3-session-detail-safety-audit.md`](phase-3-session-detail-safety-audit.md), and the spike reports in [`spikes/`](spikes/).
+**Repository state**
 
-**Test count:** 289 at the Phase 1 exit → **1111** at the Phase 2 exit, in 87 files, plus 7 Playwright e2e specs.
+| Fact | Value | Proof |
+|---|---|---|
+| `main` head | `036e5c0 Merge the macOS notification parse fix` | `git log --oneline -1 main` |
+| Unpushed | `main` is **13 commits ahead** of `origin/main` (still at `589f8ae`); nothing was pushed | `git rev-list --count origin/main..main` |
+| Phase 2 merge | `e817f1b Merge phase 2: live board, inbox and archive` | `git log --oneline` |
+| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive` and `fix/macos-notify-parse`, all already merged into `main` and safe to delete | `git branch --merged main` |
 
-**Carried into Phase 3:**
-- `apps/web/e2e/history.spec.ts:4` still does `page.goto('/')` and expects `/history`. Phase 2 changed `/` to redirect to `/inbox` (§12), so that one assertion is stale and the spec fails; the fix is `page.goto('/history')`.
-- `/settings` renders the error boundary on the vite dev server, because `packages/core/src/index.ts` re-exports `io/jsonl-tail.ts`, which imports `node:fs/promises`. The production build the daemon serves is unaffected.
-- Phase 3 wraps every write path with `audit.record()`. The Phase 2 call sites waiting for it are the launch, kill and archive-restore routes.
+**Gates on `main`** (run 2026-09-23 at `036e5c0`): `pnpm run lint` clean with 1 info (biome asks for
+`biome migrate` on its own config), `pnpm run typecheck` clean, `pnpm run test` → 1116 tests in 87
+files, `pnpm --filter @orc/web e2e` → 7 Playwright specs green.
 
-**Deferred, not defects:**
-- `repos[].setup/run/archive` are served unredacted on `GET /api/projects/:id` — a declared round-trip exemption; revisit when Phase 4 starts executing those commands.
-- Pair-form redaction gaps listed in `redact-out.ts`: `{name,val}`, `{k,v}`, `{header,value}`, OpenAPI `schema.default`, tuple pairs, sibling-object splits.
-- Phases 4, 5 and 7 plan files carry roughly 31 stale `inbox.upsert({ dedupeKey })` call sites; each file has a SUPERSEDED banner at the top rather than a rewrite.
-- `usage.updated` still needs a key-aware over-redaction check when that event is first produced (Phase 5).
+**How to run the app:** `pnpm dev` from the repo root. The web app serves on
+`http://localhost:5173` and the daemon on `http://127.0.0.1:4317`. Every API and WS request needs
+the token from `~/.orchestrator/token`, sent as the `x-orc-token` header.
+
+**What Phase 3 starts from:** the branch to cut, the baseline numbers, the audit call sites waiting
+on it, the deferred-not-defect list and the Phase 2 criteria still unconfirmed by eye are all in
+[`phase-3-session-detail-safety-audit.md` → *Starting state*](phase-3-session-detail-safety-audit.md#starting-state-what-phase-3-builds-on).
+Phase 2's own exit check is in [`phase-2-evidence.md`](phase-2-evidence.md); note that its
+criterion-8 entry records the two defects found at that time, both since fixed on `main` by
+`aea1e6f`.
 
 Total: **161 tasks**, roughly 1,030 individually checkable steps.
 
