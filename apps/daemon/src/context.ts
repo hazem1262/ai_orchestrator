@@ -15,6 +15,7 @@ import { type AuditService, createAuditService } from './services/audit/audit.ts
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
@@ -32,6 +33,8 @@ export interface DaemonContext {
   userMeta: UserMetaService;
   /** P3 — the append-only audit log; always set by `buildContext()`. */
   audit: AuditService;
+  /** P3 — the shared prod/destructive deny-list; always set by `buildContext()`. */
+  denyList: DenyList;
   /** P2 — set by the daemon entrypoint once the tracker is started (Task 8 wires the routes). */
   live?: LiveTracker;
   /** P2 — the attention inbox (Task 9). Optional so the P1 entrypoint and tests stay valid. */
@@ -105,6 +108,7 @@ export function buildContext(o: BuildContextOptions): {
     projects,
     userMeta,
     audit,
+    denyList: createDenyList({ config, projects }),
   };
   return {
     ctx,

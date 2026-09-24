@@ -96,6 +96,16 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       'audit entries are redacted when recorded (AuditService) and again with redactDeep on the way out',
   },
+  'GET /api/safety/secrets': {
+    guardedBy: null,
+    reason:
+      'file paths from the user’s own config plus { line, kind } per finding; the scanner never returns matched values',
+  },
+  'POST /api/safety/deny-check': {
+    guardedBy: null,
+    reason:
+      '{ denied, reason }; the reason quotes the match only after core redact() and truncation to 80 chars',
+  },
   'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
   'POST /api/archive/restore': {
     guardedBy: 'redactValue',
@@ -129,6 +139,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/notifications.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',

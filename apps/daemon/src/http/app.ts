@@ -17,6 +17,7 @@ import { registerLiveRoutes } from './routes/live.ts';
 import { registerNotificationRoutes } from './routes/notifications.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPtyRoutes } from './routes/pty.ts';
+import { registerSafetyRoutes } from './routes/safety.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerTemplateRoutes } from './routes/templates.ts';
 import { registerViewRoutes } from './routes/views.ts';
@@ -57,6 +58,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerArchiveRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
   registerAuditRoutes(app, ctx);
+  registerSafetyRoutes(app, ctx);
   // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
   // catch-all, so anything registered after it is shadowed and answers 404.
   app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
