@@ -67,3 +67,41 @@ export function redact(text: string): string {
   }
   return out;
 }
+
+const SENSITIVE_KEY = /(password|passwd|secret|api[_-]?key|authorization|token)$/i;
+
+/** Returns a deep copy with every string redacted; string values under sensitive keys are fully masked. */
+export function redactDeep<T>(value: T): T {
+  return redactValue(value, null) as T;
+}
+
+function redactValue(value: unknown, key: string | null): unknown {
+  if (typeof value === 'string') {
+    return key !== null && SENSITIVE_KEY.test(key) ? '«redacted:secret»' : redact(value);
+  }
+  if (Array.isArray(value)) return value.map((v) => redactValue(v, null));
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = redactValue(v, k);
+    return out;
+  }
+  return value;
+}
+
+const PARTIAL_PATTERNS: ReadonlyArray<RegExp> = [
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]*/g,
+  /\bgithub_pat_[A-Za-z0-9_]*/g,
+  /\bsk-[A-Za-z0-9_-]{4,}/g,
+  /\bxox[abposr]-[A-Za-z0-9-]*/g,
+  /\b(?:AKIA|ASIA)[0-9A-Z]{4,}/g,
+];
+
+/**
+ * FTS snippets can cut a token short, so the full patterns miss it. Masks known token prefixes.
+ * Apply after redact(); the daemon's redactSnippet (http/redact-out.ts) composes both.
+ */
+export function redactPartialTokens(text: string): string {
+  let out = text;
+  for (const re of PARTIAL_PATTERNS) out = out.replace(re, '«redacted:partial»');
+  return out;
+}
