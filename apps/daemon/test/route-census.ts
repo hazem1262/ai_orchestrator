@@ -141,6 +141,12 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       'PR refs, ticket ids, plan titles/paths and transcript artifact links, walked by redactedJson (core redactDeep) on the way out',
   },
+  'GET /api/sessions/:source/:id/export': {
+    guardedBy: null,
+    reason:
+      'a ZIP, not JSON: redacted by default (core redact() per transcript line, redactDeep on every JSON file); ' +
+      'redact=false needs confirm=true and is audited as session.export',
+  },
   'GET /api/plans': {
     guardedBy: null,
     reason:
@@ -176,6 +182,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',

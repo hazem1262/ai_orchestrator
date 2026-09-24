@@ -9,6 +9,7 @@ import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.t
 import { redactedApiError } from './redact-out.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
+import { registerExportRoutes } from './routes/export.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerHookRoutes } from './routes/hooks.ts';
 import { registerInboxRoutes } from './routes/inbox.ts';
@@ -63,6 +64,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerSafetyRoutes(app, ctx);
   registerSessionDetailRoutes(app, ctx);
   registerLinksRoutes(app, ctx);
+  registerExportRoutes(app, ctx);
   // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
   // catch-all, so anything registered after it is shadowed and answers 404.
   app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
