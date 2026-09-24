@@ -2,12 +2,23 @@ import type { Source } from '@orc/core';
 import { useSession } from '@/api/queries/sessions.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
+import { ExportButton } from './ExportButton.tsx';
+import { SafetyBadges } from './SafetyBadges.tsx';
 import { SessionHeader } from './SessionHeader.tsx';
-import { Timeline } from './Timeline.tsx';
+import { type DetailNavigation, type DetailTab, SessionDetailTabs } from './tabs/SessionDetailTabs.tsx';
+import { ViewModeToggle } from './timeline/ViewModeToggle.tsx';
 
-export function SessionDetailPage({ source, id }: { source: Source; id: string }) {
+export interface SessionDetailPageProps {
+  source: Source;
+  id: string;
+  tab: DetailTab;
+  agentId: string | null;
+  file: string | null;
+  onNavigate: (n: DetailNavigation) => void;
+}
+
+export function SessionDetailPage({ source, id, tab, agentId, file, onNavigate }: SessionDetailPageProps) {
   const q = useSession(source, id);
   if (q.isLoading) {
     return (
@@ -30,29 +41,33 @@ export function SessionDetailPage({ source, id }: { source: Source; id: string }
   }
   const session = q.data;
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
       <SessionHeader
         session={session}
         actions={
-          <ResumeActions
-            target={{
-              source: session.source,
-              id: session.id,
-              availability: session.availability,
-              live: session.live,
-              title: session.name ?? session.firstPrompt ?? session.id,
-            }}
-          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SafetyBadges source={source} id={id} />
+            <ViewModeToggle />
+            <a
+              href={`/audit?sessionPk=${encodeURIComponent(`${source}:${id}`)}`}
+              className="text-xs text-primary underline"
+            >
+              Audit
+            </a>
+            <ExportButton source={source} id={id} />
+            <ResumeActions
+              target={{
+                source: session.source,
+                id: session.id,
+                availability: session.availability,
+                live: session.live,
+                title: session.name ?? session.firstPrompt ?? session.id,
+              }}
+            />
+          </div>
         }
       />
-      <Tabs defaultValue="timeline">
-        <TabsList>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-        </TabsList>
-        <TabsContent value="timeline" className="pt-3">
-          <Timeline source={source} id={id} />
-        </TabsContent>
-      </Tabs>
+      <SessionDetailTabs session={session} tab={tab} agentId={agentId} file={file} onNavigate={onNavigate} />
     </div>
   );
 }

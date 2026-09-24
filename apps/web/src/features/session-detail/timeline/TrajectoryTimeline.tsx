@@ -64,6 +64,19 @@ function ItemView({
       if (e.kind === 'error') return <p className="text-red-600">API error: {e.text}</p>;
       if (e.durationMs !== null)
         return <p className="text-xs text-neutral-400">⏱ turn took {formatMs(e.durationMs)}</p>;
+      if (e.tool === 'away_summary')
+        return <p className="rounded bg-muted px-2 py-1 text-sm">Recap: {e.text}</p>;
+      if (e.tool === 'command')
+        return (
+          <p className="rounded bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">$ {e.text}</p>
+        );
+      if (e.tool === 'compact_summary')
+        return (
+          <div className="flex flex-col gap-1 rounded border px-2 py-1">
+            <p className="text-xs font-medium text-muted-foreground">Compacted</p>
+            <p className="whitespace-pre-wrap text-xs">{e.text}</p>
+          </div>
+        );
       return <p className="text-xs italic text-neutral-500">{e.text}</p>;
     }
   }
@@ -114,6 +127,13 @@ export function TrajectoryTimeline({ source, id, agentId, onOpenFile }: Props) {
 
   if (events.isLoading) return <p>Loading timeline…</p>;
   if (events.isError) return <p role="alert">Could not load the timeline.</p>;
+  if (turns.length === 0 && !events.hasNextPage)
+    return (
+      <p className="p-3 text-sm text-neutral-500">
+        No transcript events. This session only exists in prompt history (or its transcript has not been
+        indexed yet).
+      </p>
+    );
 
   return (
     <div className="flex h-full min-h-0">
