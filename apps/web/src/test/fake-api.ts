@@ -1,4 +1,4 @@
-import type { ApiClient, P2Methods } from '@orc/api-contract';
+import type { ApiClient, P2Methods, P3Methods } from '@orc/api-contract';
 import { vi } from 'vitest';
 
 const unexpected = (name: string) =>
@@ -6,7 +6,7 @@ const unexpected = (name: string) =>
     throw new Error(`unexpected api call: ${name}`);
   });
 
-export type FakeApi = ApiClient & P2Methods;
+export type FakeApi = ApiClient & P2Methods & P3Methods;
 
 export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   const base: FakeApi = {
@@ -41,6 +41,19 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     archiveSync: unexpected('archiveSync'),
     notificationsGet: unexpected('notificationsGet'),
     notificationsPut: unexpected('notificationsPut'),
+    sessionsStats: unexpected('sessionsStats'),
+    sessionsDeliverables: unexpected('sessionsDeliverables'),
+    sessionsFiles: unexpected('sessionsFiles'),
+    sessionsUsageSeries: unexpected('sessionsUsageSeries'),
+    sessionsSafety: unexpected('sessionsSafety'),
+    sessionsLinks: unexpected('sessionsLinks'),
+    sessionsRaw: unexpected('sessionsRaw'),
+    sessionsExport: unexpected('sessionsExport'),
+    plansList: unexpected('plansList'),
+    plansContent: unexpected('plansContent'),
+    auditList: unexpected('auditList'),
+    safetySecrets: unexpected('safetySecrets'),
+    safetyDenyCheck: unexpected('safetyDenyCheck'),
   };
   return { ...base, ...overrides };
 }

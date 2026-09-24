@@ -3,6 +3,7 @@ import type { Session, Source } from '@orc/core';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { getToken } from './client.ts';
+import { applyP3LiveEvent } from './live-p3.ts';
 import { inboxRootKey, upsertInboxItemInCache } from './queries/inbox.ts';
 import { liveKey } from './queries/live.ts';
 
@@ -17,6 +18,11 @@ export const pkOf = (s: { source: Source; id: string }): string => `${s.source}:
  * rather than created, so a socket frame can't seed a list the UI has not asked for yet.
  */
 export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
+  applyP2LiveEvent(qc, e);
+  applyP3LiveEvent(qc, e);
+}
+
+function applyP2LiveEvent(qc: QueryClient, e: WireEvent): void {
   switch (e.type) {
     case 'hello':
       // Sent on first connect and on every reconnect: refetch rather than replay the gap.

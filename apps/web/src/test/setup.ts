@@ -1,5 +1,10 @@
+import { notifyManager } from '@tanstack/react-query';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
+
+// TanStack Query notifies observers on `setTimeout(0)` by default, which `act()` does not wait for.
+// A microtask lets `await act(async () => ...)` see the re-render a query update causes.
+notifyManager.setScheduler(queueMicrotask);
 
 afterEach(() => {
   cleanup();
