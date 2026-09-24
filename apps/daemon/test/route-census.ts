@@ -136,6 +136,21 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       'raw transcript lines: each line is redact()ed in readJsonlPage and the page again by redactedJson (core redactDeep)',
   },
+  'GET /api/sessions/:source/:id/links': {
+    guardedBy: null,
+    reason:
+      'PR refs, ticket ids, plan titles/paths and transcript artifact links, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/plans': {
+    guardedBy: null,
+    reason:
+      'plan paths and redact()ed titles from the read-only plan roots, walked by redactedJson (core redactDeep)',
+  },
+  'GET /api/plans/content': {
+    guardedBy: null,
+    reason:
+      'plan markdown from the allowed roots only, capped at 512 KB, redact()ed on read and again by redactedJson (core redactDeep)',
+  },
   'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
   'POST /api/archive/restore': {
     guardedBy: 'redactValue',
@@ -165,6 +180,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',
   'apps/daemon/src/http/routes/launch.ts',
+  'apps/daemon/src/http/routes/links.ts',
   'apps/daemon/src/http/routes/live.ts',
   'apps/daemon/src/http/routes/notifications.ts',
   'apps/daemon/src/http/routes/projects.ts',
