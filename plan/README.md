@@ -38,8 +38,8 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 
 ## Resume here
 
-**Where the work stands:** Phases 0 to 3 are done and merged. Phase 4 is the next phase and has not
-started.
+**Where the work stands:** Phases 0 to 3 are done and merged. Phase 4 is in progress on branch
+`phase/4-worktrees-review-merge`.
 
 **Repository state** (after the Phase 3 merge, 2026-09-24)
 
