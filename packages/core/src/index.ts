@@ -6,6 +6,7 @@ export * from './claude/session-aggregate.ts';
 export * from './claude/subagents.ts';
 export * from './codex/codex-aggregate.ts';
 export * from './codex/rollout.ts';
+export * from './derive/deliverables.ts';
 export * from './derive/deny-list.ts';
 export * from './derive/index.ts';
 export * from './derive/live-status.ts';
