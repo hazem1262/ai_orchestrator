@@ -14,6 +14,7 @@ export * from './derive/patterns.ts';
 export * from './derive/permission.ts';
 export * from './derive/prod-detect.ts';
 export * from './derive/secret-scan.ts';
+export * from './derive/step-stats.ts';
 export * from './io/jsonl-tail.ts';
 export * from './pty/paste.ts';
 export * from './redact/redact.ts';
