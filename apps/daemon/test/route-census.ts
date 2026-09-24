@@ -106,6 +106,36 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       '{ denied, reason }; the reason quotes the match only after core redact() and truncation to 80 chars',
   },
+  'GET /api/sessions/:source/:id/stats': {
+    guardedBy: null,
+    reason:
+      'timing and token counts per turn and agent; the body still passes through redactedJson (core redactDeep)',
+  },
+  'GET /api/sessions/:source/:id/deliverables': {
+    guardedBy: null,
+    reason:
+      'transcript-derived file paths and tool names, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/files': {
+    guardedBy: null,
+    reason:
+      'transcript-derived paths and edit snippets, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/usage-series': {
+    guardedBy: null,
+    reason:
+      'token counts, model names and apportioned cost, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/safety': {
+    guardedBy: null,
+    reason:
+      'permission mode and prod-touch details from tool inputs, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/raw': {
+    guardedBy: null,
+    reason:
+      'raw transcript lines: each line is redact()ed in readJsonlPage and the page again by redactedJson (core redactDeep)',
+  },
   'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
   'POST /api/archive/restore': {
     guardedBy: 'redactValue',
@@ -140,6 +170,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/safety.ts',
+  'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',
