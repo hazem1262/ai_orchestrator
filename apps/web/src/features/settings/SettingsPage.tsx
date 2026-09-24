@@ -1,4 +1,5 @@
 import { Separator } from '@/components/ui/separator.tsx';
+import { SecretsHygienePanel } from '@/features/safety/SecretsHygienePanel.tsx';
 import { ArchiveSettings } from './ArchiveSettings.tsx';
 import { HookSetup } from './HookSetup.tsx';
 import { NotificationSettings } from './NotificationSettings.tsx';
@@ -15,6 +16,8 @@ export function SettingsPage() {
         <NotificationSettings />
         <Separator />
         <HookSetup />
+        <Separator />
+        <SecretsHygienePanel />
       </div>
     </div>
   );

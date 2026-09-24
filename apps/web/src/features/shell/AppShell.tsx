@@ -118,6 +118,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             Settings
           </Link>
+          <Link
+            to="/audit"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Audit
+          </Link>
         </nav>
         <Workspace>{children}</Workspace>
       </div>
