@@ -91,6 +91,72 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'counts, bytes, the codec, a daemon-derived ISO timestamp and a constant snippet',
   },
+  'GET /api/audit': {
+    guardedBy: null,
+    reason:
+      'audit entries are redacted when recorded (AuditService) and again with redactDeep on the way out',
+  },
+  'GET /api/safety/secrets': {
+    guardedBy: null,
+    reason:
+      'file paths from the user’s own config plus { line, kind } per finding; the scanner never returns matched values',
+  },
+  'POST /api/safety/deny-check': {
+    guardedBy: null,
+    reason:
+      '{ denied, reason }; the reason quotes the match only after core redact() and truncation to 80 chars',
+  },
+  'GET /api/sessions/:source/:id/stats': {
+    guardedBy: null,
+    reason:
+      'timing and token counts per turn and agent; the body still passes through redactedJson (core redactDeep)',
+  },
+  'GET /api/sessions/:source/:id/deliverables': {
+    guardedBy: null,
+    reason:
+      'transcript-derived file paths and tool names, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/files': {
+    guardedBy: null,
+    reason:
+      'transcript-derived paths and edit snippets, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/usage-series': {
+    guardedBy: null,
+    reason:
+      'token counts, model names and apportioned cost, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/safety': {
+    guardedBy: null,
+    reason:
+      'permission mode and prod-touch details from tool inputs, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/raw': {
+    guardedBy: null,
+    reason:
+      'raw transcript lines: each line is redact()ed in readJsonlPage and the page again by redactedJson (core redactDeep)',
+  },
+  'GET /api/sessions/:source/:id/links': {
+    guardedBy: null,
+    reason:
+      'PR refs, ticket ids, plan titles/paths and transcript artifact links, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/sessions/:source/:id/export': {
+    guardedBy: null,
+    reason:
+      'a ZIP, not JSON: redacted by default (core redact() per transcript line, redactDeep on every JSON file); ' +
+      'redact=false needs confirm=true and is audited as session.export',
+  },
+  'GET /api/plans': {
+    guardedBy: null,
+    reason:
+      'plan paths and redact()ed titles from the read-only plan roots, walked by redactedJson (core redactDeep)',
+  },
+  'GET /api/plans/content': {
+    guardedBy: null,
+    reason:
+      'plan markdown from the allowed roots only, capped at 512 KB, redact()ed on read and again by redactedJson (core redactDeep)',
+  },
   'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
   'POST /api/archive/restore': {
     guardedBy: 'redactValue',
@@ -115,14 +181,19 @@ export const CENSUS: Record<string, CensusEntry> = {
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
   'apps/daemon/src/http/routes/archive.ts',
+  'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',
   'apps/daemon/src/http/routes/launch.ts',
+  'apps/daemon/src/http/routes/links.ts',
   'apps/daemon/src/http/routes/live.ts',
   'apps/daemon/src/http/routes/notifications.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/safety.ts',
+  'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',

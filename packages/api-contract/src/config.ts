@@ -73,6 +73,23 @@ export const OrcConfig = z
       )
       .default({}),
     archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
+    safety: z
+      .object({
+        extraDenyPatterns: z.array(z.string()).default([]),
+        prodSkills: z
+          .array(z.string())
+          .default(['production_server_db', 'production_server_logs', 'wecare_production_db']),
+        secretScanPaths: z
+          .array(z.string())
+          .default(['~/Wakecap/.mcp.json', '~/Wakecap/.claude/commands/*.md']),
+      })
+      .prefault({}),
+    links: z
+      .object({
+        linearWorkspace: z.string().nullable().default(null),
+        planRoots: z.array(z.string()).default(['~/Wakecap/plans']),
+      })
+      .prefault({}),
     live: z
       .object({
         pollMs: z.number().int().positive().default(1000),

@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OrcConfig } from '@orc/api-contract';
@@ -19,6 +19,14 @@ const homes = makeTempHomes({ root });
 Object.assign(process.env, homes.env);
 const work = process.env.ORC_E2E_WORK ?? join(root, 'work', 'Wakecap');
 mkdirSync(work, { recursive: true });
+
+// The fixture `s-subagents` records cwd `/Users/test/Wakecap`, which does not exist here, so a
+// resume of it would fail with `cwd_missing`. Point the copied transcript at `work` instead.
+const subagents = join(homes.claudeHome, 'projects', '-Users-test-Wakecap', 's-subagents.jsonl');
+writeFileSync(
+  subagents,
+  readFileSync(subagents, 'utf8').replaceAll('"cwd":"/Users/test/Wakecap"', `"cwd":${JSON.stringify(work)}`),
+);
 
 const wakecap = projectConfigFor({ id: 'wakecap', name: 'Wakecap', pathPrefix: work });
 saveConfig(

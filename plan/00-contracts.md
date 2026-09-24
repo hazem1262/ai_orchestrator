@@ -171,6 +171,15 @@ export const OrcConfig = z.object({
   notifications: z.record(z.string(), z.object({ enabled: z.boolean(), channels: z.array(z.enum(['macos', 'webpush', 'slack_dm'])) })).default({}),
   archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
   live: z.object({ pollMs: z.number().int().positive().default(1000), endedRetentionMin: z.number().int().positive().default(10), codexBusyWindowMs: z.number().int().positive().default(10000) }).prefault({}),   // P2
+  safety: z.object({                                                                                   // P3
+    extraDenyPatterns: z.array(z.string()).default([]),
+    prodSkills: z.array(z.string()).default(['production_server_db', 'production_server_logs', 'wecare_production_db']),
+    secretScanPaths: z.array(z.string()).default(['~/Wakecap/.mcp.json', '~/Wakecap/.claude/commands/*.md']),
+  }).prefault({}),
+  links: z.object({                                                                                    // P3
+    linearWorkspace: z.string().nullable().default(null),
+    planRoots: z.array(z.string()).default(['~/Wakecap/plans']),
+  }).prefault({}),
 }).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
@@ -178,6 +187,8 @@ export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
 
 > **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
+`safety` and `links` (P3) use `.prefault({})`, not the `.default({})` of the Phase 3 plan text, for the zod 4 reason above. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
+
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
 ## 4. Domain types (`@orc/core/src/types`)
@@ -336,7 +347,44 @@ export function splitPk(pk: string): { source: Source; id: string };
 
 `deriveLiveStatus` precedence: `ended` (process dead) > `waiting`/`busy`/`shell` (straight from the registry) > `error` (last assistant record was an API error) > `review` (turn ended having changed a file or opened a PR) > `idle`. `blocked` needs Phase-5 goal data and never comes out of this function yet.
 
-**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `pty.input`, `archive.restore`, `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`.
+**Derived (Phase 3, `@orc/core/src/derive/*`)** — pure, exported from both `src/index.ts` and `src/browser.ts`:
+
+```ts
+// derive/step-stats.ts
+export interface TurnStats { turn: number; agentId: string | null; startedAt: string; endedAt: string; wallMs: number; modelMs: number; toolMs: number; reportedMs: number | null; ttftMs: number | null; toolCalls: number; toolErrors: number; apiErrors: number; usage: Usage; tokensPerSec: number | null; cacheHitRate: number | null }
+export interface SessionStats { turns: number; wallMs: number; modelMs: number; toolMs: number; ttftMs: number | null; toolCalls: number; toolErrors: number; apiErrors: number; usage: Usage; tokensPerSec: number | null; cacheHitRate: number | null }
+export function computeTurnStats(events: readonly TimelineEvent[]): TurnStats[]
+export function computeSessionStats(turns: readonly TurnStats[]): SessionStats
+export function cacheHitRate(u: Pick<Usage, 'input' | 'cacheRead' | 'cacheWrite'>): number | null   // cacheRead / (input + cacheRead + cacheWrite)
+export function median(xs: readonly number[]): number | null
+
+// derive/deliverables.ts
+export type DeliverableStatus = 'applied' | 'failed' | 'pending';
+export interface FileChange { path: string; tool: string; toolUseId: string | null; turn: number; seq: number; ts: string; agentId: string | null; status: DeliverableStatus; oldText: string | null; newText: string | null }
+export interface DeliverableFile { path: string; tools: string[]; ops: number; status: DeliverableStatus; lastTs: string }
+export interface TurnDeliverables { turn: number; agentId: string | null; files: DeliverableFile[] }
+export interface FileSummary { path: string; ops: number; failedOps: number; turns: number[]; agentIds: Array<string | null>; firstTs: string; lastTs: string; changes: FileChange[] }
+export const FILE_EDIT_TOOLS: readonly ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch']
+export function extractFileChanges(events: readonly TimelineEvent[]): FileChange[]
+export function deliverablesByTurn(events: readonly TimelineEvent[]): TurnDeliverables[]
+export function summarizeFiles(changes: readonly FileChange[]): FileSummary[]
+
+// derive/prod-detect.ts  (command patterns reuse the Phase 1 DEFAULT_PROD_PATTERNS from derive/prod.ts)
+export const DEFAULT_PROD_SKILLS: readonly string[]      // production_server_db, production_server_logs, wecare_production_db
+export interface ProdTouch { seq: number; ts: string; agentId: string | null; kind: 'skill' | 'command'; tool: string; detail: string }  // detail is redacted
+export function detectProdTouches(events: readonly TimelineEvent[], opts?: { prodSkills?: readonly string[]; prodPatterns?: readonly string[] }): ProdTouch[]
+// derive/permission.ts
+export type PermissionBadge = 'bypass' | 'plan' | 'auto' | 'default' | 'custom' | 'unknown';
+export function permissionBadge(modes: readonly (string | null | undefined)[]): PermissionBadge
+// derive/patterns.ts
+export function compilePattern(pattern: string): RegExp  // case-insensitive; invalid regex → escaped literal
+// derive/secret-scan.ts
+export interface SecretFinding { line: number; kind: string }
+export function scanTextForSecrets(text: string): SecretFinding[]
+// derive/deny-list.ts — DenyVerdict, checkDenied, DEFAULT_DENY_PATTERNS (§11 names, unchanged)
+```
+
+**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`.
 
 ## 5. SQLite & migrations
 
@@ -438,8 +486,19 @@ P2  GET    /api/config/notifications                 → NotificationPrefs
 P2  PUT    /api/config/notifications                 body NotificationPrefs → NotificationPrefs
 P2  POST   /api/hooks                                body HookIngestBody → { ok: true }   (minimal ingest; the full bridge is P5)
 P2  WS     /ws                                       hello, then LiveEvent deltas (below)
-P3  GET    /api/audit?…                              → AuditEntry[]
-P3  GET    /api/sessions/:source/:id/export          → application/zip
+P3  GET    /api/sessions/:source/:id/stats           → SessionStatsResponse { session: SessionStats; turns: TurnStats[]; agents: { agentId: string; stats: SessionStats }[] }
+P3  GET    /api/sessions/:source/:id/deliverables    → TurnDeliverables[]
+P3  GET    /api/sessions/:source/:id/files           → FileSummary[]
+P3  GET    /api/sessions/:source/:id/usage-series    → UsagePoint[] { ts; agentId; model; input; output; cacheRead; cacheWrite; costUsd }
+P3  GET    /api/sessions/:source/:id/safety          → SessionSafety { permissionMode; permissionBadge; touchedProd; prodTouches: ProdTouch[] }
+P3  GET    /api/sessions/:source/:id/links           → SessionLinks { prs; tickets: {id,url}[]; plans: PlanRef[]; artifacts: {title,url,path}[]; bridgeSessionId }
+P3  GET    /api/sessions/:source/:id/raw?agentId&offset&limit → RawPage { path; items: { offset; text; truncated; partial }[]; nextOffset: number | null }
+P3  GET    /api/sessions/:source/:id/export?redact=false&confirm=true → application/zip   (audited as session.export; unredacted needs confirm → 409 confirmation_required; 413 export_too_large)
+P3  GET    /api/plans?q&limit                        → PlanRef[] { path; title; source: 'claude-plans'|'wakecap-plans'|'repo-docs'; mtime; reason: 'ticket'|'time'|'query'; tickets }
+P3  GET    /api/plans/content?path                   → { path; text }  (403 forbidden outside plan roots)
+P3  GET    /api/audit?sessionPk&action&actor&from&to&q&projectId&limit → AuditEntry[]
+P3  GET    /api/safety/secrets                       → SecretsReport { scannedAt; totalFindings; files: { path; displayPath; exists; findings: SecretFinding[]; error }[] }
+P3  POST   /api/safety/deny-check                    body { text; projectId } → DenyVerdict
 P4  /api/worktrees…  /api/diff…  /api/checkpoints…  /api/ship…        (defined in phase 4)
 P5  /api/streams…  /api/analytics…  /api/usage…  /api/recaps…  /api/goals…  /api/handoffs…  /api/reminders…  /api/hooks (bridge ingest)
 P6  /api/connectors…  /api/push…  /api/webauthn…
@@ -447,6 +506,8 @@ P7  /api/automations…  /api/compare…  /api/supervisor…
 ```
 
 P2's zod schemas live in `packages/api-contract/src/routes/{live,launch,inbox,templates,archive,notifications,hooks}.ts`, with `export type LaunchRequest = z.infer<typeof LaunchRequest>` and `ArchiveStatus = z.object({ enabled, files, bytes, oldestTranscript, cleanupPeriodDays, codec, recommendedSnippet })`. P2's client methods (`packages/api-contract/src/client-p2.ts`, folded into `createApiClient`) are `liveList`, `sessionsLaunch`, `sessionsKill`, `sessionsOpenIn`, `inboxList`, `inboxDone`, `inboxSnooze`, `inboxReopen`, `templatesList`, `archiveStatus`, `archiveRestore`, `archiveSync`, `notificationsGet`, `notificationsPut`.
+
+P3's zod schemas live in `packages/api-contract/src/routes/{session-detail,links,safety,audit}.ts`. They reuse `UsageSchema` from `packages/api-contract/src/domain.ts` rather than declaring a second one. P3's client methods (`packages/api-contract/src/client-p3.ts`, folded into `createApiClient`) are `sessionsStats`, `sessionsDeliverables`, `sessionsFiles`, `sessionsUsageSeries`, `sessionsSafety`, `sessionsLinks`, `sessionsRaw`, `sessionsExport`, `plansList`, `plansContent`, `auditList`, `safetySecrets`, `safetyDenyCheck`. They throw P1's `ApiRequestError`; `client-p3.ts` re-exports it under the alias `ApiCallError` for the Phase 3 tests only, and it is the same class (§13).
 
 **P2 BusEvent additions:** none. Phase 2 emits the existing `session.statusChanged`, `session.turnEnded`, `tests.recorded`, `hook.received`, `session.updated`, `session.removed` and `inbox.upserted`.
 
@@ -459,7 +520,8 @@ export type LiveEvent =
   | { type: 'pty.exited'; ptyId: string; code: number | null }
   | { type: 'index.progress'; done: number; total: number }
   | { type: 'usage.updated'; snapshot: unknown }          // typed in phase 5
-  | { type: 'hello'; serverTime: string };
+  | { type: 'hello'; serverTime: string }
+  | { type: 'audit.recorded'; entry: AuditEntry };        // P3; also in the daemon's LIVE_EVENT_TYPES
 ```
 - The server sends `hello` on connect, then deltas.
 - The web app maps events onto TanStack Query cache updates with `queryClient.setQueryData`.
@@ -509,7 +571,13 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
   - `Authorization: Bearer …`
 
   Matches are replaced with `«redacted:<kind>»`.
+- **P3 additions** in the same file:
+  ```ts
+  export function redactDeep<T>(value: T): T        // redacts every string; values under sensitive keys (…password|passwd|secret|api_key|authorization|token) become «redacted:secret»
+  export function redactPartialTokens(text: string): string // masks token prefixes cut off by FTS snippets as «redacted:partial»
+  ```
 - **Where redaction happens:** API responses that carry transcript text (`events`, `sessions` list snippets, export) are redacted **in the route layer**. The DB keeps the raw text.
+- Routes send transcript JSON through `redactedJson` (`apps/daemon/src/http/redacted-json.ts`). FTS snippets use the daemon's `redactSnippet` (which composes `redactPartialTokens`). WS events pass through `toWireEvent` (`apps/daemon/src/http/ws-redact.ts`). Error bodies go through `redactedApiError(code, message, details?)` in `apps/daemon/src/http/redact-out.ts`, because messages and details can carry cwds, session names and zod issues.
 - **Logging:** pino writes JSON to `$ORC_HOME/logs/daemon.log`, and pretty output in dev. Transcript text is never logged.
 - **IDs:** `crypto.randomUUID()`, except that the session pk is `${source}:${id}`.
 
@@ -573,8 +641,8 @@ export interface DaemonContext {
   templates?: TemplateRegistry;            // P2
   launcher?: LaunchService;                // P2
   archive?: ArchiveServiceRuntime;         // P2 — narrows the contract's ArchiveService (superset); the /api/archive routes answer 503 archive_unavailable while it is unset
-  audit?: AuditService;                    // P3
-  denyList?: DenyList;                     // P3
+  audit: AuditService;                     // P3 — required, always set by buildContext()
+  denyList: DenyList;                      // P3 — required, always set by buildContext()
   worktrees?: WorktreeService;             // P4
   checkpoints?: CheckpointService;         // P4
   ship?: ShipService;                      // P4
@@ -749,14 +817,32 @@ export function buildLaunchCommand(cfg: OrcConfig, req: { source: 'claude' | 'co
 // come from the project the CWD resolves to; a request-supplied projectId only has to agree.
 
 // P3 — apps/daemon/src/services/audit/audit.ts
-export interface AuditService { record(e: Omit<AuditEntry, 'id' | 'ts'>): AuditEntry; list(filter: { sessionPk?: string; action?: string; actor?: AuditActor; from?: string; to?: string; limit?: number }): AuditEntry[] }
-export async function audited<T>(audit: AuditService, meta: Omit<AuditEntry, 'id' | 'ts' | 'result' | 'error'>, fn: () => Promise<T>): Promise<T>   // records ok/error
+export interface AuditListFilter { sessionPk?: string; action?: string /* exact, or 'area.*' */; actor?: AuditActor; from?: string; to?: string; limit?: number; q?: string; projectId?: string }
+export interface AuditService { record(e: Omit<AuditEntry, 'id' | 'ts'>): AuditEntry; list(filter: AuditListFilter): AuditEntry[] }
+export async function audited<T>(audit: AuditService, meta: Omit<AuditEntry, 'id' | 'ts' | 'result' | 'error'>, fn: () => Promise<T>): Promise<T>   // records ok/error; 'denied' when fn throws DeniedError
+export class DeniedError extends Error { readonly verdict: DenyVerdict }
+export function createAuditService(opts: { db: OrcDb; bus?: EventBus; now?: () => Date }): AuditService
+// P3 — apps/daemon/src/http/audit-middleware.ts
+export interface AuditedRoute { method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'PUT'; pattern: RegExp; action: string | ((body: Record<string, unknown>) => string); target: (m: RegExpExecArray, body: Record<string, unknown>) => string | null; before?: (m: RegExpExecArray, ctx: DaemonContext) => Record<string, unknown> }
+export const AUDITED_ROUTES: AuditedRoute[]
+export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: string }>   // pin, label, views, inbox actions, notification prefs, project PATCH, hooks ingest, deny-check
+export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler   // mounted on /api/* in createApp right after the token middleware
+// P3 — apps/daemon/src/pty/audited-pty.ts
+export function withPtyInputAudit(pty: PtyManager, audit: AuditService, opts?: { idleMs?: number; actor?: AuditActor }): PtyManager & { flushAll(): void }   // wired in buildContext
+// route registration (P1 pattern): registerAuditRoutes, registerSafetyRoutes, registerSessionDetailRoutes, registerLinksRoutes, registerExportRoutes — each (app: OrcApp, ctx: DaemonContext, …).
+// The session-detail, links and export services are built inside their register*Routes functions (links and export build theirs lazily on first request), not in buildContext and not on DaemonContext.
 
-// P3 — packages/core/src/derive/deny-list.ts  (pure) + apps/daemon wrapper
+// P3 — packages/core/src/derive/deny-list.ts  (pure) + apps/daemon/src/services/safety/deny-list.ts
 export interface DenyVerdict { denied: boolean; reason: string | null }
 export function checkDenied(text: string, patterns: string[]): DenyVerdict
 export const DEFAULT_DENY_PATTERNS: string[]   // prod skills, kubectl prod ctx, terraform apply, git push --force, git reset --hard, rm -rf, DROP TABLE, deploy
 export interface DenyList { check(text: string, projectId: string | null): DenyVerdict }
+export function createDenyList(deps: { config: () => OrcConfig; projects: Pick<ProjectService, 'get'> }): DenyList   // DEFAULT_DENY_PATTERNS + safety.extraDenyPatterns + the project's prodPatterns
+```
+
+**A new write route must be added to `AUDITED_ROUTES` or `NON_ACTION_ROUTES` (enforced by `audit.coverage.test.ts`).**
+
+```ts
 
 // P4 — apps/daemon/src/services/worktree/worktree.ts
 export interface CreateWorktreeInput { repo: string; base: string; type: 'feat'|'fix'|'chore'|'docs'|'refactor'; ticket: string | null; slug: string }
@@ -809,8 +895,16 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   - `stores/terminals.ts` → `useTerminalStore` `{ tabs: {ptyId,title}[], active, open(ptyId,title), close(ptyId), setActive(ptyId) }` — `setActive` is a P1 addition over the original draft (switches the focused terminal tab without opening/closing one); persisted to **sessionStorage** (not localStorage — tabs are meant to outlive a reload within the same browser tab, not follow the user across tabs/devices)
   - `stores/live-layout.ts` (P2) → `useLiveLayoutStore` `{ layout: 'grid'|'list'|'split'; pinned: string[]; groupBy: 'none'|'project'|'ticket'|'source'; openInByProject: Record<string, OpenInApp>; setLayout; togglePin; setGroupBy; setOpenIn }`, persisted in localStorage under `orc.live-layout`. `togglePin` keeps the last `MAX_PINNED` (4) pins.
   - `stores/launch.ts` (P2) → `useLaunchStore` `{ open: boolean; preset: Partial<LaunchRequestInput> | null; show(preset?); hide() }` — **not** persisted: a half-filled launch form should never survive a reload.
+  - `stores/view-mode.ts` (P3) → `useViewModeStore` `{ mode: 'summary' | 'normal' | 'verbose'; setMode(m) }`, persisted in localStorage under `orc.viewMode`.
+  - `stores/palette.ts` (P3) → `usePaletteStore` `{ open: boolean; setOpen(v: boolean); toggle() }`, not persisted.
+- **Hotkeys (P3, `features/hotkeys/`):** `registry.ts` → `hotkeys` (singleton `HotkeyRegistry`), `useHotkeys(bindings: HotkeyBinding[], deps: unknown[])`, `formatKeys(keys)`; `HotkeysListener.tsx` → `<HotkeysListener/>`; `GlobalHotkeys.tsx` registers the global shortcuts.
+  ```ts
+  export interface HotkeyBinding { id: string; keys: string /* 'g i' | 'mod+k' | 'j' */; description: string; group: 'navigation' | 'actions' | 'inbox' | 'session'; handler: () => void; allowInInputs?: boolean }
+  ```
+  Global shortcuts: `mod+k` palette, `g i` inbox, `g w` waiting, `g h` history, `g a` audit, `n` new session. Inbox `j/k/e/s` stay owned by Phase 2's `useInboxKeys` and register through `useHotkeys`.
+- **Session detail route (P3):** `/sessions/$source/$id?tab=timeline|agents|usage|files|links|raw&agent=<agentId>&file=<path>`.
 - **API access** only through hooks in `api/queries/*.ts`: `useSessions(filters)`, `useSession(source,id)`, `useSessionEvents(...)`, `useLive()`, `useInbox(filters)`, etc. The WS hook `useLiveEvents()` is mounted once in `AppShell` and applies cache updates.
-- **Query keys** are exported next to the hook that owns them, and nothing builds one inline: `['sessions', filters]`, `['session', source, id]`, `['projects']`, `['project', id]`, `['pty']`, `['views']`, and from P2 `liveKey = ['live']`, `inboxRootKey = ['inbox']`, `inboxKey(f) = ['inbox', f]`, `templatesKey(projectId) = ['templates', projectId ?? null]`, `archiveStatusKey = ['archive', 'status']`, `notificationPrefsKey = ['config', 'notifications']`.
+- **Query keys** are exported next to the hook that owns them, and nothing builds one inline: `['sessions', filters]`, `['session', source, id]`, `['projects']`, `['project', id]`, `['pty']`, `['views']`, and from P2 `liveKey = ['live']`, `inboxRootKey = ['inbox']`, `inboxKey(f) = ['inbox', f]`, `templatesKey(projectId) = ['templates', projectId ?? null]`, `archiveStatusKey = ['archive', 'status']`, `notificationPrefsKey = ['config', 'notifications']`, and from P3 `detailKeys` in `api/queries/session-detail.ts` → `['session', source, id, 'agents'|'stats'|'deliverables'|'files'|'usage'|'safety'|'links']` and `['session', source, id, 'raw', agentId ?? 'main']`, plus `['audit', filter]`, `['plans', q]`, `['plan', path]`, `['safety', 'secrets']`. P3 hooks: `useSessionAgents`, `useSessionStats`, `useSessionDeliverables`, `useSessionFiles`, `useSessionUsageSeries`, `useSessionSafety`, `useSessionLinks`, `useSessionRaw`, `useAudit`, `useSecretsReport`, `usePlans`, `usePlanContent`.
 - **Live events (P2, `api/live-events.ts`):**
   ```ts
   export type WireEvent = LiveEvent                                     // the same variants as the daemon's wire type
@@ -842,29 +936,29 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `splitPk`, `sessionPk` | **P1** `apps/daemon/src/db/keys.ts` (re-exported from `services/sessions.ts`) | P2/P4/P7 import. |
 | `slugify` | **P1** `packages/core/src/derive/name.ts` — `slugify(name: string): string` for project ids | P4's branch slug is a **different** function: `slugifyBranch(text: string, maxLen = 30)` in `packages/core/src/git/branch.ts`. |
 | `shellQuote` | **P1** `apps/daemon/src/services/sessions/external.ts` — `shellQuote(parts: string[]): string` | P5 needs single-argument quoting: name it `quoteArg(s: string): string` in `apps/daemon/src/services/hooks/install.ts`. |
-| `permissionBadge`, `PermissionBadge` | **P3** `packages/core/src/derive/prod.ts` — `permissionBadge(modes: readonly (string \| null \| undefined)[]): PermissionBadge` | P2's card helper takes one mode: name it `badgeForMode(mode: string \| null)` in `apps/web/src/features/live-board/format.ts`, or call the P3 function with `[mode]` once P3 has shipped. |
+| `permissionBadge`, `PermissionBadge` | **P3** `packages/core/src/derive/permission.ts` (as built; `prod.ts` keeps P1's `DEFAULT_PROD_PATTERNS`, and P3's prod detection is `derive/prod-detect.ts`) — `permissionBadge(modes: readonly (string \| null \| undefined)[]): PermissionBadge` | P2's card helper takes one mode: name it `badgeForMode(mode: string \| null)` in `apps/web/src/features/live-board/format.ts`, or call the P3 function with `[mode]` once P3 has shipped. |
 | `createLiveReducer`, `LiveReducer`, `TranscriptLive` | **P2** `packages/core/src/derive/live-transcript.ts` | P5 extends the options (`windows`) by **modifying** that file; its context-window table lives in config. |
 | `registerHookRoutes`, `mapHookToStatus` | **P2** `apps/daemon/src/http/routes/hooks.ts` (minimal ingest) | P5 replaces the body by **modifying** the same file; the route path stays `POST /api/hooks`. |
-| `redactSnippet`, `redactValue`, `redactSession`, `redactListItem` | **P1** `apps/daemon/src/http/redact-out.ts` | P2/P3 extend by modifying that file. P3 adds `redactDeep`/`redactPartialTokens` in `packages/core/src/redact/redact.ts`. |
+| `redactSnippet`, `redactValue`, `redactSession`, `redactListItem`, `redactedApiError` | **P1** `apps/daemon/src/http/redact-out.ts` | P2/P3 extend by modifying that file. P3 adds `redactDeep`/`redactPartialTokens` in `packages/core/src/redact/redact.ts`, `redactedJson` in `http/redacted-json.ts` and `toWireEvent` in `http/ws-redact.ts`. Every new route answers errors through `redactedApiError`. |
 | `ApiRequestError` | **P1** `packages/api-contract/src/client.ts` | P2/P3 must use it. `ApiCallError` is not a separate class; delete that name where a plan uses it. |
 | `ConfirmBody` | **P2** `packages/api-contract/src/routes/common.ts` | P4 (`Confirm`), P6 and P7 import `ConfirmBody`. |
 | `PrRefSchema`, `PrStatusSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (PrRef), **P4** `routes/ship.ts` (PrStatus) | P4/P5/P7 import; never redeclare. |
-| `UsageSchema`, `SessionSchema`, `TimelineEventSchema`, `AgentNodeSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` | All later phases import. |
+| `UsageSchema`, `SessionSchema`, `TimelineEventSchema`, `AgentNodeSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (as built, `UsageSchema` lives in `packages/api-contract/src/domain.ts`) | All later phases import. P3's `routes/session-detail.ts` imports `UsageSchema` from `domain.ts`. |
 | `LaunchRequest`, `LaunchResponse`, `Template` | **P2** `packages/api-contract/src/routes/launch.ts` / `templates.ts` | P4 and P7 extend `LaunchRequest` by modifying that file (P4 enables `planApproval`/`worktree`, P7 enables `compare`). |
 | `PrStatus` (domain type) | **P4** `packages/core/src/types/work.ts` | The `connectors/github/github.ts` file re-exports it; §11's inline copy is superseded by P4's (adds `headRef`, `failedChecks`). |
 | `createLinearAssignedPoller`, `createSlackMentionPoller` | **P6** `apps/daemon/src/connectors/{linear,slack}/poller.ts` | P7 imports them for automation triggers. |
 | `LIVE_EVENT_TYPES` | **P2** `apps/daemon/src/http/live-ws.ts` | Every later phase that adds a `LiveEvent` variant appends to this array in the same file (P3 `audit.recorded`; P4 `worktree.updated`, `worktree.removed`, `pr.updated`, `checkpoint.created`; P5 `usage.updated` payload typing). |
 | `Route`, `OrcApp`, `registerXRoutes` | **P1** `apps/daemon/src/http/app.ts` | The `Route`/`OrcApp` types are declared once in P1; each phase adds its own `registerXRoutes(app: OrcApp, ctx: DaemonContext)` file. |
-| `DaemonContext`, `buildContext`, `createDaemon`, `ServiceError` | **P1** `apps/daemon/src/context.ts`, `services/errors.ts` | Later phases add optional fields to `DaemonContext` by modifying that file (see §11). |
+| `DaemonContext`, `buildContext`, `createDaemon`, `ServiceError` | **P1** `apps/daemon/src/context.ts`, `services/errors.ts` | Later phases add fields to `DaemonContext` by modifying that file (see §11). P3's `audit` and `denyList` are required fields because `buildContext` always creates them. |
 | `CORE_VERSION`, `FIXTURES_DIR` | **P0** `packages/core/src/index.ts`, `src/test-utils/fixtures.ts` | P1 reuses them. |
 | `encodePaste`, `sendText` | **P0** `packages/core/src/pty/paste.ts` (real, pure module — amended from the brief's original throwaway-spike-file plan; see Task 6 ruling) | The S2 spike server (`spikes/s2-pty/server.ts`, outside the pnpm workspace) imports this module by relative path. P1's `apps/daemon/src/pty/input.ts` wraps it rather than re-implementing it. |
 | `SessionDetailPage` and any other web page component | The phase that **creates** the route file owns it (P1 for `/sessions/$source/$id`) | P3 and later **modify** it; they never create a second component with the same name. |
 | `useInboxKeys` | **P2** `apps/web/src/features/inbox/keys.ts` | P3 modifies it to register through the `hotkeys` registry. |
 | Web formatting helpers: `formatDuration`, `formatTokens`, `formatCost`, `shortPath`, `toolLabel`, `hasDrift` | **P1** `apps/web/src/lib/format.ts` | Every later phase imports from there and adds new helpers to the same file. |
-| Stats helpers `median`, `percentile` | **P3** `packages/core/src/derive/stats-math.ts` | P5/P7 import. |
+| Stats helpers `median`, `percentile` | **P3** as built: only `median(xs: readonly number[]): number \| null`, in `packages/core/src/derive/step-stats.ts`. There is no `stats-math.ts` and no `percentile` yet. | P5/P7 import `median` from there; the first phase that needs `percentile` adds it to the same file. |
 | Test factories: `makeSession`, `makeInboxItem`, `createFakePty`, `fakeApi`, `fakeSessions`, `fakeProjects`, `fakeInbox`, `makeQueryClient`, `ev`, `need` | **Daemon:** P1 `apps/daemon/test/factories.ts`; **web:** P1 `apps/web/src/test/factories.ts` | Each later phase adds new factories to those files and imports the existing ones instead of redefining. `createTestContext`/`useTempHomes` stay in `apps/daemon/test/helpers.ts`. |
 
-| `ApiCallError` | — (does not exist) | P2/P3 use **P1**'s `ApiRequestError`. Delete the name wherever a plan mentions it. |
+| `ApiCallError` | — (not a class) | P2/P3 use **P1**'s `ApiRequestError`. `packages/api-contract/src/client-p3.ts` re-exports it as `export { ApiRequestError as ApiCallError }` so the P3 tests can import that name; it is the same class. Later phases import `ApiRequestError`. |
 | `AppOptions`, `createApp`, `getToken` | **P1** `apps/daemon/src/http/app.ts`, `apps/web/src/api/client.ts` | P6 extends them by modifying those files: `AppOptions` gains the remote guard, and `getToken()` delegates to `resolveToken()` in `api/token.ts`. |
 | `BusEvent`, `LiveEvent` | **P1** `apps/daemon/src/live/event-bus.ts`, `packages/api-contract/src/live.ts` | Every later phase appends variants to the same unions in those files (P4 worktree/PR/checkpoint, P5 `config.changed` and the typed `usage.updated`, P6 Linear/Slack/away, P7 automation/supervisor/compare). P6 owns `linear.issueChanged` and `slack.mention`; P7 imports them instead of re-adding them. |
 | `DEFAULT_TICKET_REGEX` | **P1** `packages/core/src/derive/tickets.ts` | P4 imports it. |

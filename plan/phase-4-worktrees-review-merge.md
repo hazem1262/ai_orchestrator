@@ -12,6 +12,63 @@
 
 **Spec:** `docs/02-features.md` (F17, F18, F11 GitHub row, F4 "require plan approval", F15 PR items), `docs/03-architecture-and-stack.md` (flow 4 session control model, flow 6 worktrees/checkpoints/shipping, Security & privacy), `docs/01-vision-and-insights.md` (P11, worktree evidence), `docs/05-roadmap.md` (M4), `docs/06-landscape-and-inspiration.md` (Conductor, Nimbalyst rows), `plan/00-contracts.md` (§3, §4, §5, §6, §7, §9, §11).
 
+
+## Starting state (what Phase 4 builds on)
+
+**Branch:** cut `phase/4-worktrees-review-merge` from `main`. Phases 0 to 3 are done and merged;
+Phase 3 merged as `Merge phase 3: session detail, safety and audit`.
+
+**Read first:** [`00-contracts.md`](00-contracts.md) — Phase 3's contract additions are already
+merged into §3, §4, §6, §8, §11, §12 and §13 — this file, and the spike reports in [`spikes/`](spikes/).
+
+**Baseline** (measured 2026-09-24 on `phase/3-session-detail-safety-audit` just before the merge):
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `pnpm run lint` | clean — `Checked 427 files`, 1 info (biome asks for `biome migrate` on its own config) |
+| Typecheck | `pnpm run typecheck` | clean |
+| Unit tests | `pnpm run test` | `Test Files 117 passed (117)`, `Tests 1339 passed (1339)` |
+| Fixtures | `pnpm run check:fixtures` | clean |
+| E2E | `pnpm --filter @orc/web build && pnpm --filter @orc/web e2e` | 9 passed across `history.spec.ts`, `live-inbox.spec.ts` and `session-detail-conductor.spec.ts` |
+
+Test count over time: 289 at the Phase 1 exit → 1116 at the Phase 2 exit → 1339 at the Phase 3 exit.
+
+**Audit is already in place.** `auditMiddleware` (`apps/daemon/src/http/audit-middleware.ts`)
+audits every route listed in `AUDITED_ROUTES`, and `apps/daemon/test/audit.coverage.test.ts` fails
+when a non-GET route is in neither `AUDITED_ROUTES` nor `NON_ACTION_ROUTES`. Every Phase 4 write
+route has to be added to one of the two tables. `audited()` and `DeniedError` live in
+`apps/daemon/src/services/audit/audit.ts`; `ctx.audit` and `ctx.denyList` are always set.
+
+**Carried items** — known gaps Phase 4 inherits rather than causes:
+- The secrets scan reads the real `~/Wakecap` files during e2e and tests. The
+  `safety.secretScanPaths` default expands `~` against the real home directory and ignores the
+  fixture homes (`ORC_USER_HOME`), so the fixture daemon scans `~/Wakecap/.mcp.json` and
+  `~/Wakecap/.claude/commands/*.md`. It never writes and never returns values.
+- The Phase 3 test harness `apps/daemon/test/p3-harness.ts` builds its context with
+  `createTestContext`, which has no inbox engine. Route tests that need `ctx.inbox` must add one.
+- `NON_ACTION_ROUTES` exempts pin, label, saved views, inbox actions, notification prefs, project
+  PATCH, the hooks ingest and `deny-check` from the audit log.
+- The web build warns that the `/sessions/$source/$id` chunk (`dist/assets/_id-*.js`) is 746 kB,
+  above Vite's 500 kB limit.
+- `apps/daemon/src/services/sessions.test.ts:237` fails now and then under parallel load and passes
+  alone — a timing race in the test.
+- From Phase 3's own starting state, still open: `repos[].setup/run/archive` are served unredacted on
+  `GET /api/projects/:id` (revisit now that Phase 4 executes those commands); the pair-form
+  redaction gaps listed in `apps/daemon/src/http/redact-out.ts`; `usage.updated` still needs a
+  key-aware over-redaction check (Phase 5).
+
+**Phase 3 exit criteria not confirmed by eye** — recorded in
+[`phase-3-evidence.md`](phase-3-evidence.md):
+- No real `/conductor` session was opened in the browser. Its stats, deliverables, agents, links,
+  safety and export were checked through the API only.
+- On that real session 55 of 84 subagents map to no conductor-chain step and show only in the tree.
+- No screenshot exists of the Agents tab, of the PROD badge on a real session, or of the secrets
+  panel on real data.
+
+**Phase 2 exit criteria still unconfirmed by eye** (from [`phase-2-evidence.md`](phase-2-evidence.md)):
+the macOS notification banner, the card agents badge with a live subagent, and a template launch
+with a real prompt.
+
 ## Global Constraints
 - Node `>=22.12 <23`; pnpm `10.18.3`; TypeScript `~6.0.3` strict with `noUncheckedIndexedAccess`; Vitest `^5.0.1`; Biome `^2.5.14`; execa `^10.0.1`; `@git-diff-view/react` `^0.1.7`.
 - Daemon binds to `127.0.0.1`; every `/api/*` request needs `x-orc-token` (already enforced by the Phase 1 app).

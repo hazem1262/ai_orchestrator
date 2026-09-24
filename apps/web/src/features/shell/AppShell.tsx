@@ -5,10 +5,14 @@ import { useLiveEvents } from '@/api/live-events.ts';
 import { scopeProject, useOpenInboxCount } from '@/api/queries/inbox.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { GlobalHotkeys } from '@/features/hotkeys/GlobalHotkeys.tsx';
+import { HotkeysListener } from '@/features/hotkeys/HotkeysListener.tsx';
 import { InboxCount } from '@/features/inbox/InboxCount.tsx';
 import { useInboxTitle } from '@/features/inbox/useInboxTitle.ts';
 import { LaunchDialog } from '@/features/launch/LaunchDialog.tsx';
+import { CommandPalette } from '@/features/palette/CommandPalette.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
+import { usePaletteStore } from '@/stores/palette.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { ProjectSelector } from './ProjectSelector.tsx';
@@ -83,6 +87,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Link>
         <ProjectSelector />
         <GlobalSearch />
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Open command palette"
+          onClick={() => usePaletteStore.getState().setOpen(true)}
+        >
+          Search… ⌘K
+        </Button>
         <InboxCount count={openInboxCount} />
         <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
           New session
@@ -118,10 +130,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             Settings
           </Link>
+          <Link
+            to="/audit"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Audit
+          </Link>
         </nav>
         <Workspace>{children}</Workspace>
       </div>
       <LaunchDialog />
+      <HotkeysListener />
+      <GlobalHotkeys />
+      <CommandPalette />
     </div>
   );
 }

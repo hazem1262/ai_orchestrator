@@ -8,6 +8,7 @@ import { useTerminalStore } from '../../stores/terminals.ts';
 import { inboxItemFixture, liveSessionFixture } from '../../test/factories.ts';
 import { createFakeApi } from '../../test/fake-api.ts';
 import { renderWithProviders } from '../../test/render.tsx';
+import { HotkeysListener } from '../hotkeys/HotkeysListener.tsx';
 import { InboxCount } from './InboxCount.tsx';
 import { InboxPage } from './InboxPage.tsx';
 import { snoozePresets } from './snooze.ts';
@@ -84,7 +85,13 @@ describe('snoozePresets', () => {
 
 describe('InboxPage', () => {
   it('lists open items with details and triages with j/k/e/s', async () => {
-    renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: api() });
+    renderWithProviders(
+      <>
+        <HotkeysListener />
+        <InboxPage now={() => NOW.getTime()} />
+      </>,
+      { api: api() },
+    );
     await screen.findByText('Alpha: waiting — input needed');
     expect(within(rows()[0] as HTMLElement).getByText('Waiting')).toBeTruthy();
     expect(within(rows()[0] as HTMLElement).getByText('SAF-1787')).toBeTruthy();
@@ -106,6 +113,7 @@ describe('InboxPage', () => {
   it('ignores keys while typing, with modifiers, or while the launch dialog is open', async () => {
     renderWithProviders(
       <>
+        <HotkeysListener />
         <input aria-label="search" />
         <InboxPage now={() => NOW.getTime()} />
       </>,
@@ -122,7 +130,13 @@ describe('InboxPage', () => {
   it('opens the session with Enter and the terminal for owned sessions', async () => {
     const openTerminal = vi.fn();
     useTerminalStore.setState({ open: openTerminal });
-    const { router } = renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: api() });
+    const { router } = renderWithProviders(
+      <>
+        <HotkeysListener />
+        <InboxPage now={() => NOW.getTime()} />
+      </>,
+      { api: api() },
+    );
     await screen.findByText('Alpha: waiting — input needed');
     fireEvent.click(await within(rows()[0] as HTMLElement).findByRole('button', { name: 'Terminal' }));
     expect(openTerminal).toHaveBeenCalledWith('pty-7', 'Alpha: waiting — input needed');

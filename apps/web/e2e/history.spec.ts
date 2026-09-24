@@ -22,10 +22,13 @@ test('finds sessions by keyword, shows prompts-only history and opens the detail
   await expect(
     page.getByRole('heading', { level: 1, name: 'Notification service test check' }),
   ).toBeVisible();
-  const timeline = page.getByRole('list', { name: 'Timeline' });
-  await expect(timeline.getByText('check the notification service tests')).toBeVisible();
-  await expect(timeline.getByText('Bash ×1')).toBeVisible();
-  await expect(timeline.getByText('Recap: Ran tests (18 passed) and edited a.ts.')).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Timeline' })).toHaveAttribute('aria-selected', 'true');
+  const turn = page.getByRole('region', { name: 'Turn 1' });
+  await expect(turn.getByRole('heading', { name: 'check the notification service tests' })).toBeVisible();
+  await expect(turn.getByRole('button', { name: 'Bash ×1' })).toBeVisible();
+  await expect(
+    page.getByTestId('timeline-scroll').getByText('Recap: Ran tests (18 passed) and edited a.ts.'),
+  ).toBeVisible();
 });
 
 test('resumes into an embedded terminal in the original cwd and replays after reload', async ({ page }) => {

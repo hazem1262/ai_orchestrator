@@ -6,6 +6,21 @@ import { createFakeApi } from '../../test/fake-api.ts';
 import { renderWithProviders } from '../../test/render.tsx';
 import { SessionDetailPage } from './SessionDetailPage.tsx';
 
+const detailProps = { tab: 'timeline', agentId: null, file: null, onNavigate: () => {} } as const;
+
+const detailApi = {
+  sessionsStats: vi.fn(async () => {
+    throw new Error('no stats');
+  }),
+  sessionsDeliverables: vi.fn(async () => []),
+  sessionsSafety: vi.fn(async () => ({
+    permissionMode: 'default',
+    permissionBadge: 'default' as const,
+    touchedProd: false,
+    prodTouches: [],
+  })),
+};
+
 const session = sessionFixture({
   cwds: ['/Users/test/Wakecap', '/Users/test/Wakecap/Backend/svc'],
   tickets: ['SAF-1787'],
@@ -49,8 +64,8 @@ describe('SessionDetailPage', () => {
             nextSeq: null,
           },
     );
-    const api = createFakeApi({ sessionsGet: vi.fn(async () => session), sessionsEvents });
-    renderWithProviders(<SessionDetailPage source="claude" id="s1" />, { api });
+    const api = createFakeApi({ ...detailApi, sessionsGet: vi.fn(async () => session), sessionsEvents });
+    renderWithProviders(<SessionDetailPage source="claude" id="s1" {...detailProps} />, { api });
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Notification service test check' }),
@@ -64,16 +79,26 @@ describe('SessionDetailPage', () => {
     expect(screen.getByText('prod')).toBeTruthy();
     expect(screen.getByText('$0.42 · 2.2k tokens')).toBeTruthy();
 
-    const timeline = await screen.findByRole('list', { name: 'Timeline' });
-    expect(within(timeline).getByText('check the notification service tests')).toBeTruthy();
-    expect(within(timeline).getByText('Bash ×2')).toBeTruthy();
-    expect(within(timeline).getByText('pnpm vitest run')).toBeTruthy();
-    expect(within(timeline).getByText('Tests 18 passed')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Timeline' }).getAttribute('aria-selected')).toBe('true');
+    expect(await screen.findByText('default')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Export ZIP' })).toBeTruthy();
+
+    const turn1 = await screen.findByRole('region', { name: 'Turn 1' });
+    expect(within(turn1).getByText('check the notification service tests')).toBeTruthy();
+    await userEvent.click(within(turn1).getByRole('button', { name: 'Bash ×2' }));
+    expect(within(turn1).getByRole('button', { name: 'pnpm vitest run' })).toBeTruthy();
+    expect(within(turn1).getByRole('button', { name: 'git status' })).toBeTruthy();
+    await userEvent.click(within(turn1).getByRole('button', { name: 'pnpm vitest run' }));
+    expect(
+      within(screen.getByRole('complementary', { name: 'Step inspector' })).getByText('Tests 18 passed'),
+    ).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    expect(await within(timeline).findByText('Turn took 36s')).toBeTruthy();
-    expect(within(timeline).getByText('API error: API Error: 529 overloaded')).toBeTruthy();
-    expect(within(timeline).getByText('Recap: Ran tests.')).toBeTruthy();
+    expect(await within(turn1).findByText('⏱ turn took 36.0s')).toBeTruthy();
+    expect(within(turn1).getByText('API error: API Error: 529 overloaded')).toBeTruthy();
+    const turn2 = screen.getByRole('region', { name: 'Turn 2' });
+    expect(within(turn2).getByText('continue')).toBeTruthy();
+    expect(within(turn2).getByText('Recap: Ran tests.')).toBeTruthy();
     expect(sessionsEvents).toHaveBeenLastCalledWith('claude', 's1', {
       agentId: undefined,
       afterSeq: 4,
@@ -84,9 +109,10 @@ describe('SessionDetailPage', () => {
 
   it('explains prompts-only sessions and missing sessions', async () => {
     const api = createFakeApi({
+      ...detailApi,
       sessionsGet: vi.fn(async () => sessionFixture({ availability: 'prompts-only', transcriptPath: null })),
     });
-    renderWithProviders(<SessionDetailPage source="claude" id="s1" />, { api });
+    renderWithProviders(<SessionDetailPage source="claude" id="s1" {...detailProps} />, { api });
     expect(await screen.findByText(/only exists in prompt history/)).toBeTruthy();
     expect(screen.getByText('prompts-only')).toBeTruthy();
   });
@@ -97,7 +123,7 @@ describe('SessionDetailPage', () => {
         throw new Error('session claude:nope not found');
       }),
     });
-    renderWithProviders(<SessionDetailPage source="claude" id="nope" />, { api });
+    renderWithProviders(<SessionDetailPage source="claude" id="nope" {...detailProps} />, { api });
     expect((await screen.findByRole('alert')).textContent).toBe('session claude:nope not found');
   });
 });

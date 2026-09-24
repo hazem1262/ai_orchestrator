@@ -23,6 +23,18 @@ describe('OrcConfig', () => {
   it('rejects an unknown top-level key instead of silently discarding it', () => {
     expect(() => OrcConfig.parse({ typoedKeyThatDoesNotExist: true })).toThrow();
   });
+
+  it('fills phase 3 safety and links defaults', () => {
+    const c = OrcConfig.parse({});
+    expect(c.safety.extraDenyPatterns).toEqual([]);
+    expect(c.safety.prodSkills).toEqual([
+      'production_server_db',
+      'production_server_logs',
+      'wecare_production_db',
+    ]);
+    expect(c.safety.secretScanPaths).toEqual(['~/Wakecap/.mcp.json', '~/Wakecap/.claude/commands/*.md']);
+    expect(c.links).toEqual({ linearWorkspace: null, planRoots: ['~/Wakecap/plans'] });
+  });
 });
 
 describe('ProjectConfig', () => {

@@ -4,17 +4,23 @@ import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { DaemonContext } from '../context.ts';
 import { ServiceError } from '../services/errors.ts';
+import { auditMiddleware } from './audit-middleware.ts';
 import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.ts';
 import { redactedApiError } from './redact-out.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
+import { registerAuditRoutes } from './routes/audit.ts';
+import { registerExportRoutes } from './routes/export.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerHookRoutes } from './routes/hooks.ts';
 import { registerInboxRoutes } from './routes/inbox.ts';
 import { registerLaunchRoutes } from './routes/launch.ts';
+import { registerLinksRoutes } from './routes/links.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerNotificationRoutes } from './routes/notifications.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPtyRoutes } from './routes/pty.ts';
+import { registerSafetyRoutes } from './routes/safety.ts';
+import { registerSessionDetailRoutes } from './routes/session-detail.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerTemplateRoutes } from './routes/templates.ts';
 import { registerViewRoutes } from './routes/views.ts';
@@ -54,6 +60,11 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerLaunchRoutes(app, ctx);
   registerArchiveRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
+  registerAuditRoutes(app, ctx);
+  registerSafetyRoutes(app, ctx);
+  registerSessionDetailRoutes(app, ctx);
+  registerLinksRoutes(app, ctx);
+  registerExportRoutes(app, ctx);
   // ORDERING CONTRACT: every `/api/*` route must be registered ABOVE this line. This is a
   // catch-all, so anything registered after it is shadowed and answers 404.
   app.all('/api/*', (c) => c.json(apiError('not_found', 'no such route'), 404));
@@ -99,6 +110,7 @@ export function createApp(o: AppOptions): OrcApp {
     }
     await next();
   });
+  app.use('/api/*', auditMiddleware(o.ctx));
 
   app.get('/bootstrap.js', (c) => {
     const remote = c.env?.incoming?.socket?.remoteAddress;

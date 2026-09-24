@@ -4,8 +4,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { DaemonContext } from '../context.ts';
 import type { BusEvent } from '../live/event-bus.ts';
 import { tokenMatches } from './auth.ts';
-import { redactInboxItem, redactSession, redactValue } from './redact-out.ts';
 import { parseUpgradeTarget } from './upgrade-target.ts';
+import { toWireEvent } from './ws-redact.ts';
 
 /** The bus events that are fanned out to browsers. Everything else on the bus stays internal. */
 export const LIVE_EVENT_TYPES = [
@@ -15,6 +15,7 @@ export const LIVE_EVENT_TYPES = [
   'pty.exited',
   'index.progress',
   'usage.updated',
+  'audit.recorded',
 ] as const;
 type LiveType = (typeof LIVE_EVENT_TYPES)[number];
 export type WireEvent = Extract<BusEvent, { type: LiveType }> | { type: 'hello'; serverTime: string };
@@ -50,7 +51,7 @@ function reject(socket: Duplex, status: number, text: string): void {
  * every connection — because a second socket with weaker auth than the first is the whole risk.
  *
  * Everything that leaves here goes through `redact-out.ts`, the same boundary the HTTP routes
- * use. `toWire` is an exhaustive switch on purpose: adding a type to `LIVE_EVENT_TYPES` without
+ * use, via `toWireEvent` in `ws-redact.ts`. That is an exhaustive switch on purpose: adding a type without
  * deciding how it is redacted is a compile error, not a silent passthrough.
  *
  * Constructed by `startPhase2`. `http/ws.ts` owns the server's only `upgrade` listener, and a
@@ -82,26 +83,7 @@ export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): Liv
     ws.send(JSON.stringify(hello));
   });
 
-  function toWire(e: Extract<BusEvent, { type: LiveType }>): WireEvent {
-    switch (e.type) {
-      case 'session.updated':
-        return { type: 'session.updated', session: redactSession(e.session) };
-      case 'inbox.upserted':
-        // `reason` is built from whatever made the session need attention, and `payload` is open.
-        return { type: 'inbox.upserted', item: redactInboxItem(e.item) };
-      case 'usage.updated':
-        return { type: 'usage.updated', snapshot: redactValue(e.snapshot) };
-      // Ids and counters only.
-      case 'session.removed':
-      case 'pty.exited':
-      case 'index.progress':
-        return e;
-      default: {
-        const unhandled: never = e;
-        return unhandled;
-      }
-    }
-  }
+  const toWire = (e: Extract<BusEvent, { type: LiveType }>): WireEvent => toWireEvent(e) as WireEvent;
 
   function broadcast(e: Extract<BusEvent, { type: LiveType }>): void {
     // The tracker emits `session.updated` on every sweep that changes anything; with no browser
