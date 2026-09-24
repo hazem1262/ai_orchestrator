@@ -8,5 +8,8 @@ export {
   ticketFromBranch,
   worktreeDirName,
 } from './branch.ts';
+export { parseUnifiedDiff } from './diff-parse.ts';
+export { hunkPatch } from './hunk-select.ts';
+export { buildReviewPrompt } from './review-prompt.ts';
 export * from './status-porcelain.ts';
 export * from './worktree-porcelain.ts';
