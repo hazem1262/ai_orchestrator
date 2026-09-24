@@ -91,6 +91,11 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'counts, bytes, the codec, a daemon-derived ISO timestamp and a constant snippet',
   },
+  'GET /api/audit': {
+    guardedBy: null,
+    reason:
+      'audit entries are redacted when recorded (AuditService) and again with redactDeep on the way out',
+  },
   'POST /api/archive/sync': { guardedBy: null, reason: '{ copied: number }' },
   'POST /api/archive/restore': {
     guardedBy: 'redactValue',
@@ -115,6 +120,7 @@ export const CENSUS: Record<string, CensusEntry> = {
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
   'apps/daemon/src/http/routes/archive.ts',
+  'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',

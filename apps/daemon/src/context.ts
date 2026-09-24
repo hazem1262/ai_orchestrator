@@ -8,6 +8,7 @@ import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
 import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
+import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
@@ -79,7 +80,8 @@ export function buildContext(o: BuildContextOptions): {
     );
   const bus = createEventBus({ onError: (err, e) => log.error({ err, type: e.type }, 'bus handler failed') });
   const audit = createAuditService({ db: opened.db, bus });
-  const pty = createPtyManager({ bus });
+  const pty = withPtyInputAudit(createPtyManager({ bus }), audit);
+  bus.on('pty.exited', () => pty.flushAll());
   const projects = createProjectService({ db: opened.db, paths: o.paths, config, saveConfig: save });
   const sessions = createSessionService({
     db: opened.db,
