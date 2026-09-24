@@ -30,7 +30,7 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 | 0 | [Foundations & spikes](phase-0-foundations-and-spikes.md) | M0 | scaffold, core parser base, spikes S1–S3, S5–S8 | 11 | ✅ done (S6 blocked on `gh auth refresh -s read:packages`) |
 | 1 | [History, search & resume](phase-1-history-search-resume.md) | M1 | F3, F4 (resume/fork/adopt), F13, F2 (basic) | 20 | ☑ done (2026-09-21) — 20/20 tasks, 289 unit tests + 1 perf suite + 3 Playwright e2e, all green |
 | 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☑ done (2026-09-23) — 20/20 tasks, merged as `e817f1b`; 1116 unit tests + 7 Playwright e2e, all green; exit check in [phase-2-evidence.md](phase-2-evidence.md) |
-| 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☐ |
+| 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☑ done (2026-09-24) — 19/19 tasks, merged into `main` with `--no-ff`; 1339 unit tests in 117 files + 9 Playwright e2e, all green; exit check in [phase-3-evidence.md](phase-3-evidence.md) |
 | 4 | [Worktrees, review & merge](phase-4-worktrees-review-merge.md) | M4 | F17, F18, F11 (GitHub), plan approval | 22 | ☐ |
 | 5 | [Streams, analytics, limits, recaps, goals](phase-5-streams-analytics-limits-recaps-goals.md) | M5 | F6, F7, F19, F14, F16, F10 | 22 | ☐ |
 | 6 | [Linear, Slack & remote](phase-6-linear-slack-remote.md) | M6 | F11 (Linear, Slack), F22, spike S9 | 22 | ☐ |
@@ -38,32 +38,31 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 
 ## Resume here
 
-**Where the work stands:** Phases 0, 1 and 2 are done and merged. Phase 3 is the next phase and has
-not started.
+**Where the work stands:** Phases 0 to 3 are done and merged. Phase 4 is the next phase and has not
+started.
 
-**Repository state**
+**Repository state** (after the Phase 3 merge, 2026-09-24)
 
 | Fact | Value | Proof |
 |---|---|---|
-| `main` head | `036e5c0 Merge the macOS notification parse fix` | `git log --oneline -1 main` |
-| Unpushed | `main` is **13 commits ahead** of `origin/main` (still at `589f8ae`); nothing was pushed | `git rev-list --count origin/main..main` |
-| Phase 2 merge | `e817f1b Merge phase 2: live board, inbox and archive` | `git log --oneline` |
-| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive` and `fix/macos-notify-parse`, all already merged into `main` and safe to delete | `git branch --merged main` |
+| `main` head | `Merge phase 3: session detail, safety and audit` | `git log --oneline -1 main` |
+| Unpushed | `main` is **35 commits ahead** of `origin/main` (still at `589f8ae`); nothing was pushed | `git rev-list --count origin/main..main` |
+| Phase 3 commits | `a902326`…`bb63300` (18 task commits) plus the Task 19 exit commit | `git log --oneline main^1..main^2` |
+| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive`, `phase/3-session-detail-safety-audit`, `fix/macos-notify-parse` and `docs/phase-3-resume-pointer`, all merged into `main` and safe to delete | `git branch --merged main` |
 
-**Gates on `main`** (run 2026-09-23 at `036e5c0`): `pnpm run lint` clean with 1 info (biome asks for
-`biome migrate` on its own config), `pnpm run typecheck` clean, `pnpm run test` → 1116 tests in 87
-files, `pnpm --filter @orc/web e2e` → 7 Playwright specs green.
+**Gates** (run 2026-09-24 on the Phase 3 branch before the merge): `pnpm run lint` clean with 1 info
+(biome asks for `biome migrate` on its own config), `pnpm run typecheck` clean, `pnpm run test` →
+1339 tests in 117 files, `pnpm run check:fixtures` clean, `pnpm --filter @orc/web e2e` → 9
+Playwright tests green.
 
 **How to run the app:** `pnpm dev` from the repo root. The web app serves on
 `http://localhost:5173` and the daemon on `http://127.0.0.1:4317`. Every API and WS request needs
 the token from `~/.orchestrator/token`, sent as the `x-orc-token` header.
 
-**What Phase 3 starts from:** the branch to cut, the baseline numbers, the audit call sites waiting
-on it, the deferred-not-defect list and the Phase 2 criteria still unconfirmed by eye are all in
-[`phase-3-session-detail-safety-audit.md` → *Starting state*](phase-3-session-detail-safety-audit.md#starting-state-what-phase-3-builds-on).
-Phase 2's own exit check is in [`phase-2-evidence.md`](phase-2-evidence.md); note that its
-criterion-8 entry records the two defects found at that time, both since fixed on `main` by
-`aea1e6f`.
+**What Phase 4 starts from:** the branch to cut, the baseline numbers, the carried items and the
+Phase 3 criteria still unconfirmed by eye are all in
+[`phase-4-worktrees-review-merge.md` → *Starting state*](phase-4-worktrees-review-merge.md#starting-state-what-phase-4-builds-on).
+Phase 3's own exit check is in [`phase-3-evidence.md`](phase-3-evidence.md).
 
 Total: **161 tasks**, roughly 1,030 individually checkable steps.
 
