@@ -1,4 +1,4 @@
-import type { InboxKind, InboxState } from '@orc/core';
+import type { AuditActor, AuditEntry, InboxKind, InboxState } from '@orc/core';
 import { sql } from 'drizzle-orm';
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
@@ -217,4 +217,25 @@ export const archiveEntries = sqliteTable(
     headFingerprint: text('head_fingerprint'),
   },
   (t) => [index('archive_entries_session_idx').on(t.sessionPk)],
+);
+
+export const auditLog = sqliteTable(
+  'audit_log',
+  {
+    id: text('id').primaryKey(),
+    ts: text('ts').notNull(),
+    actor: text('actor').$type<AuditActor>().notNull(),
+    actorDetail: text('actor_detail'),
+    action: text('action').notNull(),
+    target: text('target'),
+    sessionPk: text('session_pk'),
+    paramsJson: text('params_json').notNull().default('{}'),
+    result: text('result').$type<AuditEntry['result']>().notNull(),
+    error: text('error'),
+  },
+  (t) => [
+    index('audit_log_ts_idx').on(t.ts),
+    index('audit_log_session_pk_idx').on(t.sessionPk),
+    index('audit_log_action_idx').on(t.action),
+  ],
 );

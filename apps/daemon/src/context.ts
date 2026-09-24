@@ -10,6 +10,7 @@ import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
+import { type AuditService, createAuditService } from './services/audit/audit.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -28,6 +29,8 @@ export interface DaemonContext {
   sessions: SessionService;
   projects: ProjectServiceImpl;
   userMeta: UserMetaService;
+  /** P3 — the append-only audit log; always set by `buildContext()`. */
+  audit: AuditService;
   /** P2 — set by the daemon entrypoint once the tracker is started (Task 8 wires the routes). */
   live?: LiveTracker;
   /** P2 — the attention inbox (Task 9). Optional so the P1 entrypoint and tests stay valid. */
@@ -75,6 +78,7 @@ export function buildContext(o: BuildContextOptions): {
       pino.destination({ dest: o.paths.logFile, mkdir: true, sync: false }),
     );
   const bus = createEventBus({ onError: (err, e) => log.error({ err, type: e.type }, 'bus handler failed') });
+  const audit = createAuditService({ db: opened.db, bus });
   const pty = createPtyManager({ bus });
   const projects = createProjectService({ db: opened.db, paths: o.paths, config, saveConfig: save });
   const sessions = createSessionService({
@@ -98,6 +102,7 @@ export function buildContext(o: BuildContextOptions): {
     sessions,
     projects,
     userMeta,
+    audit,
   };
   return {
     ctx,
