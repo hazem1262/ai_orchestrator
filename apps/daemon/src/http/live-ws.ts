@@ -16,6 +16,10 @@ export const LIVE_EVENT_TYPES = [
   'index.progress',
   'usage.updated',
   'audit.recorded',
+  'worktree.updated',
+  'worktree.removed',
+  'pr.updated',
+  'checkpoint.created',
 ] as const;
 type LiveType = (typeof LIVE_EVENT_TYPES)[number];
 export type WireEvent = Extract<BusEvent, { type: LiveType }> | { type: 'hello'; serverTime: string };

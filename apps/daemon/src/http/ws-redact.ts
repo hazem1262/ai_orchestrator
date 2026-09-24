@@ -19,6 +19,15 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
       return { type: 'audit.recorded', entry: redactValue(e.entry) as typeof e.entry };
     case 'usage.updated':
       return { type: 'usage.updated', snapshot: redactValue(e.snapshot) };
+    // Paths, branch names, tickets, PR titles and URLs: all can carry text a user or agent wrote.
+    case 'worktree.updated':
+      return { type: 'worktree.updated', worktree: redactValue(e.worktree) as typeof e.worktree };
+    case 'worktree.removed':
+      return { type: 'worktree.removed', path: redactValue(e.path) as string };
+    case 'pr.updated':
+      return { type: 'pr.updated', status: redactValue(e.status) as typeof e.status };
+    case 'checkpoint.created':
+      return { type: 'checkpoint.created', checkpoint: redactValue(e.checkpoint) as typeof e.checkpoint };
     // Ids, counters and a timestamp only.
     case 'session.removed':
     case 'pty.exited':

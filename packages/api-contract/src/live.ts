@@ -1,4 +1,4 @@
-import type { AuditEntry, InboxItem, Session } from '@orc/core';
+import type { AuditEntry, CheckpointRecord, InboxItem, PrStatus, Session, WorktreeView } from '@orc/core';
 
 /** contracts §6 — WS /ws live events (the socket itself ships in Phase 2). */
 export type LiveEvent =
@@ -9,4 +9,8 @@ export type LiveEvent =
   | { type: 'index.progress'; done: number; total: number }
   | { type: 'usage.updated'; snapshot: unknown }
   | { type: 'hello'; serverTime: string }
-  | { type: 'audit.recorded'; entry: AuditEntry };
+  | { type: 'audit.recorded'; entry: AuditEntry }
+  | { type: 'worktree.updated'; worktree: WorktreeView }
+  | { type: 'worktree.removed'; path: string }
+  | { type: 'pr.updated'; status: PrStatus }
+  | { type: 'checkpoint.created'; checkpoint: CheckpointRecord };
