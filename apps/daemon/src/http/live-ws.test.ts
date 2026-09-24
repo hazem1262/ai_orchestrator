@@ -148,6 +148,20 @@ describe('live WS hub', () => {
       'pty.exited': { type: 'pty.exited', ptyId: 'p1', code: 0 },
       'index.progress': { type: 'index.progress', done: 1, total: 2 },
       'usage.updated': { type: 'usage.updated', snapshot: { byModel: [{ note: SECRET }] } },
+      'audit.recorded': {
+        type: 'audit.recorded',
+        entry: {
+          id: 'a1',
+          ts: '2026-09-17T00:00:00.000Z',
+          actor: 'user',
+          actorDetail: null,
+          action: 'pty.input',
+          target: null,
+          params: { text: SECRET },
+          result: 'ok',
+          error: null,
+        },
+      },
     };
     // Internal events, interleaved: a leak would show up in the type sequence asserted below.
     ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:x', from: null, to: 'busy' });

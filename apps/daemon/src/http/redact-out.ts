@@ -15,6 +15,7 @@ import {
   type Project,
   type PrRef,
   redact,
+  redactPartialTokens,
   type Session,
   type TimelineEvent,
 } from '@orc/core';
@@ -230,8 +231,8 @@ export function redactAgent(a: AgentNode): AgentNode {
 /** Highlight markers can split a secret (e.g. "⟦PGPASSWORD⟧=x"), so redaction runs on the plain text first. */
 export function redactSnippet(snippet: string): string {
   const plain = snippet.replaceAll(SNIPPET_OPEN, '').replaceAll(SNIPPET_CLOSE, '');
-  const clean = redact(plain);
-  return clean === plain ? snippet : clean;
+  const clean = redactPartialTokens(redact(plain));
+  return clean !== plain ? clean : redactPartialTokens(snippet);
 }
 
 export function redactListItem(i: SessionListItem): SessionListItem {
