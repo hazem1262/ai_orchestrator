@@ -58,3 +58,63 @@ export function createFakePty(initial: PtyInfo[] = []): PtyManager & {
     },
   };
 }
+
+type SpawnOpts = Parameters<PtyManager['spawn']>[0];
+
+export function recordingPty(): PtyManager & {
+  spawned: SpawnOpts[];
+  texts: Array<{ id: string; text: string }>;
+  writes: Array<{ id: string; data: string }>;
+} {
+  const infos = new Map<string, PtyInfo>();
+  const spawned: SpawnOpts[] = [];
+  const texts: Array<{ id: string; text: string }> = [];
+  const writes: Array<{ id: string; data: string }> = [];
+  let n = 0;
+  return {
+    spawned,
+    texts,
+    writes,
+    spawn(opts) {
+      spawned.push(opts);
+      n += 1;
+      const info: PtyInfo = {
+        id: `pty-${n}`,
+        sessionPk: opts.sessionPk ?? null,
+        command: opts.command,
+        args: opts.args,
+        cwd: opts.cwd,
+        pid: 10_000 + n,
+        startedAt: new Date().toISOString(),
+        exitedAt: null,
+        exitCode: null,
+        cols: opts.cols ?? 120,
+        rows: opts.rows ?? 36,
+      };
+      infos.set(info.id, info);
+      return info;
+    },
+    write(id, data) {
+      writes.push({ id, data });
+    },
+    async sendText(id, text) {
+      texts.push({ id, text });
+    },
+    resize() {},
+    kill(id) {
+      const info = infos.get(id);
+      if (info) infos.set(id, { ...info, exitedAt: new Date().toISOString(), exitCode: 0 });
+    },
+    attach() {
+      return { scrollback: '', detach() {} };
+    },
+    list: () => [...infos.values()],
+    get: (id) => infos.get(id),
+    remove(id) {
+      infos.delete(id);
+    },
+    disposeAll() {
+      infos.clear();
+    },
+  };
+}
