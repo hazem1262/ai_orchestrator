@@ -13,6 +13,7 @@ import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
+import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -58,6 +59,8 @@ export interface DaemonContext {
   worktrees?: WorktreeService;
   /** P4 — per-turn commit-tree checkpoints and rewind. */
   checkpoints?: CheckpointService;
+  /** P4 — base-to-worktree diffs and file or hunk revert. */
+  diff?: DiffService;
 }
 
 export interface BuildContextOptions {
