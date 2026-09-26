@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
+    "./git": "./src/git/index.ts",
     "./test-utils/fixtures.ts": "./src/test-utils/fixtures.ts"
   },
   "scripts": {
