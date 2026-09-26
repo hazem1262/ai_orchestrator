@@ -183,6 +183,8 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/export.ts',
+  // Phase 4 sub-apps: built and tested now, mounted under /api (with CENSUS rows) in Task 18.
+  'apps/daemon/src/http/routes/github.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',
@@ -197,6 +199,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',
+  'apps/daemon/src/http/routes/worktrees.ts',
   'apps/daemon/src/http/static.ts',
 ];
 
