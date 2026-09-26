@@ -17,6 +17,7 @@ import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { TemplateRegistry } from './services/templates.ts';
@@ -61,6 +62,8 @@ export interface DaemonContext {
   checkpoints?: CheckpointService;
   /** P4 — base-to-worktree diffs and file or hunk revert. */
   diff?: DiffService;
+  /** P4 — review summary card data and inline comments sent to owned sessions. */
+  review?: ReviewService;
 }
 
 export interface BuildContextOptions {
