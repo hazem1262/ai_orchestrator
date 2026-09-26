@@ -4,6 +4,8 @@ const port = 4399;
 
 export default defineConfig({
   testDir: './e2e',
+  // Runs under playwright.m4.config.ts (`pnpm e2e:m4`), which seeds its own daemon.
+  testIgnore: /m4-.*\.spec\.ts/,
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,

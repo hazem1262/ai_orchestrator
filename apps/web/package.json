@@ -8,7 +8,8 @@
     "build": "tsr generate && vite build",
     "routes:gen": "tsr generate",
     "typecheck": "tsr generate && tsc -p tsconfig.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "e2e:m4": "pnpm --filter @orc/daemon build && pnpm build && playwright test -c playwright.m4.config.ts"
   },
   "dependencies": {
     "@git-diff-view/react": "^0.1.7",
