@@ -21,6 +21,7 @@ import { createProjectService, type ProjectServiceImpl } from './services/projec
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
+import type { ShipService } from './services/ship/ship.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
@@ -67,6 +68,8 @@ export interface DaemonContext {
   review?: ReviewService;
   /** P4 — GitHub PR status through `gh`, with the PR poller. */
   github?: GithubConnector;
+  /** P4 — commit, push, PR create/merge, ship suggestions and backmerge. */
+  ship?: ShipService;
 }
 
 export interface BuildContextOptions {
