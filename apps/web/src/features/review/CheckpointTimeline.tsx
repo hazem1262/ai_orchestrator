@@ -1,3 +1,4 @@
+import type { CheckpointRecord } from '@orc/core';
 import { getApiClient } from '@/api/client.ts';
 import { useCheckpoints } from '@/api/queries/review.ts';
 import { Button } from '@/components/ui/button.tsx';
@@ -6,6 +7,12 @@ import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
 import type { DiffSourceSel } from './ReviewPage.tsx';
 
 const INVALIDATE = [['checkpoints'], ['diff'], ['review']] as const;
+
+function checkpointLabel(c: CheckpointRecord): string {
+  if (c.kind === 'manual') return `Manual (turn ${c.turn})`;
+  if (c.kind === 'safety') return `Safety (turn ${c.turn})`;
+  return `Turn ${c.turn}`;
+}
 
 export function CheckpointTimeline({
   sessionPk,
@@ -25,7 +32,7 @@ export function CheckpointTimeline({
     (pk: string, confirm: boolean) => getApiClient().checkpointsCreate({ sessionPk: pk, confirm }),
     { invalidate: INVALIDATE },
   );
-  const turns = (list.data ?? []).filter((c) => c.kind !== 'safety');
+  const turns = list.data ?? [];
   const error = rewind.error ?? save.error;
   return (
     <section aria-label="Checkpoints" className="space-y-1 text-sm">
@@ -45,7 +52,7 @@ export function CheckpointTimeline({
               className={`flex-1 text-left ${selected.kind === 'checkpoint' && selected.id === c.id ? 'font-semibold' : ''}`}
               onClick={() => onSelect({ kind: 'checkpoint', id: c.id })}
             >
-              {c.kind === 'manual' ? `Manual (turn ${c.turn})` : `Turn ${c.turn}`}
+              {checkpointLabel(c)}
             </button>
             <time className="text-xs text-muted-foreground" dateTime={c.createdAt}>
               {new Date(c.createdAt).toLocaleTimeString()}

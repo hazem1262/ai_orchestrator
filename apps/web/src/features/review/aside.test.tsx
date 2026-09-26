@@ -1,6 +1,6 @@
 import { ApiRequestError } from '@orc/api-contract';
 import type { CheckpointRecord, ReviewSummary } from '@orc/core';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
 import { renderWithProviders } from '@/test/render.tsx';
@@ -97,6 +97,39 @@ describe('CheckpointTimeline', () => {
     expect(await screen.findByText('Restore the files in /w to turn 1.')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
     await waitFor(() => expect(rewind).toHaveBeenLastCalledWith('c1', { confirm: true }));
+  });
+
+  it('lists safety checkpoints alongside turn checkpoints', async () => {
+    const cps: CheckpointRecord[] = [
+      {
+        id: 'c1',
+        sessionId: 's1',
+        worktreePath: '/w',
+        turn: 1,
+        ref: 'r1',
+        commit: 'a',
+        createdAt: '2026-09-17T10:00:00Z',
+        kind: 'turn',
+      },
+      {
+        id: 'c2',
+        sessionId: 's1',
+        worktreePath: '/w',
+        turn: 2,
+        ref: 'r2',
+        commit: 'b',
+        createdAt: '2026-09-17T10:05:00Z',
+        kind: 'safety',
+      },
+    ];
+    renderWithProviders(
+      <CheckpointTimeline sessionPk="claude:s1" selected={{ kind: 'worktree' }} onSelect={() => {}} />,
+      { api: createFakeApi({ checkpointsList: async () => cps }) },
+    );
+    await screen.findByRole('button', { name: 'Turn 1' });
+    const items = within(screen.getByRole('region', { name: 'Checkpoints' })).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Rewind to turn 2' })).toBeDefined();
   });
 });
 
