@@ -31,6 +31,69 @@
 - `docs/06-landscape-and-inspiration.md` (ccusage, DeepSeek Harness goals and handoffs, zadloop "what to check")
 - `plan/00-contracts.md` (single source of truth for names)
 
+## Starting state (what Phase 5 builds on)
+
+**Branch:** cut `phase/5-streams-analytics-limits-recaps-goals` from `main` after the Phase 4 merge
+(`merge: phase 4 worktrees, review and merge`). Phases 0 to 4 are done and merged.
+
+**Read first:** [`00-contracts.md`](00-contracts.md) — Phase 4's contract additions are merged into
+§2, §3, §4, §5, §6, §11, §12 and §13 — this file, [`phase-4-evidence.md`](phase-4-evidence.md) and
+the spike reports in [`spikes/`](spikes/) (including [`spikes/M4-manual.md`](spikes/M4-manual.md)).
+
+**Baseline** (measured 2026-09-26 on `phase/4-worktrees-review-merge` at `8adffc8`):
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `pnpm run lint` | clean — `Checked 546 files`, 1 info (biome asks for `biome migrate` on its own config) |
+| Typecheck | `pnpm run typecheck` | clean |
+| Unit tests | `pnpm run test` | `Test Files 156 passed (156)`, `Tests 1509 passed (1509)` |
+| Fixtures | `pnpm run check:fixtures` | clean |
+| E2E | `pnpm --filter @orc/web e2e` | 9 passed |
+| M4 E2E | `pnpm --filter @orc/web e2e:m4` | 1 passed (18.4 s) |
+
+Test count over time: 289 at the Phase 1 exit → 1116 at Phase 2 → 1339 at Phase 3 → 1509 at Phase 4.
+
+**Phase 4 wiring to know about:**
+- Phase 4 services are set on `DaemonContext` by `wirePhase4()` in `apps/daemon/src/main.ts`, not by
+  `buildContext()`. Tests call it with `{ startPollers: false }`.
+- Test homes and the e2e server write `github: { enabled: false }`, so no test daemon polls `gh`.
+- Phase 4 write routes are in `AUDITED_ROUTES` with `recordedBy: 'service'`; the service records the
+  row through `runAudited`, and the middleware adds one only for requests that fail first.
+- Inbox callers pass `{ kind, scope, facet }`; there are no key helpers.
+
+**Carried items** — known gaps Phase 5 inherits rather than causes:
+- `apps/daemon/src/services/sessions.test.ts:237` and
+  `apps/web/src/features/settings/settings.test.tsx` fail now and then under parallel load and pass
+  alone — timing races in the tests.
+- The web build warns about chunks over 500 kB: `_id-*.js` (the `/sessions/$source/$id` chunk)
+  747 kB and `review._source._id-*.js` 1.07 MB.
+- `safety.secretScanPaths` defaults expand `~` against the real home directory, not the fixture
+  homes (`ORC_USER_HOME`). Test homes and the M4 e2e set it to `[]`; any daemon on fixture homes
+  that keeps the default still reads the real `~/Wakecap` files (never writes, never returns values).
+- `NON_ACTION_ROUTES` still exempts pin, label, saved views, inbox actions, notification prefs,
+  project PATCH, the hooks ingest and `deny-check` from the audit log.
+- `pnpm --filter @orc/web e2e:m4` takes about 17 s, most of it waiting for the indexer's 15 s
+  reconcile tick before the session shows as owned.
+- PR status appears on session cards only, through `PrChip`; worktree rows and the review summary
+  card do not refresh it (the card keeps `No PR yet` after PR creation).
+- From the M4 manual check: the PR body repeats `## Summary` when the repo template starts with one;
+  `refs/orchestrator/reverts/<epochMs>` is not pruned on archive; the review timeline hides `safety`
+  checkpoints.
+- Still open from Phase 3: `repos[].setup/run/archive` are served unredacted on
+  `GET /api/projects/:id`; the pair-form redaction gaps in `apps/daemon/src/http/redact-out.ts`;
+  `usage.updated` still needs a key-aware over-redaction check (this phase types that event).
+
+**Phase 4 exit criteria not confirmed** — recorded in [`phase-4-evidence.md`](phase-4-evidence.md):
+- Plan approval (approve and reject with feedback) in the real `claude` TUI; `PLAN_KEYS` in
+  `apps/daemon/src/services/review/plan-keys.ts` is unconfirmed.
+- Discovery on the real machine and a worktree made by a real `/conductor` run.
+- A `turn` checkpoint end to end, open-in (IDE/Terminal/Finder), backmerge, and a failing-check or
+  changes-requested `pr_event` item outside unit tests.
+- Every M4 run used fake `claude` and fake `gh`; nothing ran against real GitHub.
+
+**Phase 2 and 3 items still unconfirmed by eye:** see the Starting state of
+[`phase-4-worktrees-review-merge.md`](phase-4-worktrees-review-merge.md#starting-state-what-phase-4-builds-on).
+
 ## Global Constraints
 - **Wiring (P3 rule A2):** Phase 5 services are **constructed** in `buildContext()` (`apps/daemon/src/context.ts`), which both `createDaemon()` and `createTestContext()` call. Their `start()` methods (timers, bus subscriptions) are called **only** in `createDaemon()`, after `buildContext()`.
 - **Core exports (P3 rule A5):** every new pure `@orc/core` module is exported from **both** `packages/core/src/index.ts` and `packages/core/src/browser.ts`. The web app imports values only from `@orc/core/browser`.
