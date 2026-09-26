@@ -13,6 +13,7 @@ import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { DaemonContext } from '../../context.ts';
 import { ServiceError } from '../../services/errors.ts';
+import { runAudited } from '../../services/git/audit.ts';
 import { createLaunchService } from '../../services/launch.ts';
 import type { WorktreeService } from '../../services/worktree/worktree.ts';
 import { repoConfigFor } from '../../services/worktree/worktree-write.ts';
@@ -72,7 +73,15 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
       planApproval: b.launch.planApproval,
       worktree: { repo: b.repo, base: b.base, type: b.type, slug: b.slug },
     });
-    const launch = await (ctx.launcher ?? createLaunchService(ctx)).launch(req);
+    const launcher = ctx.launcher ?? createLaunchService(ctx);
+    const launch = await runAudited(
+      ctx,
+      'user',
+      'session.launch',
+      path,
+      { source: b.launch.source, repo: b.repo, branch, ...(b.ticket ? { ticket: b.ticket } : {}) },
+      () => launcher.launch(req),
+    );
     const view =
       svc()
         .list({ repo: b.repo })

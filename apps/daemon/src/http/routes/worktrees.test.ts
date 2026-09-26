@@ -101,6 +101,25 @@ describe('POST /worktrees', () => {
     expect(body.launch.ptyId).toBeTruthy();
     expect(pty.spawned.at(-1)?.cwd).toBe(wtPath(repo));
   });
+
+  it('records the launch as session.launch', async () => {
+    const { ctx, post, repo } = setup();
+    const r = await post('/worktrees', {
+      ...createBody(repo),
+      confirm: true,
+      launch: { source: 'claude', prompt: 'go', planApproval: false },
+    });
+    expect(r.status).toBe(200);
+    const audit = ctx.audit as ReturnType<typeof memoryAudit>;
+    const launches = audit.entries.filter((e) => e.action === 'session.launch');
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toMatchObject({
+      actor: 'user',
+      target: wtPath(repo),
+      result: 'ok',
+      params: { source: 'claude', repo: repo.dir, branch: 'feat/SAF-90-routes' },
+    });
+  });
 });
 
 describe('worktree listing, scripts, sync and archive', () => {

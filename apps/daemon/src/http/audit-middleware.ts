@@ -1,6 +1,7 @@
 import type { AuditActor } from '@orc/core';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { DaemonContext } from '../context.ts';
+import { withAuditScope } from '../services/audit/audit.ts';
 
 export interface AuditedRoute {
   method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'PUT';
@@ -11,8 +12,8 @@ export interface AuditedRoute {
   before?: (m: RegExpExecArray, ctx: DaemonContext) => Record<string, unknown>;
   /**
    * `'service'`: the service behind this route already records `action` through `runAudited`
-   * (phase 4 git/gh/pty writes), so the middleware lists the route for coverage and does not write
-   * a second entry.
+   * (phase 4 git/gh/pty writes). The middleware writes an entry only when the request fails
+   * before the service recorded that action (bad body, unknown path, ownership check).
    */
   recordedBy?: 'service';
 }
@@ -243,15 +244,21 @@ async function readJsonBody(c: Context): Promise<Record<string, unknown>> {
 export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
   return async (c, next) => {
     const hit = matchAuditedRoute(c.req.method, c.req.path);
-    if (!hit || hit.route.recordedBy === 'service') {
+    if (!hit) {
       await next();
       return;
     }
     const audit = ctx.audit;
     const body = await readJsonBody(c);
     const before = hit.route.before?.(hit.m, ctx) ?? {};
+    const action = typeof hit.route.action === 'string' ? hit.route.action : hit.route.action(body);
 
-    await next();
+    if (hit.route.recordedBy === 'service') {
+      const recorded = await withAuditScope(next);
+      if (c.res.status < 400 || recorded.has(action)) return;
+    } else {
+      await next();
+    }
 
     const res = c.res;
     const parsed: unknown = (res.headers.get('content-type') ?? '').includes('application/json')
@@ -275,7 +282,7 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     audit.record({
       actor: actorOf(c),
       actorDetail: c.req.header('user-agent')?.slice(0, 120) ?? null,
-      action: typeof hit.route.action === 'string' ? hit.route.action : hit.route.action(body),
+      action,
       target: hit.route.target(hit.m, body),
       params: { ...rest, ...c.req.query(), ...before, ...outcome, status: res.status },
       result,

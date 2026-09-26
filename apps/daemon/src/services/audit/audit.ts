@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { type AuditActor, type AuditEntry, type DenyVerdict, redact } from '@orc/core';
 import type { OrcDb } from '../../db/client.ts';
@@ -63,11 +64,22 @@ export function createAuditService(opts: { db: OrcDb; bus?: EventBus; now?: () =
   };
 }
 
+/** Actions recorded through `audited()` while the current request runs; see `withAuditScope`. */
+const auditScope = new AsyncLocalStorage<Set<string>>();
+
+/** Runs `fn` and returns the set of actions that `audited()` recorded inside it. */
+export async function withAuditScope(fn: () => Promise<void>): Promise<Set<string>> {
+  const actions = new Set<string>();
+  await auditScope.run(actions, fn);
+  return actions;
+}
+
 export async function audited<T>(
   audit: AuditService,
   meta: Omit<AuditEntry, 'id' | 'ts' | 'result' | 'error'>,
   fn: () => Promise<T>,
 ): Promise<T> {
+  auditScope.getStore()?.add(meta.action);
   let value: T;
   try {
     value = await fn();
