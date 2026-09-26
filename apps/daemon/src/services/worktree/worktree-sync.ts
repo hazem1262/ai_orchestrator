@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import type { AuditActor } from '@orc/core';
 import { execa } from 'execa';
 import { getWorktree, markWorktreeArchived, type WorktreeRow } from '../../db/repos/worktrees.ts';
+import { revertRefPrefix } from '../diff/diff.ts';
 import { runAudited } from '../git/audit.ts';
 import { GitError, git, gitOut } from '../git/exec.ts';
 import type { SyncPreviewResult } from './worktree.ts';
@@ -61,6 +62,14 @@ export async function syncToMain(
   });
 }
 
+async function pruneRevertRefs(repo: string, prefix: string): Promise<void> {
+  const refs = (await gitOut(repo, ['for-each-ref', '--format=%(refname)', prefix]))
+    .split('\n')
+    .filter((r) => r.startsWith(prefix));
+  // Sequential: parallel `update-ref -d` calls contend for the packed-refs lock.
+  for (const ref of refs) await gitOut(repo, ['update-ref', '-d', ref]);
+}
+
 export async function archiveWorktree(
   d: WorktreeDeps,
   path: string,
@@ -82,6 +91,7 @@ export async function archiveWorktree(
           `${path} was not created by the app; confirm explicitly to archive it`,
         );
       }
+      const reverts = revertRefPrefix(path);
       if (existsSync(path)) {
         const dirty = await dirtyFiles(path);
         if (dirty.length > 0)
@@ -96,6 +106,7 @@ export async function archiveWorktree(
       } else {
         await git(row.repo, ['worktree', 'prune']);
       }
+      await pruneRevertRefs(row.repo, reverts);
       const nowIso = d.now().toISOString();
       markWorktreeArchived(ctx.db, path, nowIso);
       ctx.bus.emit({ type: 'worktree.removed', path });

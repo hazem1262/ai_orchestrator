@@ -136,6 +136,15 @@ describe('ShipService.suggest and createPr', () => {
     expect(s.body).toContain('Ticket: [SAF-60](https://linear.app/wakecap/issue/SAF-60)');
   });
 
+  it('writes one ## Summary heading when the PR template already starts with ## Summary', async () => {
+    const { ship, view, write } = await setup();
+    write('.github/pull_request_template.md', '## Summary\n\n<!-- what changed -->\n\n## Testing\n');
+    const s = await ship.suggest(view.path, 'claude:ship');
+    expect(s.body.match(/^## Summary$/gm) ?? []).toHaveLength(1);
+    expect(s.body).toContain('Excluded weekends from the SLA deadline. Added tests.');
+    expect(s.body).toContain('## Testing');
+  });
+
   it('falls back to the branch slug without a recap or template', async () => {
     const { ship, view } = await setup();
     const s = await ship.suggest(view.path, null);

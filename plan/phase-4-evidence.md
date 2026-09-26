@@ -242,8 +242,13 @@ chunks over 500 kB: `review._source._id-*.js` 1,073,570 bytes and `_id-*.js` 746
 
 ## Findings raised by this check
 
-1. PR body repeats `## Summary` (criterion 10).
-2. Review summary card keeps `No PR yet` after PR creation (criterion 6).
-3. `refs/orchestrator/reverts/<epochMs>` survives the worktree archive (criterion 9).
-4. Safety checkpoints are hidden on the review page timeline (criterion 8).
+1. PR body repeats `## Summary` (criterion 10). Fixed in `99266f0`: the summary goes under the
+   template's own `## Summary` heading.
+2. Review summary card keeps `No PR yet` after PR creation (criterion 6). Fixed in `7a481aa`: the
+   ship panel refetches the review summary once the PR status loads.
+3. `refs/orchestrator/reverts/<epochMs>` survives the worktree archive (criterion 9). Fixed in
+   `8ef6f37`: revert refs are `refs/orchestrator/reverts/<worktree-hash>/<epochMs>` and archive
+   deletes that worktree's refs.
+4. Safety checkpoints are hidden on the review page timeline (criterion 8). Fixed in `7051f56`:
+   they are listed as `Safety (turn N)`.
 5. `review._source._id-*.js` is 1.07 MB and `_id-*.js` 747 kB, both above Vite's 500 kB warning.

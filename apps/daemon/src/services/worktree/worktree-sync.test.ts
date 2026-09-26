@@ -7,6 +7,7 @@ import { makeTempRepo, type TempRepo } from '../../../test/git-fixture.ts';
 import { createTestContext } from '../../../test/helpers.ts';
 import { memoryAudit, stubSessions } from '../../../test/stubs.ts';
 import { getWorktree, upsertWorktree } from '../../db/repos/worktrees.ts';
+import { createDiffService } from '../diff/diff.ts';
 import { createWorktreeService } from './worktree.ts';
 
 let repo: TempRepo;
@@ -94,6 +95,18 @@ describe('archive', () => {
     expect(removed).toEqual([wt.path]);
     expect(audit.entries.map((e) => [e.action, e.result])).toContainEqual(['worktree.archive', 'ok']);
     expect(svc.list({ state: 'active' }).some((w) => w.path === wt.path)).toBe(false);
+  });
+
+  it('prunes the revert safety refs the worktree left behind', async () => {
+    const { ctx, svc, wt, write } = await setup();
+    write('src/a.ts', 'export const a = 42;\n');
+    await createDiffService(ctx).revert(wt.path, 'src/a.ts', {});
+    const reverts = () =>
+      repo.git('for-each-ref', '--format=%(refname)', 'refs/orchestrator/reverts/').trim();
+    expect(reverts()).toMatch(/^refs\/orchestrator\/reverts\/\S+$/);
+    await svc.archive(wt.path);
+    expect(existsSync(wt.path)).toBe(false);
+    expect(reverts()).toBe('');
   });
 
   it('protects external worktrees and the main checkout', async () => {

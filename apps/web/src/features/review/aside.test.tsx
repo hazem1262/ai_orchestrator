@@ -1,11 +1,12 @@
 import { ApiRequestError } from '@orc/api-contract';
-import type { CheckpointRecord, ReviewSummary } from '@orc/core';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import type { CheckpointRecord, PrStatus, ReviewSummary } from '@orc/core';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
 import { renderWithProviders } from '@/test/render.tsx';
 import { CheckpointTimeline } from './CheckpointTimeline.tsx';
 import { PresetButtons } from './PresetButtons.tsx';
+import { ReviewAside } from './ReviewAside.tsx';
 import { ShipPanel } from './ShipPanel.tsx';
 import { SummaryCard } from './SummaryCard.tsx';
 
@@ -52,6 +53,66 @@ describe('SummaryCard', () => {
     expect(screen.getByText('No recap yet')).toBeDefined();
     expect(screen.getByText('No PR yet')).toBeDefined();
   });
+
+  it('shows the PR once the ship panel has created it', async () => {
+    const ref = { repo: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' };
+    const status: PrStatus = {
+      pr: ref,
+      state: 'open',
+      title: 'SAF-1 x',
+      checks: 'none',
+      review: 'none',
+      updatedAt: 'x',
+      headRef: 'feat/SAF-1-x',
+      failedChecks: [],
+    };
+    // Daemon behaviour: `POST /ship/pr` stores prUrl on the worktree; the PR status lands in the
+    // pr cache only when `GET /github/pr` (or the poller) fetches it.
+    let prUrl: string | null = null;
+    let cached: PrStatus | null = null;
+    const base = summary();
+    const api = createFakeApi({
+      reviewGet: async () => ({
+        ...base,
+        worktree: base.worktree ? { ...base.worktree, prUrl, prStatus: cached } : null,
+        pr: cached,
+      }),
+      diffGet: async () => ({ cwd: '/w', from: 'b', to: 'WORKTREE', files: [], additions: 0, deletions: 0 }),
+      checkpointsList: async () => [],
+      shipSuggest: async () => ({
+        message: 'feat: SAF-1 x',
+        title: 'SAF-1 x',
+        body: 'b',
+        base: 'main',
+        branch: 'feat/SAF-1-x',
+        ticket: 'SAF-1',
+      }),
+      shipPr: vi.fn(async (b: { confirm: boolean }) => {
+        if (!b.confirm) throw needConfirm('pr?');
+        prUrl = ref.url;
+        return ref;
+      }) as unknown as FakeApi['shipPr'],
+      githubPr: async () => {
+        cached = status;
+        return status;
+      },
+    });
+    renderWithProviders(
+      <ReviewAside source="claude" id="s1" selected={{ kind: 'worktree' }} select={() => {}} />,
+      { api },
+    );
+    const card = await screen.findByRole('region', { name: 'Review summary' });
+    expect(within(card).getByText('No PR yet')).toBeDefined();
+    await waitFor(() =>
+      expect((screen.getByLabelText('PR title') as HTMLInputElement).value).toBe('SAF-1 x'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Create PR' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create PR' }).at(-1) as HTMLElement);
+    expect(await screen.findByText('#7 · open · checks none')).toBeDefined();
+    await waitFor(() => expect(within(card).queryByText('No PR yet')).toBeNull());
+    expect(within(card).getByText(/PR #7/)).toBeDefined();
+  });
 });
 
 describe('CheckpointTimeline', () => {
@@ -97,6 +158,39 @@ describe('CheckpointTimeline', () => {
     expect(await screen.findByText('Restore the files in /w to turn 1.')).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
     await waitFor(() => expect(rewind).toHaveBeenLastCalledWith('c1', { confirm: true }));
+  });
+
+  it('lists safety checkpoints alongside turn checkpoints', async () => {
+    const cps: CheckpointRecord[] = [
+      {
+        id: 'c1',
+        sessionId: 's1',
+        worktreePath: '/w',
+        turn: 1,
+        ref: 'r1',
+        commit: 'a',
+        createdAt: '2026-09-17T10:00:00Z',
+        kind: 'turn',
+      },
+      {
+        id: 'c2',
+        sessionId: 's1',
+        worktreePath: '/w',
+        turn: 2,
+        ref: 'r2',
+        commit: 'b',
+        createdAt: '2026-09-17T10:05:00Z',
+        kind: 'safety',
+      },
+    ];
+    renderWithProviders(
+      <CheckpointTimeline sessionPk="claude:s1" selected={{ kind: 'worktree' }} onSelect={() => {}} />,
+      { api: createFakeApi({ checkpointsList: async () => cps }) },
+    );
+    await screen.findByRole('button', { name: 'Turn 1' });
+    const items = within(screen.getByRole('region', { name: 'Checkpoints' })).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Rewind to turn 2' })).toBeDefined();
   });
 });
 
