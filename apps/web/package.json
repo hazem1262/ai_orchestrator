@@ -11,6 +11,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@git-diff-view/react": "^0.1.7",
     "@orc/api-contract": "workspace:*",
     "@orc/core": "workspace:*",
     "@tanstack/react-query": "^5.103.1",
