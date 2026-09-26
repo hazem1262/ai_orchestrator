@@ -320,6 +320,21 @@ describe('indexer', () => {
     expect(getSessionByPk(db, 'claude:s-new')?.firstPrompt).toBe('watched prompt');
   });
 
+  it('picks up a claude projects dir created after watch() started', async () => {
+    rmSync(join(homes.claudeHome, 'projects'), { recursive: true, force: true });
+    rmSync(join(homes.claudeHome, 'history.jsonl'), { force: true });
+    rmSync(join(homes.codexHome, 'sessions'), { recursive: true, force: true });
+    await indexer.scanAll();
+    await indexer.watch();
+    writeClaudeSession(homes, {
+      sessionId: 's-late',
+      cwd: join(homes.root, 'work', 'Wakecap'),
+      prompt: 'late prompt',
+    });
+    await waitForIndexed(bus, 'claude:s-late', 8000);
+    expect(getSessionByPk(db, 'claude:s-late')?.firstPrompt).toBe('late prompt');
+  });
+
   // RECONCILE NARROWING: the periodic sweep may skip a Codex rollout the index already knows is
   // `automated` (`codex_sdk_ts`, hidden in the UI by default), but only for the sweep itself
   // (never scanAll(), never the watcher's own indexFile call when an OS event does arrive), and

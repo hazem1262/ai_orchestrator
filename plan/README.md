@@ -31,38 +31,40 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 | 1 | [History, search & resume](phase-1-history-search-resume.md) | M1 | F3, F4 (resume/fork/adopt), F13, F2 (basic) | 20 | ☑ done (2026-09-21) — 20/20 tasks, 289 unit tests + 1 perf suite + 3 Playwright e2e, all green |
 | 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☑ done (2026-09-23) — 20/20 tasks, merged as `e817f1b`; 1116 unit tests + 7 Playwright e2e, all green; exit check in [phase-2-evidence.md](phase-2-evidence.md) |
 | 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☑ done (2026-09-24) — 19/19 tasks, merged into `main` with `--no-ff`; 1339 unit tests in 117 files + 9 Playwright e2e, all green; exit check in [phase-3-evidence.md](phase-3-evidence.md) |
-| 4 | [Worktrees, review & merge](phase-4-worktrees-review-merge.md) | M4 | F17, F18, F11 (GitHub), plan approval | 22 | ☐ |
+| 4 | [Worktrees, review & merge](phase-4-worktrees-review-merge.md) | M4 | F17, F18, F11 (GitHub), plan approval | 22 | ☑ done (2026-09-26) — 22/22 tasks; 1509 unit tests in 156 files + 9 Playwright e2e + 1 M4 Playwright e2e, all green; plan approval not yet checked in the real TUI; exit check in [phase-4-evidence.md](phase-4-evidence.md) |
 | 5 | [Streams, analytics, limits, recaps, goals](phase-5-streams-analytics-limits-recaps-goals.md) | M5 | F6, F7, F19, F14, F16, F10 | 22 | ☐ |
 | 6 | [Linear, Slack & remote](phase-6-linear-slack-remote.md) | M6 | F11 (Linear, Slack), F22, spike S9 | 22 | ☐ |
 | 7 | [Automations, compare, supervisor](phase-7-automations-compare-supervisor.md) | M7 | F20, F21, F23, AGNC (S4), Tauri, MCP server, F12 picks | 25 | ☐ |
 
 ## Resume here
 
-**Where the work stands:** Phases 0 to 3 are done and merged. Phase 4 is the next phase and has not
-started.
+**Where the work stands:** Phases 0 to 4 are done. Phase 4 is complete on branch
+`phase/4-worktrees-review-merge` and goes into `main` with `--no-ff` as
+`merge: phase 4 worktrees, review and merge`. Phase 5 is next.
 
-**Repository state** (after the Phase 3 merge, 2026-09-24)
+**Repository state** (expected after the Phase 4 merge, 2026-09-26)
 
 | Fact | Value | Proof |
 |---|---|---|
-| `main` head | `Merge phase 3: session detail, safety and audit` | `git log --oneline -1 main` |
-| Unpushed | `main` is **35 commits ahead** of `origin/main` (still at `589f8ae`); nothing was pushed | `git rev-list --count origin/main..main` |
-| Phase 3 commits | `a902326`…`bb63300` (18 task commits) plus the Task 19 exit commit | `git log --oneline main^1..main^2` |
-| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive`, `phase/3-session-detail-safety-audit`, `fix/macos-notify-parse` and `docs/phase-3-resume-pointer`, all merged into `main` and safe to delete | `git branch --merged main` |
+| `main` head | `merge: phase 4 worktrees, review and merge` | `git log --oneline -1 main` |
+| Unpushed | `origin/main` is at `440fd45` (the Phase 3 merge). After the Phase 4 merge `main` is **29 commits ahead**: 28 branch commits plus the merge commit. Nothing from Phase 4 was pushed | `git rev-list --count origin/main..main` |
+| Phase 4 commits | `ab42440`…`d5089fc` (21 task commits), fixes `2537f60`, `f76d12e`, `644bc3f`, `f9d2edb`, the e2e commit `8adffc8` and the Task 22 docs commit; `5867531` (a Phase 3 docs note) is also on the branch | `git log --oneline main^1..main^2` |
+| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive`, `phase/3-session-detail-safety-audit`, `fix/macos-notify-parse`, `docs/phase-3-resume-pointer` and, after the merge, `phase/4-worktrees-review-merge` — all merged into `main` and safe to delete | `git branch --merged main` |
 
-**Gates** (run 2026-09-24 on the Phase 3 branch before the merge): `pnpm run lint` clean with 1 info
+**Gates** (run 2026-09-26 on the Phase 4 branch at `8adffc8`): `pnpm run lint` clean with 1 info
 (biome asks for `biome migrate` on its own config), `pnpm run typecheck` clean, `pnpm run test` →
-1339 tests in 117 files, `pnpm run check:fixtures` clean, `pnpm --filter @orc/web e2e` → 9
-Playwright tests green.
+1509 tests in 156 files, `pnpm run check:fixtures` clean, `pnpm --filter @orc/web e2e` → 9
+Playwright tests green, `pnpm --filter @orc/web e2e:m4` → 1 Playwright test green (18.4 s).
 
 **How to run the app:** `pnpm dev` from the repo root. The web app serves on
 `http://localhost:5173` and the daemon on `http://127.0.0.1:4317`. Every API and WS request needs
 the token from `~/.orchestrator/token`, sent as the `x-orc-token` header.
 
-**What Phase 4 starts from:** the branch to cut, the baseline numbers, the carried items and the
-Phase 3 criteria still unconfirmed by eye are all in
-[`phase-4-worktrees-review-merge.md` → *Starting state*](phase-4-worktrees-review-merge.md#starting-state-what-phase-4-builds-on).
-Phase 3's own exit check is in [`phase-3-evidence.md`](phase-3-evidence.md).
+**What Phase 5 starts from:** the branch to cut, the baseline numbers, the carried items and the
+Phase 4 criteria still unconfirmed are all in
+[`phase-5-streams-analytics-limits-recaps-goals.md` → *Starting state*](phase-5-streams-analytics-limits-recaps-goals.md#starting-state-what-phase-5-builds-on).
+Phase 4's own exit check is in [`phase-4-evidence.md`](phase-4-evidence.md) and the manual
+scratch-repo check in [`spikes/M4-manual.md`](spikes/M4-manual.md).
 
 Total: **161 tasks**, roughly 1,030 individually checkable steps.
 

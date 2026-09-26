@@ -73,6 +73,25 @@ export const OrcConfig = z
       )
       .default({}),
     archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
+    github: z
+      .object({
+        enabled: z.boolean().default(true),
+        pollSeconds: z.number().int().min(30).default(90),
+        ticketUrlTemplate: z.string().default('https://linear.app/wakecap/issue/{ticket}'),
+        protectedBranches: z
+          .array(z.string())
+          .default(['main', 'master', 'develop', 'staging', 'testing', 'production']),
+      })
+      .prefault({}),
+    worktrees: z
+      .object({
+        autoArchiveOnMerge: z.boolean().default(true),
+        scratchpadRoots: z.array(z.string()).default(['/private/tmp']),
+        scanSiblings: z.boolean().default(true),
+        implementTicketMode: z.enum(['precreate', 'conductor']).default('conductor'),
+        checkpointsPerSession: z.number().int().positive().default(200),
+      })
+      .prefault({}),
     safety: z
       .object({
         extraDenyPatterns: z.array(z.string()).default([]),

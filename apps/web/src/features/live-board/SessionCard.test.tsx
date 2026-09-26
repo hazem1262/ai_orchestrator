@@ -70,7 +70,7 @@ describe('SessionCard', () => {
     expect(c.getByText('$1.25')).toBeTruthy();
     expect(c.getByText('ctx 42%')).toBeTruthy();
     expect(c.getByText('SAF-1787')).toBeTruthy();
-    expect(c.getByRole('link', { name: '#231' }).getAttribute('href')).toBe(
+    expect(c.getByRole('link', { name: 'PR #231' }).getAttribute('href')).toBe(
       'https://github.com/example-org/svc/pull/231',
     );
     expect(c.getByRole('list', { name: 'Stage' }).querySelector('[aria-current="step"]')?.textContent).toBe(
@@ -80,7 +80,9 @@ describe('SessionCard', () => {
     expect(c.getByText('2 jobs')).toBeTruthy();
     expect(c.getByText('bypass')).toBeTruthy();
     expect(c.getByText('3 agents')).toBeTruthy();
-    expect((c.getByRole('button', { name: 'Diff' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(c.getByRole('link', { name: 'Diff' }).getAttribute('href')).toBe(
+      `/review/${full.source}/${full.id}`,
+    );
   });
 
   it('marks a non-attention status and drops Stop once the session ended', async () => {

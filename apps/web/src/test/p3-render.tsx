@@ -1,10 +1,10 @@
-import type { ApiClient, P2Methods, P3Methods } from '@orc/api-contract';
+import type { ApiClient, P2Methods, P3Methods, Phase4Client } from '@orc/api-contract';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 
-/** The full client surface `createApiClient` returns: phase 1 routes plus the phase 2 and phase 3 methods. */
-export type P3FakeApi = ApiClient & P2Methods & P3Methods;
+/** The full client surface `createApiClient` returns: phase 1 routes plus the phase 2, 3 and 4 methods. */
+export type P3FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client;
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY } } });

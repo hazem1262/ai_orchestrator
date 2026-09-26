@@ -239,3 +239,68 @@ export const auditLog = sqliteTable(
     index('audit_log_action_idx').on(t.action),
   ],
 );
+
+export const worktrees = sqliteTable(
+  'worktrees',
+  {
+    path: text('path').primaryKey(),
+    repo: text('repo').notNull(),
+    branch: text('branch').notNull(),
+    base: text('base'),
+    ticket: text('ticket'),
+    dirty: integer('dirty', { mode: 'boolean' }).notNull().default(false),
+    prUrl: text('pr_url'),
+    state: text('state', { enum: ['active', 'archived'] })
+      .notNull()
+      .default('active'),
+    createdByApp: integer('created_by_app', { mode: 'boolean' }).notNull().default(false),
+    head: text('head'),
+    isMain: integer('is_main', { mode: 'boolean' }).notNull().default(false),
+    origin: text('origin').notNull(),
+    sessionPksJson: text('session_pks_json').notNull().default('[]'),
+    projectId: text('project_id'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    archivedAt: text('archived_at'),
+  },
+  (t) => [index('worktrees_repo_idx').on(t.repo), index('worktrees_branch_idx').on(t.branch)],
+);
+
+export const checkpoints = sqliteTable(
+  'checkpoints',
+  {
+    id: text('id').primaryKey(),
+    sessionPk: text('session_pk').notNull(),
+    sessionId: text('session_id').notNull(),
+    worktreePath: text('worktree_path').notNull(),
+    turn: integer('turn').notNull(),
+    ref: text('ref').notNull(),
+    commit: text('commit').notNull(),
+    kind: text('kind', { enum: ['turn', 'safety', 'manual'] }).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('checkpoints_ref_uq').on(t.ref),
+    index('checkpoints_session_idx').on(t.sessionPk),
+    index('checkpoints_worktree_idx').on(t.worktreePath),
+  ],
+);
+
+export const prCache = sqliteTable(
+  'pr_cache',
+  {
+    key: text('key').primaryKey(),
+    repo: text('repo').notNull(),
+    number: integer('number').notNull(),
+    url: text('url').notNull(),
+    state: text('state', { enum: ['open', 'closed', 'merged'] }).notNull(),
+    title: text('title').notNull(),
+    checks: text('checks', { enum: ['pending', 'success', 'failure', 'none'] }).notNull(),
+    review: text('review', { enum: ['approved', 'changes_requested', 'review_required', 'none'] }).notNull(),
+    headRef: text('head_ref'),
+    failedChecksJson: text('failed_checks_json').notNull().default('[]'),
+    updatedAt: text('updated_at').notNull(),
+    fetchedAt: text('fetched_at').notNull(),
+  },
+  (t) => [index('pr_cache_head_idx').on(t.headRef)],
+);

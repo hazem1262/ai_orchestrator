@@ -1,5 +1,5 @@
 import type { LiveEvent } from '@orc/api-contract';
-import type { Session, Source } from '@orc/core';
+import type { Session, Source, WorktreeView } from '@orc/core';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { getToken } from './client.ts';
@@ -20,6 +20,44 @@ export const pkOf = (s: { source: Source; id: string }): string => `${s.source}:
 export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
   applyP2LiveEvent(qc, e);
   applyP3LiveEvent(qc, e);
+  applyP4LiveEvent(qc, e);
+}
+
+/** Phase 4: worktree lists are patched in place in every cached filter; PR status is keyed by repo and number. */
+function applyP4LiveEvent(qc: QueryClient, e: WireEvent): void {
+  switch (e.type) {
+    case 'worktree.updated': {
+      // Appends to filtered lists too; they refetch on focus, so a briefly extra row is acceptable.
+      for (const [key, list] of qc.getQueriesData<WorktreeView[]>({ queryKey: ['worktrees'] })) {
+        if (!list) continue;
+        const i = list.findIndex((w) => w.path === e.worktree.path);
+        qc.setQueryData(
+          key,
+          i === -1 ? [...list, e.worktree] : list.map((w, j) => (j === i ? e.worktree : w)),
+        );
+      }
+      void qc.invalidateQueries({ queryKey: ['review'] });
+      return;
+    }
+    case 'worktree.removed':
+      for (const [key, list] of qc.getQueriesData<WorktreeView[]>({ queryKey: ['worktrees'] })) {
+        if (list)
+          qc.setQueryData(
+            key,
+            list.filter((w) => w.path !== e.path),
+          );
+      }
+      return;
+    case 'pr.updated':
+      qc.setQueryData(['pr', e.status.pr.repo, e.status.pr.number], e.status);
+      void qc.invalidateQueries({ queryKey: ['review'] });
+      return;
+    case 'checkpoint.created':
+      void qc.invalidateQueries({ queryKey: ['checkpoints'] });
+      return;
+    default:
+      return;
+  }
 }
 
 function applyP2LiveEvent(qc: QueryClient, e: WireEvent): void {

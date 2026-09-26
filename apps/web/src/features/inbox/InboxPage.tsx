@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.t
 import { formatDuration } from '@/features/live-board/sort.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
+import { InboxItemActions } from './InboxItemActions.tsx';
 import { snoozePresets } from './snooze.ts';
 import { useInboxKeys } from './useInboxKeys.ts';
 
@@ -223,6 +224,7 @@ function InboxRow(props: {
           Reopen
         </Button>
       )}
+      {triageable ? <InboxItemActions item={item} /> : null}
     </li>
   );
 }

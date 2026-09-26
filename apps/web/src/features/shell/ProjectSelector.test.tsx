@@ -56,4 +56,27 @@ describe('ProjectSelector', () => {
     });
     await waitFor(() => expect(useProjectStore.getState().projectId).toBe('wakecap'));
   });
+
+  it('starts on the configured default project when no choice is stored', async () => {
+    localStorage.removeItem('orc.project');
+    useProjectStore.setState(useProjectStore.getInitialState(), true);
+    // The daemon lists the configured `defaultProjectId` first.
+    const configured: Project[] = [
+      { id: 'e2e', name: 'E2E', pathPrefixes: ['/e'], hidden: false, lastActivityAt: null, sessionCount: 0 },
+      ...projects,
+    ];
+    renderWithProviders(<ProjectSelector />, {
+      api: createFakeApi({ projectsList: vi.fn(async () => configured) }),
+    });
+    await waitFor(() => expect(useProjectStore.getState().projectId).toBe('e2e'));
+  });
+
+  it('keeps a stored user choice over the configured default', async () => {
+    useProjectStore.getState().setProjectId('forza');
+    renderWithProviders(<ProjectSelector />, {
+      api: createFakeApi({ projectsList: vi.fn(async () => projects) }),
+    });
+    await screen.findByRole('option', { name: 'Forza (1)' });
+    expect(useProjectStore.getState().projectId).toBe('forza');
+  });
 });

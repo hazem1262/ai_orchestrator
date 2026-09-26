@@ -1,6 +1,7 @@
 import type { AuditActor } from '@orc/core';
 import type { Context, MiddlewareHandler } from 'hono';
 import type { DaemonContext } from '../context.ts';
+import { withAuditScope } from '../services/audit/audit.ts';
 
 export interface AuditedRoute {
   method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'PUT';
@@ -9,6 +10,12 @@ export interface AuditedRoute {
   target: (m: RegExpExecArray, body: Record<string, unknown>) => string | null;
   /** Runs before the handler (e.g. to capture state the handler destroys). */
   before?: (m: RegExpExecArray, ctx: DaemonContext) => Record<string, unknown>;
+  /**
+   * `'service'`: the service behind this route already records `action` through `runAudited`
+   * (phase 4 git/gh/pty writes). The middleware writes an entry only when the request fails
+   * before the service recorded that action (bad body, unknown path, ownership check).
+   */
+  recordedBy?: 'service';
 }
 
 const SRC = '(claude|codex|agnc)';
@@ -71,6 +78,119 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     pattern: new RegExp(`^/api/sessions/${SRC}/([^/]+)/export$`),
     action: 'session.export',
     target: sessionTarget,
+  }, // Phase 4 writes. Each service records the action itself through `runAudited`, with the
+  // service-level target and params, so these rows only mark the routes as audited.
+  {
+    method: 'POST',
+    pattern: /^\/api\/worktrees$/,
+    action: 'worktree.create',
+    target: (_m, b) => str(b.repo),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/worktrees\/script$/,
+    action: 'worktree.script',
+    target: (_m, b) => str(b.path),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/worktrees\/open$/,
+    action: 'worktree.open',
+    target: (_m, b) => str(b.path),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/worktrees\/sync$/,
+    action: 'worktree.sync',
+    target: (_m, b) => str(b.path),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/worktrees\/archive$/,
+    action: 'worktree.archive',
+    target: (_m, b) => str(b.path),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/diff\/revert$/,
+    action: 'git.revert',
+    target: (_m, b) => str(b.cwd),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/checkpoints$/,
+    action: 'checkpoint.create',
+    target: (_m, b) => str(b.sessionPk),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/checkpoints\/([^/]+)\/rewind$/,
+    action: 'checkpoint.rewind',
+    target: (m) => dec(m[1]),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/api/review/${SRC}/([^/]+)/comments$`),
+    action: 'review.send',
+    target: sessionTarget,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ship\/commit$/,
+    action: 'git.commit',
+    target: (_m, b) => str(b.cwd),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ship\/push$/,
+    action: 'git.push',
+    target: (_m, b) => str(b.cwd),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ship\/pr$/,
+    action: 'pr.create',
+    target: (_m, b) => str(b.cwd),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ship\/merge$/,
+    action: 'pr.merge',
+    target: (_m, b) => (isObj(b.pr) ? `${String(b.pr.repo)}#${String(b.pr.number)}` : null),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/ship\/backmerge$/,
+    action: 'ship.backmerge',
+    target: (_m, b) => str(b.cwd),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/api/sessions/${SRC}/([^/]+)/plan/approve$`),
+    action: 'plan.approve',
+    target: sessionTarget,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/api/sessions/${SRC}/([^/]+)/plan/reject$`),
+    action: 'plan.reject',
+    target: sessionTarget,
+    recordedBy: 'service',
   },
 ];
 
@@ -85,6 +205,11 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
   { method: 'PUT', path: '/api/config/notifications', why: 'local app configuration' },
   { method: 'POST', path: '/api/hooks', why: 'inbound events from Claude hooks, not an app action' },
   { method: 'POST', path: '/api/safety/deny-check', why: 'read-only evaluation' },
+  {
+    method: 'POST',
+    path: '/api/worktrees/discover',
+    why: 'refreshes the local worktree index; read-only git',
+  },
 ];
 
 export function matchAuditedRoute(
@@ -126,8 +251,14 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     const audit = ctx.audit;
     const body = await readJsonBody(c);
     const before = hit.route.before?.(hit.m, ctx) ?? {};
+    const action = typeof hit.route.action === 'string' ? hit.route.action : hit.route.action(body);
 
-    await next();
+    if (hit.route.recordedBy === 'service') {
+      const recorded = await withAuditScope(next);
+      if (c.res.status < 400 || recorded.has(action)) return;
+    } else {
+      await next();
+    }
 
     const res = c.res;
     const parsed: unknown = (res.headers.get('content-type') ?? '').includes('application/json')
@@ -151,7 +282,7 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     audit.record({
       actor: actorOf(c),
       actorDetail: c.req.header('user-agent')?.slice(0, 120) ?? null,
-      action: typeof hit.route.action === 'string' ? hit.route.action : hit.route.action(body),
+      action,
       target: hit.route.target(hit.m, body),
       params: { ...rest, ...c.req.query(), ...before, ...outcome, status: res.status },
       result,

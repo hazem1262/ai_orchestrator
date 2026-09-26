@@ -25,7 +25,7 @@ earlier tasks against the fixture daemon.
 | 7 | Safety: badges, redaction, shared deny-list | ✅ verified (unit + real data) |
 | 8 | Audit log (F24) | ✅ verified (unit + coverage guard + e2e) |
 | 9 | Command palette (F8) | ✅ verified (unit + e2e) |
-| 10 | **Exit:** a `/conductor` session can be understood without the terminal | ◐ verified by API and on fixtures; not looked at by eye on a real session |
+| 10 | **Exit:** a `/conductor` session can be understood without the terminal | ✅ verified (API + fixtures); confirmed by eye by the user on 2026-09-24 in the running app |
 | 11 | **Exit:** every app action appears in the audit log | ✅ verified (coverage guard + e2e) |
 | 12 | Suite green | ✅ lint, typecheck, 1339 unit tests, fixtures clean, 9/9 Playwright |
 
@@ -156,8 +156,13 @@ earlier tasks against the fixture daemon.
 
 On fixtures, e2e test 1 walks every tab of `s-subagents`. On real data, the API returns stats for
 all 167 turns, deliverables for 70 of them, 84 agents with a conductor chain, 12 PRs, 14 tickets,
-matched plans, the bypass badge and 3 prod touches. **Nobody has opened a real `/conductor`
-session in the browser and read it**, so the plan's manual items (a)–(d) are verified by API only.
+matched plans, the bypass badge and 3 prod touches. At the time of the exit check nobody had
+opened a real `/conductor` session in the browser, so the plan's manual items (a)–(d) were verified
+by API only.
+
+**Update 2026-09-24:** confirmed by eye by the user on 2026-09-24 in the running app. The user
+opened a real `/conductor` session and confirmed it is understandable without the terminal: the
+timeline, the Agents tab and the other tabs.
 
 ## 11 — Exit: every app action appears in the audit log
 

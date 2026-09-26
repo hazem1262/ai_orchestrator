@@ -479,16 +479,8 @@ export function createIndexer(deps: IndexerDeps): Indexer {
         join(paths.claudeHome, 'projects'),
         join(paths.claudeHome, 'history.jsonl'),
         join(paths.codexHome, 'sessions'),
-      ].filter((p) => existsSync(p));
-      if (targets.length === 0) return;
-      const w = chokidarWatch(targets, {
-        ignoreInitial: true,
-        ignored: (p, stats) =>
-          p.endsWith('.key') ||
-          basename(p) === 'tool-results' ||
-          (stats?.isFile() === true && !p.endsWith('.jsonl') && !p.endsWith('.meta.json')),
-      });
-      watcher = w;
+      ];
+      const watched = new Set<string>();
       const schedule = (p: string): void => {
         // Debounce per-path: transcripts get appended line-by-line during a live turn, and a
         // partial write mid-append is normal (spike S3) — coalescing bursts into one indexNow
@@ -504,18 +496,49 @@ export function createIndexer(deps: IndexerDeps): Indexer {
           }, deps.debounceMs ?? 100),
         );
       };
-      w.on('add', schedule)
-        .on('change', schedule)
-        .on('unlink', schedule)
-        .on('error', (err: unknown) => log.warn({ err }, 'watcher error'));
-      await new Promise<void>((resolve) => {
-        w.once('ready', () => resolve());
-      });
+      /**
+       * Starts watching every target that exists and is not watched yet. A tool home created
+       * after the daemon started (a first `claude` run) is added on the next reconcile tick, and
+       * that tick's sweep indexes whatever it already holds.
+       */
+      const watchNew = async (): Promise<boolean> => {
+        const fresh = targets.filter((p) => !watched.has(p) && existsSync(p));
+        if (fresh.length === 0) return false;
+        for (const p of fresh) watched.add(p);
+        if (watcher) {
+          watcher.add(fresh);
+          return true;
+        }
+        const w = chokidarWatch(fresh, {
+          ignoreInitial: true,
+          ignored: (p, stats) =>
+            p.endsWith('.key') ||
+            basename(p) === 'tool-results' ||
+            (stats?.isFile() === true && !p.endsWith('.jsonl') && !p.endsWith('.meta.json')),
+        });
+        watcher = w;
+        w.on('add', schedule)
+          .on('change', schedule)
+          .on('unlink', schedule)
+          .on('error', (err: unknown) => log.warn({ err }, 'watcher error'));
+        await new Promise<void>((resolve) => {
+          w.once('ready', () => resolve());
+        });
+        return true;
+      };
+      await watchNew();
       // Belt-and-suspenders against missed native fs events (see reconcileSweep's doc comment):
       // this only starts once chokidar itself is confirmed ready, and every tick is cheap thanks
       // to indexNow's existing fast-skip for files that haven't actually changed.
       reconcileTimer = setInterval(() => {
-        reconcileSweep();
+        watchNew()
+          .then((added) => {
+            if (added) scheduleDetect();
+          })
+          .catch((err: unknown) => log.warn({ err }, 'watching a new tool home failed'))
+          .finally(() => {
+            reconcileSweep();
+          });
       }, deps.reconcileMs ?? 15000);
       reconcileTimer.unref();
     },

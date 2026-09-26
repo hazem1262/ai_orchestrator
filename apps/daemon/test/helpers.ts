@@ -38,9 +38,14 @@ export function createTestContext(
 ): TestContext {
   const { homes: given, isPidAlive, ...overrides } = opts;
   const homes = given ?? makeTempHomes();
+  // `github.enabled: false`: a daemon booted on these homes (`createDaemon` reads this file) must
+  // not start the PR poller against the real `gh` and the developer's real GitHub account.
   saveConfig(
     homes.paths,
-    OrcConfig.parse({ resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE } }),
+    OrcConfig.parse({
+      resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE },
+      github: { enabled: false },
+    }),
   );
   const launches: TestContext['launches'] = [];
   const built = buildContext({

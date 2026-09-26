@@ -225,16 +225,15 @@ describe('LaunchService.launch', () => {
     expect(out).toEqual({ ptyId: 'pty-1', sessionId: null });
   });
 
-  it.each([
-    [{ planApproval: true }, 'planApproval'],
-    [{ worktree: { repo: '/r', base: 'main', type: 'feat', slug: 'x' } }, 'worktree'],
-    [{ compare: [{ source: 'claude' }] }, 'compare'],
-  ])('rejects %j with 501 until later phases', async (over, field) => {
-    const err = await errOf(createLaunchService(ctx).launch(req(over)));
-    expect(err).toBeInstanceOf(LaunchError);
-    expect(err).toMatchObject({ status: 501, code: 'not_implemented', details: { field } });
-    expect(pty.spawned).toHaveLength(0);
-  });
+  it.each([[{ compare: [{ source: 'claude' }] }, 'compare']])(
+    'rejects %j with 501 until later phases',
+    async (over, field) => {
+      const err = await errOf(createLaunchService(ctx).launch(req(over)));
+      expect(err).toBeInstanceOf(LaunchError);
+      expect(err).toMatchObject({ status: 501, code: 'not_implemented', details: { field } });
+      expect(pty.spawned).toHaveLength(0);
+    },
+  );
 
   it('validates cwd, prompt and template variables', async () => {
     const svc = createLaunchService(ctx);

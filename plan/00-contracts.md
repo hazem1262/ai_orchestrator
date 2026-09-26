@@ -122,6 +122,22 @@ apps/web/src/
   routes/                   # TanStack Router file routes
 ```
 
+**P4 folders (as built):**
+```
+packages/core/src/git/            # pure: worktree-porcelain.ts, branch.ts, diff-parse.ts, hunk-select.ts, review-prompt.ts, status-porcelain.ts, index.ts (barrel)
+apps/daemon/src/services/git/     # exec.ts (git/gh wrappers + assertSafeGitArgs force guard), audit.ts (runAudited)
+apps/daemon/src/services/diff/    # diff.ts
+apps/daemon/src/services/review/  # review.ts, plan-approval.ts, plan-keys.ts
+apps/daemon/src/services/worktree/# sources.ts, discover.ts, worktree-read.ts, worktree-write.ts, worktree-sync.ts, glob.ts, worktree.ts, auto-archive.ts
+apps/daemon/src/services/checkpoint/ # checkpoint.ts, snapshot.ts, turn-hook.ts
+apps/daemon/src/services/ship/    # ship.ts
+apps/daemon/src/services/         # + launch-plan-mode.ts (applyPlanMode), launch-prepare.ts (prepareLaunch) beside P2's launch.ts — there is no services/launch/ folder
+apps/daemon/src/connectors/github/# github.ts
+apps/daemon/src/inbox/rules/      # + pr-event.ts, plan-approval.ts
+apps/daemon/src/http/routes/      # + git-guard.ts, worktrees.ts, github.ts, review.ts, ship.ts, plan.ts
+apps/web/src/features/worktrees/  apps/web/src/features/review/  apps/web/src/features/git/
+```
+
 ## 3. Configuration & paths
 
 - **`ORC_HOME`** defaults to `~/.orchestrator`. Tests always set it to a temp dir.
@@ -180,6 +196,19 @@ export const OrcConfig = z.object({
     linearWorkspace: z.string().nullable().default(null),
     planRoots: z.array(z.string()).default(['~/Wakecap/plans']),
   }).prefault({}),
+  github: z.object({                                                                                   // P4
+    enabled: z.boolean().default(true),                    // false → wirePhase4 never starts the PR poller
+    pollSeconds: z.number().int().min(30).default(90),
+    ticketUrlTemplate: z.string().default('https://linear.app/wakecap/issue/{ticket}'),   // used in PR bodies
+    protectedBranches: z.array(z.string()).default(['main', 'master', 'develop', 'staging', 'testing', 'production']),
+  }).prefault({}),
+  worktrees: z.object({                                                                                // P4
+    autoArchiveOnMerge: z.boolean().default(true),
+    scratchpadRoots: z.array(z.string()).default(['/private/tmp']),   // scans <root>/claude-*/… up to depth 6
+    scanSiblings: z.boolean().default(true),
+    implementTicketMode: z.enum(['precreate', 'conductor']).default('conductor'),
+    checkpointsPerSession: z.number().int().positive().default(200),
+  }).prefault({}),
 }).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
@@ -187,7 +216,7 @@ export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
 
 > **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
-`safety` and `links` (P3) use `.prefault({})`, not the `.default({})` of the Phase 3 plan text, for the zod 4 reason above. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
+`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
 
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
@@ -384,7 +413,24 @@ export function scanTextForSecrets(text: string): SecretFinding[]
 // derive/deny-list.ts — DenyVerdict, checkDenied, DEFAULT_DENY_PATTERNS (§11 names, unchanged)
 ```
 
-**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`.
+**P4 domain types** (`packages/core/src/types/work.ts`):
+
+```ts
+export type WorktreeOrigin = 'app' | 'config' | 'session-cwd' | 'claude-json' | 'worktree-dir' | 'sibling' | 'scratchpad';
+export interface WorktreeView extends Worktree { head: string | null; isMain: boolean; origin: WorktreeOrigin; sessionPks: string[]; projectId: string | null; prStatus: PrStatus | null; updatedAt: string }
+export interface PrStatus { pr: PrRef; state: 'open' | 'closed' | 'merged'; title: string; checks: 'pending' | 'success' | 'failure' | 'none'; review: 'approved' | 'changes_requested' | 'review_required' | 'none'; updatedAt: string; headRef: string | null; failedChecks: string[] }
+export interface DiffHunk { header: string; oldStart: number; oldLines: number; newStart: number; newLines: number; lines: string[] }
+export interface DiffFileEntry { path: string; oldPath: string | null; status: 'added' | 'modified' | 'deleted' | 'renamed' | 'binary'; additions: number; deletions: number; patch: string; hunks: DiffHunk[] }
+export interface DiffResult { cwd: string; from: string; to: string; files: DiffFileEntry[]; additions: number; deletions: number }
+export interface ReviewComment { file: string; line: number; side: 'old' | 'new'; body: string }
+export interface ReviewSummary { sessionPk: string; cwd: string; worktree: WorktreeView | null; files: Array<{ path: string; additions: number; deletions: number }>; additions: number; deletions: number; lastTest: TestResult | null; recap: string | null; pr: PrStatus | null; owned: boolean; checkpoints: CheckpointRecord[] }
+export interface CheckpointRecord extends Checkpoint { kind: 'turn' | 'safety' | 'manual' }
+```
+`PrStatus` lives in core types (it supersedes the §11 draft by adding `headRef` and `failedChecks`); `connectors/github/github.ts` re-exports it.
+
+**P4 core git helpers** (`packages/core/src/git/index.ts`, pure): `branchName`, `ticketFromBranch`, `worktreeDirName`, `BranchType`, `parseUnifiedDiff`, `hunkPatch`, `buildReviewPrompt`, and everything in `status-porcelain.ts` and `worktree-porcelain.ts`. `branch.ts` declares its own `slugify` and `DEFAULT_TICKET_REGEX`; because `derive/` already exports both names, the barrel re-exports them as **`branchSlug`** and **`DEFAULT_BRANCH_TICKET_REGEX`**.
+
+**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`.
 
 ## 5. SQLite & migrations
 
@@ -412,7 +458,9 @@ export function scanTextForSecrets(text: string): SecretFinding[]
 | `archive_entries` | 2 | `path` |
 | `test_results` | 2 | `(session_pk, ts)` |
 | `audit_log` | 3 | `id` |
-| `worktrees`, `checkpoints`, `pr_cache` | 4 | — |
+| `worktrees` | 4 | `path` |
+| `checkpoints` | 4 | `id`; unique `ref` |
+| `pr_cache` | 4 | `key` = `${repo}#${number}` |
 | `streams`, `stream_links`, `recaps`, `goals`, `handoffs`, `reminders`, `budgets`, `usage_blocks` | 5 | — |
 | `connector_tokens_meta`, `push_subscriptions`, `webauthn_credentials`, `slack_threads` | 6 | — |
 | `automations`, `automation_runs`, `compare_groups`, `supervisor_rules`, `supervisor_decisions` | 7 | — |
@@ -424,6 +472,16 @@ export function scanTextForSecrets(text: string): SecretFinding[]
 | `inbox_items` | `id` text pk, `kind`, `session_id`, `project_id`, `ticket`, `reason`, `dedupe_key`, `created_at`, `updated_at`, `state`, `snooze_until`, `payload_json` (not null, default `'{}'`). Unique index `inbox_items_active_dedupe` on `dedupe_key` `WHERE state in ('open','snoozed')`. Index `inbox_items_state_idx` (`state`, `updated_at`). |
 | `test_results` | `session_pk`, `ts`, `command`, `passed`, `failed`, `skipped`, `duration_ms`. PK (`session_pk`, `ts`). No FK, because a live session may not be indexed yet. |
 | `archive_entries` | `path` text pk (the source transcript path), `session_pk`, `agent_id`, `project_id`, `archive_path`, `codec` (`'zstd'\|'gzip'`), `source_size`, `source_mtime_ms`, `bytes`, `archived_at`, `head_fingerprint` (`"<size>:<sha1 of the first 4096 bytes>"`, same format as `file_offsets.head_fingerprint`; catches a same-size rewrite that (size, mtime) cannot; `null` on rows written before the column existed). Index `archive_entries_session_idx` on `session_pk`. |
+
+- **P4 columns** (as built, `apps/daemon/src/db/schema.ts`):
+
+| Table | Columns |
+|---|---|
+| `worktrees` | `path` pk, `repo`, `branch`, `base`, `ticket`, `dirty`, `pr_url`, `state` (`active`\|`archived`), `created_by_app`, `head`, `is_main`, `origin`, `session_pks_json`, `project_id`, `created_at`, `updated_at`, `archived_at`. Indexes `worktrees_repo_idx`, `worktrees_branch_idx`. |
+| `checkpoints` | `id` pk, `session_pk`, `session_id` (source-native id), `worktree_path`, `turn`, `ref`, `commit`, `kind` (`turn`\|`safety`\|`manual`), `created_at`. Unique `checkpoints_ref_uq` on `ref`; indexes on `session_pk` and `worktree_path`. Refs are `refs/orchestrator/checkpoints/<sessionId>/<turn>` for `turn`, and `…/<turn>-safety-<epochMs>-<rand8>` / `…/<turn>-manual-<epochMs>-<rand8>` for the other kinds. |
+| `pr_cache` | `key` pk (`${repo}#${number}`), `repo`, `number`, `url`, `state`, `title`, `checks`, `review`, `head_ref`, `failed_checks_json`, `updated_at`, `fetched_at`. Index `pr_cache_head_idx`. |
+
+  A hunk or file revert stores its safety commit at `refs/orchestrator/reverts/<epochMs>` (not a checkpoint row; not pruned when the worktree is archived).
 
 - **Repositories:** each table group has a repo module in `apps/daemon/src/db/repos/<name>.ts` that exports plain functions taking `db: OrcDb` as the first argument, e.g. `upsertSession(db, s)`. **Routes never run SQL directly.** P2 adds `db/repos/inbox.ts`, `db/repos/test-results.ts` and `db/repos/archive.ts`.
 
@@ -499,7 +557,35 @@ P3  GET    /api/plans/content?path                   → { path; text }  (403 fo
 P3  GET    /api/audit?sessionPk&action&actor&from&to&q&projectId&limit → AuditEntry[]
 P3  GET    /api/safety/secrets                       → SecretsReport { scannedAt; totalFindings; files: { path; displayPath; exists; findings: SecretFinding[]; error }[] }
 P3  POST   /api/safety/deny-check                    body { text; projectId } → DenyVerdict
-P4  /api/worktrees…  /api/diff…  /api/checkpoints…  /api/ship…        (defined in phase 4)
+P4  GET    /api/worktrees?projectId&state&repo          → WorktreeView[]
+P4  POST   /api/worktrees/discover                      → WorktreeView[]                                     (NON_ACTION_ROUTES: read-only git)
+P4  GET    /api/worktrees/one?path                      → WorktreeView
+P4  POST   /api/worktrees                               body CreateWorktreeBody → { worktree: WorktreeView; setupPtyId: string | null; launch: { ptyId: string; sessionId: string | null } | null } (confirm)
+P4  POST   /api/worktrees/script                        body { path, which, confirm } → { ptyId }            (confirm)
+P4  POST   /api/worktrees/open                          body { path, target } → { ok: true }
+P4  GET    /api/worktrees/sync-preview?path             → SyncPreview
+P4  POST   /api/worktrees/sync                          body { path, confirm } → { files }                   (confirm)
+P4  POST   /api/worktrees/archive                       body { path, confirm, confirmExternal? } → { ok: true } (confirm)
+P4  GET    /api/diff?cwd&from&to                        → DiffResult      (from default = merge-base with base; to default = 'WORKTREE')
+P4  POST   /api/diff/revert                             body { cwd, file, hunkIndex?, from?, confirm } → { reverted: string } (confirm)
+P4  GET    /api/checkpoints?sessionPk                   → CheckpointRecord[]
+P4  GET    /api/checkpoints/:id/diff                    → DiffResult      (checkpoint vs previous checkpoint of the session)
+P4  POST   /api/checkpoints                             body { sessionPk, confirm } → CheckpointRecord       (confirm; kind 'manual')
+P4  POST   /api/checkpoints/:id/rewind                  body { confirm } → { safety: CheckpointRecord }      (confirm)
+P4  GET    /api/review/:source/:id                      → ReviewSummary
+P4  POST   /api/review/:source/:id/comments             body { comments: ReviewComment[], deliver: 'session'|'text', confirm? } → { sent: boolean; text: string }
+P4  GET    /api/ship/suggest?cwd&sessionPk              → ShipSuggestion
+P4  POST   /api/ship/commit                             body { cwd, message, confirm } → { sha }             (confirm)
+P4  POST   /api/ship/push                               body { cwd, confirm } → { ok: true }                 (confirm)
+P4  POST   /api/ship/pr                                 body { cwd, title, body, base, draft, confirm } → PrRef (confirm)
+P4  POST   /api/ship/merge                              body { pr, method, confirm } → { ok: true }          (confirm)
+P4  POST   /api/ship/backmerge                          body { cwd, projectId, ticket?, confirm } → { ptyId } (confirm)
+P4  GET    /api/github/status                           → { status: 'ok'|'unauthenticated'|'error'|'disabled' }
+P4  GET    /api/github/pr?repo&number                   → PrStatus
+P4  GET    /api/github/prs/mine                         → PrStatus[]
+P4  POST   /api/sessions/:source/:id/plan/approve       body { confirm } → { ok: true }                      (confirm)
+P4  POST   /api/sessions/:source/:id/plan/reject        body { feedback, confirm } → { ok: true }            (confirm)
+P4  POST   /api/sessions/launch                         LaunchRequest.planApproval and .worktree are supported; the P2 501 for both is gone (compare stays 501 until P7)
 P5  /api/streams…  /api/analytics…  /api/usage…  /api/recaps…  /api/goals…  /api/handoffs…  /api/reminders…  /api/hooks (bridge ingest)
 P6  /api/connectors…  /api/push…  /api/webauthn…
 P7  /api/automations…  /api/compare…  /api/supervisor…
@@ -508,6 +594,14 @@ P7  /api/automations…  /api/compare…  /api/supervisor…
 P2's zod schemas live in `packages/api-contract/src/routes/{live,launch,inbox,templates,archive,notifications,hooks}.ts`, with `export type LaunchRequest = z.infer<typeof LaunchRequest>` and `ArchiveStatus = z.object({ enabled, files, bytes, oldestTranscript, cleanupPeriodDays, codec, recommendedSnippet })`. P2's client methods (`packages/api-contract/src/client-p2.ts`, folded into `createApiClient`) are `liveList`, `sessionsLaunch`, `sessionsKill`, `sessionsOpenIn`, `inboxList`, `inboxDone`, `inboxSnooze`, `inboxReopen`, `templatesList`, `archiveStatus`, `archiveRestore`, `archiveSync`, `notificationsGet`, `notificationsPut`.
 
 P3's zod schemas live in `packages/api-contract/src/routes/{session-detail,links,safety,audit}.ts`. They reuse `UsageSchema` from `packages/api-contract/src/domain.ts` rather than declaring a second one. P3's client methods (`packages/api-contract/src/client-p3.ts`, folded into `createApiClient`) are `sessionsStats`, `sessionsDeliverables`, `sessionsFiles`, `sessionsUsageSeries`, `sessionsSafety`, `sessionsLinks`, `sessionsRaw`, `sessionsExport`, `plansList`, `plansContent`, `auditList`, `safetySecrets`, `safetyDenyCheck`. They throw P1's `ApiRequestError`; `client-p3.ts` re-exports it under the alias `ApiCallError` for the Phase 3 tests only, and it is the same class (§13).
+
+P4's zod schemas live in `packages/api-contract/src/routes/`: `worktrees.ts` (`WorktreeViewSchema`, `WorktreeType`, `CreateWorktreeBody`, `CreateWorktreeResult`, `WorktreeListQuery`, `WorktreeScriptBody`, `WorktreeOpenBody`, `SyncPreview`, `WorktreePathBody`, `WorktreeArchiveBody`), `review.ts` (`DiffQuery`, `DiffFileSchema`, `DiffResultSchema`, `DiffRevertBody`, `CheckpointRecordSchema`, `CheckpointCreateBody`, `CheckpointRewindBody`, `ReviewCommentSchema`, `ReviewCommentsBody`, `ReviewSummarySchema`), `ship.ts` (`ShipPrRefSchema`, `PrStatusSchema`, `ShipSuggestion`, `ShipCommitBody`, `ShipPushBody`, `ShipPrBody`, `ShipMergeBody`, `ShipBackmergeBody`), `plan.ts` (`PlanApproveBody`, `PlanRejectBody`), and `common.ts` (`Confirm`, `IsoString`). P4's client methods live in `packages/api-contract/src/client-phase4.ts` (`createPhase4Methods`, type `Phase4Client`), spread into `createApiClient`: `worktreesList`, `worktreesDiscover`, `worktreesGet`, `worktreesCreate`, `worktreesScript`, `worktreesOpen`, `worktreesSyncPreview`, `worktreesSync`, `worktreesArchive`, `diffGet`, `diffRevert`, `checkpointsList`, `checkpointsDiff`, `checkpointsCreate`, `checkpointsRewind`, `reviewGet`, `reviewComments`, `shipSuggest`, `shipCommit`, `shipPush`, `shipPr`, `shipMerge`, `shipBackmerge`, `planApprove`, `planReject`, `githubStatus`, `githubPr`, `githubMine`.
+
+**P4 errors.** Routes are mounted on `phase4App()` (`http/routes/git-guard.ts`), whose `onError` answers every error through `redactedApiError`. Services throw `GitError` (`services/git/exec.ts`) or P1's `ServiceError` (`services/errors.ts`); `toHttpError` maps a `GitError` to a `ServiceError` with the status from `GIT_ERROR_STATUS`. There is no `HttpError`. Codes and statuses: `not_found`, `not_a_worktree`, `no_worktree`, `hunk_not_found`, `no_script` → 404; `not_owned` → 403; `forbidden_git_args`, `validation_failed` → 400; `dirty_worktree`, `main_dirty`, `external_worktree`, `worktree_exists`, `is_main_checkout`, `nothing_to_commit`, `protected_branch`, `push_rejected`, `no_pending_plan`, `confirmation_required` → 409; `git_failed` → 502; `gh_unavailable` and `unavailable` (service not wired on `ctx`) → 503.
+
+**P4 LiveEvent additions** (`packages/api-contract/src/live.ts`, forwarded to `/ws`, appended to `LIVE_EVENT_TYPES`): `{ type: 'worktree.updated'; worktree: WorktreeView }`, `{ type: 'worktree.removed'; path: string }`, `{ type: 'pr.updated'; status: PrStatus }`, `{ type: 'checkpoint.created'; checkpoint: CheckpointRecord }`.
+
+**P4 BusEvent additions** (daemon-internal, `apps/daemon/src/live/event-bus.ts`): `{ type: 'pr.changed'; before: PrStatus | null; after: PrStatus }`, `{ type: 'plan.pending'; pk: string; plan: string; toolUseId: string }`, `{ type: 'pr.reviewRequested'; pr: PrRef; title: string; active: boolean }` (`active: false` when the request goes away).
 
 **P2 BusEvent additions:** none. Phase 2 emits the existing `session.statusChanged`, `session.turnEnded`, `tests.recorded`, `hook.received`, `session.updated`, `session.removed` and `inbox.upserted`.
 
@@ -647,6 +741,9 @@ export interface DaemonContext {
   checkpoints?: CheckpointService;         // P4
   ship?: ShipService;                      // P4
   github?: GithubConnector;                // P4
+  diff?: DiffService;                      // P4
+  review?: ReviewService;                  // P4
+  plans?: PlanApprovalService;             // P4 — all P4 services are set by wirePhase4(), not buildContext()
   usage?: UsageMeter;                      // P5
   recaps?: RecapService;                   // P5
   handoffs?: HandoffService;               // P5
@@ -769,6 +866,17 @@ export function createInboxEngine(ctx: DaemonContext, opts?: { now?: () => Date;
 // rather than throwing, because a throw inside a rule is swallowed and the item never appears.
 // `snooze(until)` takes a future ISO instant with a four-digit year and an explicit zone; a naive
 // local time or an expanded year (`+010000-…`, which sorts before every digit in SQL) is a 400.
+// P4 inbox rules and keys (registered by wirePhase4, not registerDefaultRules). Every caller passes
+// { kind, scope, facet? }; there are no prKey/planKey helpers.
+//   pr-event (inbox/rules/pr-event.ts, on pr.changed and pr.reviewRequested), kind 'pr_event', scope { domain: 'pr', id: `${repo}#${n}` }:
+//     facet 'checks'            opened when checks becomes 'failure', resolved on 'success'/'pending'
+//     facet 'review'            opened on 'changes_requested', resolved on any other review state or when the PR closes/merges
+//     facet 'review_requested'  on pr.reviewRequested; resolved when active is false
+//   worktree auto-archive (services/worktree/auto-archive.ts), kind 'pr_event', scope { domain: 'worktree', id: path }, facet 'archive_blocked'
+//     raised when a merged PR's worktree is dirty or external
+//   plan-approval (inbox/rules/plan-approval.ts, on session.statusChanged; finds a pending ExitPlanMode and emits plan.pending),
+//     kind 'plan_approval', scope { session: pk }; resolved when the status leaves 'waiting' or after approve/reject
+// The stored keys are therefore e.g. `pr_event:pr:o%2Fr%234:checks`, `pr_event:worktree:<enc path>:archive_blocked`, `plan_approval:session:claude%3A<id>`.
 
 // P2 — apps/daemon/src/notify/notifier.ts
 export type NotifyChannel = 'macos' | 'webpush' | 'slack_dm';
@@ -823,7 +931,11 @@ export async function audited<T>(audit: AuditService, meta: Omit<AuditEntry, 'id
 export class DeniedError extends Error { readonly verdict: DenyVerdict }
 export function createAuditService(opts: { db: OrcDb; bus?: EventBus; now?: () => Date }): AuditService
 // P3 — apps/daemon/src/http/audit-middleware.ts
-export interface AuditedRoute { method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'PUT'; pattern: RegExp; action: string | ((body: Record<string, unknown>) => string); target: (m: RegExpExecArray, body: Record<string, unknown>) => string | null; before?: (m: RegExpExecArray, ctx: DaemonContext) => Record<string, unknown> }
+export interface AuditedRoute { method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'PUT'; pattern: RegExp; action: string | ((body: Record<string, unknown>) => string); target: (m: RegExpExecArray, body: Record<string, unknown>) => string | null; before?: (m: RegExpExecArray, ctx: DaemonContext) => Record<string, unknown>; recordedBy?: 'service' /* P4 */ }
+// P4: every Phase 4 write route is in AUDITED_ROUTES with recordedBy: 'service' (its service records the row through runAudited). The middleware runs the
+// handler inside withAuditScope and writes its own row only when the request failed (status >= 400) before the service recorded that action — bad body,
+// unknown path, ownership check. POST /api/worktrees/discover is in NON_ACTION_ROUTES (read-only git).
+export async function withAuditScope(fn: () => Promise<void>): Promise<Set<string>>   // services/audit/audit.ts; AsyncLocalStorage set of the actions audited() recorded inside fn
 export const AUDITED_ROUTES: AuditedRoute[]
 export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: string }>   // pin, label, views, inbox actions, notification prefs, project PATCH, hooks ingest, deny-check
 export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler   // mounted on /api/* in createApp right after the token middleware
@@ -844,17 +956,71 @@ export function createDenyList(deps: { config: () => OrcConfig; projects: Pick<P
 
 ```ts
 
-// P4 — apps/daemon/src/services/worktree/worktree.ts
+// P4 — apps/daemon/src/services/worktree/worktree.ts (as built)
 export interface CreateWorktreeInput { repo: string; base: string; type: 'feat'|'fix'|'chore'|'docs'|'refactor'; ticket: string | null; slug: string }
-export interface WorktreeService { discover(): Promise<Worktree[]>; create(i: CreateWorktreeInput): Promise<Worktree>; runScript(path: string, which: 'setup'|'run'|'archive'): Promise<{ ptyId: string }>; syncToMain(path: string): Promise<{ files: number }>; archive(path: string): Promise<void>; branchName(i: Pick<CreateWorktreeInput,'type'|'ticket'|'slug'>): string }
-// P4 — services/checkpoint/checkpoint.ts
-export interface CheckpointService { create(sessionPk: string, worktreePath: string, turn: number): Promise<Checkpoint>; list(sessionPk: string): Checkpoint[]; rewind(checkpointId: string): Promise<Checkpoint /* safety checkpoint */> ; diff(fromRef: string, toRef: string | 'WORKTREE', cwd: string): Promise<string /* unified diff */> }
+export interface SyncPreviewResult { path: string; mainPath: string; files: string[]; mainDirty: string[] }
+export interface WorktreeService {
+  discover(): Promise<Worktree[]>; create(i: CreateWorktreeInput): Promise<Worktree>; runScript(path: string, which: 'setup'|'run'|'archive'): Promise<{ ptyId: string }>; syncToMain(path: string): Promise<{ files: number }>; archive(path: string): Promise<void>; branchName(i: Pick<CreateWorktreeInput,'type'|'ticket'|'slug'>): string;   // the original §11 members
+  list(filter?: { projectId?: string; state?: Worktree['state']; repo?: string }): WorktreeView[];
+  get(path: string): WorktreeView | null;
+  findByCwd(cwd: string): WorktreeView | null;               // longest path prefix, active only
+  syncPreview(path: string): Promise<SyncPreviewResult>;
+  archiveAs(path: string, actor: AuditActor, opts?: { allowExternal?: boolean }): Promise<void>;  // archive(path) = archiveAs(path, 'user', { allowExternal: false })
+  createWith(i: CreateWorktreeInput, opts: { runSetup: boolean; actor: AuditActor }): Promise<{ view: WorktreeView; setupPtyId: string | null }>;  // create(i) = createWith(i, { runSetup: true, actor: 'user' }).view
+  open(path: string, target: 'vscode' | 'terminal' | 'finder'): Promise<void>;
+}
+export function createWorktreeService(ctx: DaemonContext, opts?: { now?: () => Date; claudeJson?: string; opener?: WorktreeDeps['opener'] }): WorktreeService
+// P4 — services/checkpoint/checkpoint.ts (list/create/rewind return CheckpointRecord, a superset of the §11 draft's Checkpoint)
+export interface CheckpointService {
+  create(sessionPk: string, worktreePath: string, turn: number): Promise<CheckpointRecord>;
+  list(sessionPk: string): CheckpointRecord[];
+  rewind(checkpointId: string): Promise<CheckpointRecord /* safety checkpoint */>;
+  diff(fromRef: string, toRef: string | 'WORKTREE', cwd: string): Promise<string /* unified diff */>;
+  get(id: string): CheckpointRecord | null;
+  createAs(sessionPk: string, worktreePath: string, turn: number, kind: CheckpointRecord['kind'], actor: AuditActor): Promise<CheckpointRecord>;
+  pruneForWorktree(worktreePath: string): Promise<number>;
+}
+// services/checkpoint/turn-hook.ts: registerCheckpointHook(ctx) → stop(); a 'turn' checkpoint on session.turnEnded for an owned session whose cwd is an active worktree.
 // P4 — services/ship/ship.ts
-export interface ShipService { commit(cwd: string, message: string): Promise<{ sha: string }>; push(cwd: string): Promise<void>; createPr(cwd: string, i: { title: string; body: string; base: string; draft?: boolean }): Promise<PrRef>; merge(pr: PrRef, method: 'merge'|'squash'|'rebase'): Promise<void> }
-// P4 — connectors/github/github.ts
-export interface PrStatus { pr: PrRef; state: 'open'|'closed'|'merged'; title: string; checks: 'pending'|'success'|'failure'|'none'; review: 'approved'|'changes_requested'|'review_required'|'none'; updatedAt: string }
-export interface GithubConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; prStatus(pr: PrRef): Promise<PrStatus>; myOpenPrs(): Promise<PrStatus[]>; poll(): Promise<void> /* emits pr events on bus */ }
-// bus additions (P4): { type: 'pr.changed'; before: PrStatus | null; after: PrStatus }
+export interface ShipSuggestionResult { message: string; title: string; body: string; base: string; branch: string; ticket: string | null }
+export interface ShipService {
+  commit(cwd: string, message: string): Promise<{ sha: string }>; push(cwd: string): Promise<void>; createPr(cwd: string, i: { title: string; body: string; base: string; draft?: boolean }): Promise<PrRef>; merge(pr: PrRef, method: 'merge'|'squash'|'rebase'): Promise<void>;
+  suggest(cwd: string, sessionPk: string | null): Promise<ShipSuggestionResult>;
+  backmerge(cwd: string, projectId: string, ticket: string | null): Promise<{ ptyId: string }>;
+}
+// P4 — connectors/github/github.ts (PrStatus is the §4 core type, re-exported here)
+export interface GithubConnector {
+  status(): Promise<'ok'|'unauthenticated'|'error'>;   // GET /api/github/status adds 'disabled' when config.github.enabled is false
+  prStatus(pr: PrRef): Promise<PrStatus>; myOpenPrs(): Promise<PrStatus[]>; poll(): Promise<void> /* emits pr.changed / pr.reviewRequested */;
+  watch(pr: PrRef): void;                    // add a PR to the poll set (after create/merge)
+  start(): () => void;                       // poll now and every cfg.github.pollSeconds; returns stop()
+}
+// P4 — services/diff/diff.ts
+export interface DiffService {
+  diff(cwd: string, opts?: { from?: string; to?: string | 'WORKTREE' }): Promise<DiffResult>;
+  mergeBase(cwd: string): Promise<string>;
+  revert(cwd: string, file: string, opts: { hunkIndex?: number; from?: string }): Promise<{ reverted: string }>;   // safety commit at refs/orchestrator/reverts/<epochMs>
+}
+// P4 — services/review/review.ts
+export interface ReviewService {
+  summary(source: Source, id: string): Promise<ReviewSummary>;
+  sendComments(source: Source, id: string, comments: ReviewComment[], deliver: 'session' | 'text'): Promise<{ sent: boolean; text: string }>;   // sends only to owned sessions (isOwned), otherwise sent: false
+}
+// P4 — services/review/plan-approval.ts ; plan-keys.ts holds PLAN_KEYS (the TUI keystrokes for approve/reject; not yet confirmed on the real TUI)
+export interface PlanApprovalService { approve(pk: string): Promise<void>; reject(pk: string, feedback: string): Promise<void> }
+// P4 — services/git/exec.ts: git/gh wrappers; assertSafeGitArgs throws GitError('forbidden_git_args') on force pushes, ref-deletion pushes, hard resets,
+//   git clean, forced worktree removal, `checkout -- <paths>`, branch deletion, any stash write and update-ref outside refs/orchestrator/.
+// P4 — services/git/audit.ts: runAudited(ctx, actor, action, target, params, fn) = audited(ctx.audit, …); every P4 git/gh/PTY write goes through it.
+// P4 — launch (P2's services/launch.ts keeps LaunchService; there is no services/launch/ folder)
+export function prepareLaunch(ctx: DaemonContext, req: LaunchRequest): Promise<LaunchRequest>   // services/launch-prepare.ts: 400 for planApproval on Codex; for req.worktree creates the worktree, waits for setup, moves cwd into it and drops the field
+export function applyPlanMode(args: string[]): string[]   // services/launch-plan-mode.ts: drops every permission-mode switch and appends `--permission-mode plan`
+// P4 — apps/daemon/src/main.ts
+export function wirePhase4(ctx: DaemonContext, opts?: { startPollers?: boolean }): () => void
+// Sets ctx.worktrees, checkpoints, diff, review, github, ship, plans; registers prEventRule and the plan-approval rule on ctx.inbox, the checkpoint turn hook and the
+// PR-merge auto-archive (services/worktree/auto-archive.ts); with startPollers (default true) runs discovery now and every 5 minutes and starts the GitHub poller only
+// when config.github.enabled.
+// DaemonContext additions (P4): diff?: DiffService; review?: ReviewService; plans?: PlanApprovalService; worktrees/checkpoints/ship/github as above.
+// bus additions (P4): pr.changed, plan.pending, pr.reviewRequested (§6).
 
 // P5 — services/usage/meter.ts
 export interface UsageSnapshot { source: 'official' | 'estimate'; block: { start: string; end: string; tokens: number; costUsd: number; pctOfLimit: number | null }; week: { tokens: number; costUsd: number; pctOfLimit: number | null }; burnRateUsdPerHour: number; projectedBlockExhaustionAt: string | null }
@@ -923,6 +1089,12 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   `connectPty` owns reconnect/backoff and realm-safe binary-frame decoding (a plain `instanceof ArrayBuffer`/`DataView` check fails across a jsdom-vs-Node realm boundary — Task 18's fix round; see the tag-based `toBytes()` helper).
 - **P1 web feature directories (as-built):** `features/history/` (F3), `features/session-detail/` (F2), `features/terminal/` (F4 — `TerminalDock.tsx`, `TerminalView.tsx`, `ResumeActions.tsx`), `features/settings/` (F13 project settings), `features/shell/` (`AppShell.tsx`, `ProjectSelector.tsx`).
 - **P2 web feature directories:** `features/live-board/` (`LiveBoard.tsx`, `SessionCard.tsx`, `StageBar.tsx`, `TestChip.tsx`, `OpenInButton.tsx`, `sort.ts`), `features/inbox/` (`InboxPage.tsx`, `useInboxKeys.ts`, `InboxCount.tsx`), `features/launch/LaunchDialog.tsx`, and `features/settings/{ArchiveSettings,NotificationSettings}.tsx`.
+- **P4 web (as built):**
+  - Routes `routes/worktrees.tsx` → `/worktrees`, `routes/review.$source.$id.tsx` → `/review/$source/$id`.
+  - `features/worktrees/` (`WorktreesPage.tsx`, `WorktreeRow.tsx`, `CreateWorktreeDialog.tsx`), `features/review/` (`ReviewPage.tsx`, `FileTree.tsx`, `FileDiff.tsx`, `CommentComposer.tsx`, `CommentsPanel.tsx`, `ReviewAside.tsx`, `SummaryCard.tsx`, `CheckpointTimeline.tsx` — hides `safety` checkpoints, `ShipPanel.tsx`, `PresetButtons.tsx`, `useReviewDraft.ts`), `features/git/` (`GitDialog.tsx`, `GitConfirmDialog.tsx`, `useConfirmedMutation.ts`).
+  - The kit has no Dialog primitive, so every P4 confirmation renders through `GitDialog` (backdrop, labelled `role="dialog"`, Escape closes); `useConfirmedMutation` turns a `409 confirmation_required` into a `GitConfirmDialog` and resends with `confirm: true`.
+  - `features/live-board/PrChip.tsx` (`PrChip({ pr })`, live PR state via `usePrStatus`) and `features/inbox/InboxItemActions.tsx` (plan approve/reject and PR-event actions on inbox items) are new P4 components. PR status shows on session cards through `PrChip` only.
+  - Hooks and keys: `api/queries/worktrees.ts` → `useWorktrees(f)`, `useDiscoverWorktrees()`, `worktreeKeys = { all: ['worktrees'], list: (f) => ['worktrees', f] }`; `api/queries/review.ts` → `useDiff` `['diff', cwd, from ?? null, to ?? null]`, `useCheckpoints` `['checkpoints', sessionPk]`, `useCheckpointDiff` `['checkpoint-diff', id]`, `useReview` `['review', source, id]`; `api/queries/github.ts` → `usePrStatus` `['pr', repo, number]`, `useGithubStatus` `['github', 'status']`; `api/queries/ship.ts` → `useShipSuggest` `['ship-suggest', cwd, sessionPk]`. There is no `['github', 'mine']` query yet.
 - **Tests:** component tests with Testing Library and an MSW-free fake client (`api/client.ts` exports `setApiClientForTests`). E2E runs with Playwright against the daemon started on fixtures (`apps/web/e2e/*.spec.ts`, via `pnpm --filter @orc/web e2e`).
 
 ## 13. Symbol ownership & de-duplication
@@ -934,7 +1106,7 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `RegistryEntry`, `parseRegistryFile`, `registryStatusToLive`, `isRegistryFileName` | **P1** `packages/core/src/claude/registry.ts` | The canonical shape is the **P2 superset**: `{ pid, procStart: string \| null, sessionId, cwd, startedAt: number \| null, version, kind, name, status: RegistryStatus \| null, waitingFor, statusUpdatedAt: number \| null, updatedAt: number \| null }` with `export type RegistryStatus = 'busy'\|'idle'\|'waiting'\|'shell'`. P1 implements that shape and exports both `parseRegistryEntry` and the alias `parseRegistryFile`. P2 adds only `isRegistryFileName`. Neither ever copies `messagingSocketPath`. |
 | `isTestCommand`, `parseTestOutput` | **P1** `packages/core/src/derive/tests.ts` | P2 imports them; its Task 3 covers stage inference only. |
 | `splitPk`, `sessionPk` | **P1** `apps/daemon/src/db/keys.ts` (re-exported from `services/sessions.ts`) | P2/P4/P7 import. |
-| `slugify` | **P1** `packages/core/src/derive/name.ts` — `slugify(name: string): string` for project ids | P4's branch slug is a **different** function: `slugifyBranch(text: string, maxLen = 30)` in `packages/core/src/git/branch.ts`. |
+| `slugify` | **P1** `packages/core/src/derive/name.ts` — `slugify(name: string): string` for project ids | P4's branch slug is a **different** function. As built it is declared as `slugify` in `packages/core/src/git/branch.ts` and exported from the `git/index.ts` barrel as **`branchSlug`** (the plan's `slugifyBranch` name was not used). Import `branchSlug`, never `git/branch.ts`'s `slugify`, next to `derive/`. |
 | `shellQuote` | **P1** `apps/daemon/src/services/sessions/external.ts` — `shellQuote(parts: string[]): string` | P5 needs single-argument quoting: name it `quoteArg(s: string): string` in `apps/daemon/src/services/hooks/install.ts`. |
 | `permissionBadge`, `PermissionBadge` | **P3** `packages/core/src/derive/permission.ts` (as built; `prod.ts` keeps P1's `DEFAULT_PROD_PATTERNS`, and P3's prod detection is `derive/prod-detect.ts`) — `permissionBadge(modes: readonly (string \| null \| undefined)[]): PermissionBadge` | P2's card helper takes one mode: name it `badgeForMode(mode: string \| null)` in `apps/web/src/features/live-board/format.ts`, or call the P3 function with `[mode]` once P3 has shipped. |
 | `createLiveReducer`, `LiveReducer`, `TranscriptLive` | **P2** `packages/core/src/derive/live-transcript.ts` | P5 extends the options (`windows`) by **modifying** that file; its context-window table lives in config. |
@@ -942,7 +1114,7 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `redactSnippet`, `redactValue`, `redactSession`, `redactListItem`, `redactedApiError` | **P1** `apps/daemon/src/http/redact-out.ts` | P2/P3 extend by modifying that file. P3 adds `redactDeep`/`redactPartialTokens` in `packages/core/src/redact/redact.ts`, `redactedJson` in `http/redacted-json.ts` and `toWireEvent` in `http/ws-redact.ts`. Every new route answers errors through `redactedApiError`. |
 | `ApiRequestError` | **P1** `packages/api-contract/src/client.ts` | P2/P3 must use it. `ApiCallError` is not a separate class; delete that name where a plan uses it. |
 | `ConfirmBody` | **P2** `packages/api-contract/src/routes/common.ts` | P4 (`Confirm`), P6 and P7 import `ConfirmBody`. |
-| `PrRefSchema`, `PrStatusSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (PrRef), **P4** `routes/ship.ts` (PrStatus) | P4/P5/P7 import; never redeclare. |
+| `PrRefSchema`, `PrStatusSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (PrRef), **P4** `routes/ship.ts` (PrStatus) | P4/P5/P7 import; never redeclare. As built, `routes/ship.ts` also declares `ShipPrRefSchema` for the ship route bodies. |
 | `UsageSchema`, `SessionSchema`, `TimelineEventSchema`, `AgentNodeSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (as built, `UsageSchema` lives in `packages/api-contract/src/domain.ts`) | All later phases import. P3's `routes/session-detail.ts` imports `UsageSchema` from `domain.ts`. |
 | `LaunchRequest`, `LaunchResponse`, `Template` | **P2** `packages/api-contract/src/routes/launch.ts` / `templates.ts` | P4 and P7 extend `LaunchRequest` by modifying that file (P4 enables `planApproval`/`worktree`, P7 enables `compare`). |
 | `PrStatus` (domain type) | **P4** `packages/core/src/types/work.ts` | The `connectors/github/github.ts` file re-exports it; §11's inline copy is superseded by P4's (adds `headRef`, `failedChecks`). |
@@ -961,8 +1133,15 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `ApiCallError` | — (not a class) | P2/P3 use **P1**'s `ApiRequestError`. `packages/api-contract/src/client-p3.ts` re-exports it as `export { ApiRequestError as ApiCallError }` so the P3 tests can import that name; it is the same class. Later phases import `ApiRequestError`. |
 | `AppOptions`, `createApp`, `getToken` | **P1** `apps/daemon/src/http/app.ts`, `apps/web/src/api/client.ts` | P6 extends them by modifying those files: `AppOptions` gains the remote guard, and `getToken()` delegates to `resolveToken()` in `api/token.ts`. |
 | `BusEvent`, `LiveEvent` | **P1** `apps/daemon/src/live/event-bus.ts`, `packages/api-contract/src/live.ts` | Every later phase appends variants to the same unions in those files (P4 worktree/PR/checkpoint, P5 `config.changed` and the typed `usage.updated`, P6 Linear/Slack/away, P7 automation/supervisor/compare). P6 owns `linear.issueChanged` and `slack.mention`; P7 imports them instead of re-adding them. |
-| `DEFAULT_TICKET_REGEX` | **P1** `packages/core/src/derive/tickets.ts` | P4 imports it. |
+| `DEFAULT_TICKET_REGEX` | **P1** `packages/core/src/derive/tickets.ts` | P4's branch parser has its own regex in `git/branch.ts`, exported from the `git/index.ts` barrel as **`DEFAULT_BRANCH_TICKET_REGEX`**. |
 | `resumeCommand`, `resumeCommandLine` | **P1** `apps/daemon/src/services/sessions/external.ts` | P2 and P7 import; P7's compare/automation launches go through `spawnClaudeSession`. |
+
+| `ServiceError` for P4 routes | **P1** `apps/daemon/src/services/errors.ts` | P4 has no `HttpError`: `GitError` from `services/git/exec.ts` maps to `ServiceError` through `toHttpError` + `GIT_ERROR_STATUS` in `http/routes/git-guard.ts`. Later phases throw `ServiceError`. |
+| `PrChip` | **P4** `apps/web/src/features/live-board/PrChip.tsx` | Later phases reuse it for PR state; do not add a second PR badge. |
+| `InboxItemActions` | **P4** `apps/web/src/features/inbox/InboxItemActions.tsx` | Kind-specific inbox actions; later phases add a `case` for their kind here. |
+| `GitDialog`, `GitConfirmDialog`, `useConfirmedMutation` | **P4** `apps/web/src/features/git/` | The shared modal frame and the 409-confirm flow, used because the kit has no Dialog. Later confirmed actions reuse them. |
+| `createPhase4Methods`, `Phase4Client` | **P4** `packages/api-contract/src/client-phase4.ts` | Spread into `createApiClient`; later phases follow the same per-phase client file pattern. |
+| `wirePhase4` | **P4** `apps/daemon/src/main.ts` | Creates the P4 services and their bus hooks; called by `createDaemon()` and by tests with `{ startPollers: false }`. |
 
 | `Indexer`, `createIndexer` | **P1** `apps/daemon/src/indexer/indexer.ts` | Not in the original §11 draft. Later phases that need indexing hooks modify this file rather than creating a parallel indexer. |
 | `UserMetaService`, `createUserMetaService` | **P1** `apps/daemon/src/services/user-meta.ts` | Owns pins/labels/saved views (F3). Not anticipated by the original plan; later phases extend by modifying this file. |

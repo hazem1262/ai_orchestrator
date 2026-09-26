@@ -15,6 +15,8 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as WorktreesRouteImport } from './routes/worktrees'
+import { Route as ReviewSourceIdRouteImport } from './routes/review.$source.$id'
 import { Route as SessionsSourceIdRouteImport } from './routes/sessions/$source/$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -47,6 +49,16 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorktreesRoute = WorktreesRouteImport.update({
+  id: '/worktrees',
+  path: '/worktrees',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewSourceIdRoute = ReviewSourceIdRouteImport.update({
+  id: '/review/$source/$id',
+  path: '/review/$source/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SessionsSourceIdRoute = SessionsSourceIdRouteImport.update({
   id: '/sessions/$source/$id',
   path: '/sessions/$source/$id',
@@ -60,6 +72,8 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
+  '/worktrees': typeof WorktreesRoute
+  '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRoutesByTo {
@@ -69,6 +83,8 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
+  '/worktrees': typeof WorktreesRoute
+  '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRoutesById {
@@ -79,6 +95,8 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
+  '/worktrees': typeof WorktreesRoute
+  '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRouteTypes {
@@ -90,6 +108,8 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/live'
     | '/settings'
+    | '/worktrees'
+    | '/review/$source/$id'
     | '/sessions/$source/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -99,6 +119,8 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/live'
     | '/settings'
+    | '/worktrees'
+    | '/review/$source/$id'
     | '/sessions/$source/$id'
   id:
     | '__root__'
@@ -108,6 +130,8 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/live'
     | '/settings'
+    | '/worktrees'
+    | '/review/$source/$id'
     | '/sessions/$source/$id'
   fileRoutesById: FileRoutesById
 }
@@ -118,6 +142,8 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
   SettingsRoute: typeof SettingsRoute
+  WorktreesRoute: typeof WorktreesRoute
+  ReviewSourceIdRoute: typeof ReviewSourceIdRoute
   SessionsSourceIdRoute: typeof SessionsSourceIdRoute
 }
 
@@ -165,6 +191,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/worktrees': {
+      id: '/worktrees'
+      path: '/worktrees'
+      fullPath: '/worktrees'
+      preLoaderRoute: typeof WorktreesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review/$source/$id': {
+      id: '/review/$source/$id'
+      path: '/review/$source/$id'
+      fullPath: '/review/$source/$id'
+      preLoaderRoute: typeof ReviewSourceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sessions/$source/$id': {
       id: '/sessions/$source/$id'
       path: '/sessions/$source/$id'
@@ -182,6 +222,8 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
   SettingsRoute: SettingsRoute,
+  WorktreesRoute: WorktreesRoute,
+  ReviewSourceIdRoute: ReviewSourceIdRoute,
   SessionsSourceIdRoute: SessionsSourceIdRoute,
 }
 export const routeTree = rootRouteImport

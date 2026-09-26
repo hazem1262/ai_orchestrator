@@ -4,10 +4,11 @@ import { scopeProject } from '@/api/queries/inbox.ts';
 import { useLaunch } from '@/api/queries/launch.ts';
 import { useProjects } from '@/api/queries/projects.ts';
 import { useTemplates } from '@/api/queries/templates.ts';
+import { useWorktrees } from '@/api/queries/worktrees.ts';
 import { Button } from '@/components/ui/button.tsx';
-import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { type LaunchDraft, LaunchPhase4Fields } from '@/features/launch/LaunchPhase4Fields.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
@@ -65,12 +66,28 @@ function LaunchForm({
   const [ticket, setTicket] = useState(preset?.ticket ?? '');
   const [model, setModel] = useState(preset?.model ?? '');
   const [prompt, setPrompt] = useState(preset?.prompt ?? '');
+  const [planApproval, setPlanApproval] = useState(preset?.planApproval ?? false);
+  const [worktree, setWorktree] = useState<LaunchDraft['worktree']>(preset?.worktree);
+  const worktrees = useWorktrees({ state: 'active' });
   const templates = useTemplates(projectId || undefined).data ?? [];
   const launch = useLaunch();
   const openTerminal = useTerminalStore((t) => t.open);
 
   const defaultCwd = projects.find((p) => p.id === projectId)?.pathPrefixes[0] ?? '';
   const template = templates.find((t) => t.id === templateId);
+  const draft: LaunchDraft = {
+    source,
+    projectId: projectId || null,
+    cwd: cwd || defaultCwd,
+    prompt,
+    ...(ticket ? { ticket } : {}),
+    planApproval,
+    ...(worktree ? { worktree } : {}),
+  };
+  const onDraftChange = (d: LaunchDraft) => {
+    setPlanApproval(d.planApproval ?? false);
+    setWorktree(d.worktree);
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -83,6 +100,8 @@ function LaunchForm({
       vars,
       ...(ticket ? { ticket } : {}),
       ...(model ? { model } : {}),
+      ...(source === 'claude' && planApproval ? { planApproval: true } : {}),
+      ...(worktree ? { worktree } : {}),
     };
     try {
       const res = await launch.mutateAsync(req);
@@ -218,14 +237,21 @@ function LaunchForm({
             onChange={(e) => setPrompt(e.target.value)}
           />
 
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox id={`${titleId}-plan`} disabled />
-            <label htmlFor={`${titleId}-plan`}>Require plan approval (Phase 4)</label>
-          </div>
+          <LaunchPhase4Fields
+            draft={draft}
+            onChange={onDraftChange}
+            repos={(worktrees.data ?? []).filter((w) => w.isMain).map((w) => w.path)}
+          />
 
           {launch.error ? (
             <p role="alert" className="text-sm text-destructive">
               {describeLaunchError(launch.error)}
+            </p>
+          ) : null}
+
+          {worktree ? (
+            <p className="text-sm text-muted-foreground">
+              {`Launching creates a worktree from ${worktree.base || 'main'} in ${worktree.repo || '(no repository)'} and starts the session there.`}
             </p>
           ) : null}
 

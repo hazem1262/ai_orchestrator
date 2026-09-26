@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+// Fake GitHub CLI for tests. State lives in $FAKE_GH_DIR/state.json; every call is appended to calls.jsonl.
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const dir = process.env.FAKE_GH_DIR;
+if (!dir) {
+  process.stderr.write('FAKE_GH_DIR not set\n');
+  process.exit(3);
+}
+const args = process.argv.slice(2);
+appendFileSync(join(dir, 'calls.jsonl'), `${JSON.stringify(args)}\n`);
+const statePath = join(dir, 'state.json');
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+const save = () => writeFileSync(statePath, JSON.stringify(state, null, 2));
+const flag = (name) => {
+  const i = args.indexOf(name);
+  return i === -1 ? undefined : args[i + 1];
+};
+const has = (name) => args.includes(name);
+const fail = (msg, code = 1) => {
+  process.stderr.write(`${msg}\n`);
+  process.exit(code);
+};
+const keyOf = (ref) => {
+  const repo = flag('--repo') ?? state.repo;
+  const m = /\/pull\/(\d+)/.exec(ref);
+  const number = m ? Number(m[1]) : Number(ref);
+  const urlRepo = /github\.com\/([^/]+\/[^/]+)\/pull/.exec(ref);
+  return `${urlRepo ? urlRepo[1] : repo}#${number}`;
+};
+
+const [cmd, sub] = args;
+if (cmd === 'auth' && sub === 'status') {
+  if (!state.authed) fail('You are not logged into any GitHub hosts.');
+  process.stdout.write('Logged in to github.com as tester\n');
+  process.exit(0);
+}
+if (!state.authed) fail('gh: not authenticated', 4);
+
+if (cmd === 'repo' && sub === 'view') {
+  process.stdout.write(`${JSON.stringify({ nameWithOwner: state.repo })}\n`);
+  process.exit(0);
+}
+if (cmd === 'pr' && sub === 'view') {
+  const pr = state.prs[keyOf(args[2] ?? '')];
+  if (!pr) fail('no pull requests found');
+  process.stdout.write(`${JSON.stringify(pr)}\n`);
+  process.exit(0);
+}
+if (cmd === 'search' && sub === 'prs') {
+  const wantReview = has('--review-requested=@me');
+  const open = Object.values(state.prs)
+    .filter((p) => p.state === 'OPEN' && Boolean(p.reviewRequested) === wantReview)
+    .map((p) => ({ number: p.number, url: p.url, title: p.title, updatedAt: p.updatedAt, repository: { nameWithOwner: p.repo } }));
+  process.stdout.write(`${JSON.stringify(open)}\n`);
+  process.exit(0);
+}
+if (cmd === 'pr' && sub === 'create') {
+  const number = state.nextNumber;
+  state.nextNumber += 1;
+  const bodyFile = flag('--body-file');
+  const pr = {
+    repo: state.repo,
+    number,
+    url: `https://github.com/${state.repo}/pull/${number}`,
+    title: flag('--title') ?? '',
+    state: 'OPEN',
+    headRefName: flag('--head') ?? '',
+    baseRefName: flag('--base') ?? 'main',
+    body: bodyFile ? readFileSync(bodyFile, 'utf8') : (flag('--body') ?? ''),
+    draft: has('--draft'),
+    updatedAt: new Date().toISOString(),
+    reviewDecision: 'REVIEW_REQUIRED',
+    statusCheckRollup: [],
+  };
+  state.prs[`${state.repo}#${number}`] = pr;
+  save();
+  process.stdout.write(`${pr.url}\n`);
+  process.exit(0);
+}
+if (cmd === 'pr' && sub === 'merge') {
+  if (has('--admin')) fail('--admin is not allowed in tests', 5);
+  const key = keyOf(args[2] ?? '');
+  const pr = state.prs[key];
+  if (!pr) fail('no pull requests found');
+  if (pr.state !== 'OPEN') fail('pull request is not open');
+  pr.state = 'MERGED';
+  pr.updatedAt = new Date().toISOString();
+  save();
+  process.exit(0);
+}
+fail(`fake gh: unsupported command ${args.join(' ')}`, 2);

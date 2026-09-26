@@ -1,5 +1,5 @@
 import type { LiveEvent } from '@orc/api-contract';
-import type { LiveStatus, TestResult } from '@orc/core';
+import type { LiveStatus, PrRef, PrStatus, TestResult } from '@orc/core';
 
 /** contracts §6 (LiveEvent) + daemon-internal events (session.indexed etc.). */
 export type BusEvent =
@@ -8,7 +8,10 @@ export type BusEvent =
   | { type: 'session.statusChanged'; pk: string; from: LiveStatus | null; to: LiveStatus }
   | { type: 'session.turnEnded'; pk: string; turn: number }
   | { type: 'tests.recorded'; pk: string; result: TestResult }
-  | { type: 'session.indexed'; pk: string };
+  | { type: 'session.indexed'; pk: string }
+  | { type: 'pr.changed'; before: PrStatus | null; after: PrStatus }
+  | { type: 'plan.pending'; pk: string; plan: string; toolUseId: string }
+  | { type: 'pr.reviewRequested'; pr: PrRef; title: string; active: boolean };
 
 export interface EventBus {
   emit(e: BusEvent): void;

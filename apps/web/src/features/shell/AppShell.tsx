@@ -117,6 +117,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             Live
           </Link>
           <Link
+            to="/worktrees"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Worktrees
+          </Link>
+          <Link
             to="/history"
             className="rounded px-2 py-1 hover:bg-muted"
             activeProps={{ className: 'bg-muted font-medium' }}

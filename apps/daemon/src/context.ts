@@ -3,6 +3,7 @@ import type { OrcConfig } from '@orc/api-contract';
 import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
+import type { GithubConnector } from './connectors/github/github.ts';
 import { type OrcDb, openDb } from './db/client.ts';
 import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
@@ -12,13 +13,19 @@ import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
+import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
+import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import type { PlanApprovalService } from './services/review/plan-approval.ts';
+import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
+import type { ShipService } from './services/ship/ship.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
+import type { WorktreeService } from './services/worktree/worktree.ts';
 
 /** contracts §11 — Phase 1 fields. Later phases add optional services. */
 export interface DaemonContext {
@@ -52,6 +59,20 @@ export interface DaemonContext {
    * 503 `archive_unavailable` while it is unset.
    */
   archive?: ArchiveServiceRuntime | undefined;
+  /** P4 — git worktree discovery, creation, sync and archive. */
+  worktrees?: WorktreeService;
+  /** P4 — per-turn commit-tree checkpoints and rewind. */
+  checkpoints?: CheckpointService;
+  /** P4 — base-to-worktree diffs and file or hunk revert. */
+  diff?: DiffService;
+  /** P4 — review summary card data and inline comments sent to owned sessions. */
+  review?: ReviewService;
+  /** P4 — GitHub PR status through `gh`, with the PR poller. */
+  github?: GithubConnector;
+  /** P4 — commit, push, PR create/merge, ship suggestions and backmerge. */
+  ship?: ShipService;
+  /** P4 — approve or reject a plan an owned Claude session presented through ExitPlanMode. */
+  plans?: PlanApprovalService;
 }
 
 export interface BuildContextOptions {

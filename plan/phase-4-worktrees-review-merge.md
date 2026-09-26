@@ -59,11 +59,13 @@ route has to be added to one of the two tables. `audited()` and `DeniedError` li
 
 **Phase 3 exit criteria not confirmed by eye** — recorded in
 [`phase-3-evidence.md`](phase-3-evidence.md):
-- No real `/conductor` session was opened in the browser. Its stats, deliverables, agents, links,
-  safety and export were checked through the API only.
 - On that real session 55 of 84 subagents map to no conductor-chain step and show only in the tree.
 - No screenshot exists of the Agents tab, of the PROD badge on a real session, or of the secrets
   panel on real data.
+
+Criterion 10 (a `/conductor` session is understandable without the terminal) is confirmed: the user
+opened a real `/conductor` session in the running app on 2026-09-24 and checked the timeline, the
+Agents tab and the other tabs by eye.
 
 **Phase 2 exit criteria still unconfirmed by eye** (from [`phase-2-evidence.md`](phase-2-evidence.md)):
 the macOS notification banner, the card agents badge with a live subagent, and a template launch

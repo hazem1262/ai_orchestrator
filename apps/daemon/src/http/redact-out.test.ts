@@ -743,6 +743,7 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
       'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
       'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
+      'apps/daemon/src/services/review/plan-approval.ts', // compares rows against a composed key; never writes one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type
     ]);
@@ -767,7 +768,12 @@ describe('dedupeKey is composed, never copied', () => {
         'comparing a row against a composed local (a lookup, not a write)',
       ],
     ];
-    for (const file of ['../inbox/engine.ts', '../inbox/dedupe-key.ts', '../inbox/rules/status-rules.ts']) {
+    for (const file of [
+      '../inbox/engine.ts',
+      '../inbox/dedupe-key.ts',
+      '../inbox/rules/status-rules.ts',
+      '../services/review/plan-approval.ts',
+    ]) {
       const src = readFileSync(new URL(file, import.meta.url), 'utf8');
       const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       for (const m of code.matchAll(/\bdedupeKey\b.*$/gm)) {
