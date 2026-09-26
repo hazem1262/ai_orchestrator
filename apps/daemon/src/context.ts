@@ -3,6 +3,7 @@ import type { OrcConfig } from '@orc/api-contract';
 import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
+import type { GithubConnector } from './connectors/github/github.ts';
 import { type OrcDb, openDb } from './db/client.ts';
 import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
@@ -64,6 +65,8 @@ export interface DaemonContext {
   diff?: DiffService;
   /** P4 — review summary card data and inline comments sent to owned sessions. */
   review?: ReviewService;
+  /** P4 — GitHub PR status through `gh`, with the PR poller. */
+  github?: GithubConnector;
 }
 
 export interface BuildContextOptions {
