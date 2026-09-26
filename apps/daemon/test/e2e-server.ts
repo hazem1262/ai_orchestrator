@@ -34,6 +34,8 @@ saveConfig(
   OrcConfig.parse({
     port,
     resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE },
+    // No PR poller against the real `gh`: it would pull the developer's own PRs into the inbox.
+    github: { enabled: false },
     // `work` comes first: it is the directory the launch dialog offers by default.
     projects: [{ ...wakecap, pathPrefixes: [work, '/Users/test/Wakecap'] }],
   }),

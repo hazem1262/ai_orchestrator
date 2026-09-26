@@ -1,4 +1,4 @@
-import type { ApiClient, P2Methods, P3Methods } from '@orc/api-contract';
+import type { ApiClient, P2Methods, P3Methods, Phase4Client } from '@orc/api-contract';
 import { vi } from 'vitest';
 
 const unexpected = (name: string) =>
@@ -6,7 +6,7 @@ const unexpected = (name: string) =>
     throw new Error(`unexpected api call: ${name}`);
   });
 
-export type FakeApi = ApiClient & P2Methods & P3Methods;
+export type FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client;
 
 export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   const base: FakeApi = {
@@ -54,6 +54,34 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     auditList: unexpected('auditList'),
     safetySecrets: unexpected('safetySecrets'),
     safetyDenyCheck: unexpected('safetyDenyCheck'),
+    worktreesList: unexpected('worktreesList'),
+    worktreesDiscover: unexpected('worktreesDiscover'),
+    worktreesGet: unexpected('worktreesGet'),
+    worktreesCreate: unexpected('worktreesCreate'),
+    worktreesScript: unexpected('worktreesScript'),
+    worktreesOpen: unexpected('worktreesOpen'),
+    worktreesSyncPreview: unexpected('worktreesSyncPreview'),
+    worktreesSync: unexpected('worktreesSync'),
+    worktreesArchive: unexpected('worktreesArchive'),
+    diffGet: unexpected('diffGet'),
+    diffRevert: unexpected('diffRevert'),
+    checkpointsList: unexpected('checkpointsList'),
+    checkpointsDiff: unexpected('checkpointsDiff'),
+    checkpointsCreate: unexpected('checkpointsCreate'),
+    checkpointsRewind: unexpected('checkpointsRewind'),
+    reviewGet: unexpected('reviewGet'),
+    reviewComments: unexpected('reviewComments'),
+    shipSuggest: unexpected('shipSuggest'),
+    shipCommit: unexpected('shipCommit'),
+    shipPush: unexpected('shipPush'),
+    shipPr: unexpected('shipPr'),
+    shipMerge: unexpected('shipMerge'),
+    shipBackmerge: unexpected('shipBackmerge'),
+    planApprove: unexpected('planApprove'),
+    planReject: unexpected('planReject'),
+    githubStatus: unexpected('githubStatus'),
+    githubPr: unexpected('githubPr'),
+    githubMine: unexpected('githubMine'),
   };
   return { ...base, ...overrides };
 }

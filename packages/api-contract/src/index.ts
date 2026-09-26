@@ -1,6 +1,7 @@
 export * from './client.ts';
 export * from './client-p2.ts';
 export { createP3Methods, type P3ClientOptions, type P3Methods } from './client-p3.ts';
+export * from './client-phase4.ts';
 export * from './config.ts';
 export * from './domain.ts';
 export * from './errors.ts';

@@ -17,10 +17,15 @@ import { createLaunchService } from '../../services/launch.ts';
 import type { WorktreeService } from '../../services/worktree/worktree.ts';
 import { repoConfigFor } from '../../services/worktree/worktree-write.ts';
 import { parseWith } from '../json.ts';
+import { redactedJson } from '../redacted-json.ts';
 import { parseJson, parseQuery, phase4App, requireConfirm } from './git-guard.ts';
 
 const PathQuery = z.object({ path: z.string().min(1) });
 
+/**
+ * Worktree views carry paths discovered from session cwds (transcript-derived), so every body that
+ * holds one goes out through `redactedJson`.
+ */
 export function worktreesRoutes(ctx: DaemonContext): Hono {
   const app = phase4App();
   const svc = (): WorktreeService => {
@@ -28,18 +33,18 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
     return ctx.worktrees;
   };
 
-  app.get('/worktrees', (c) => c.json(svc().list(parseQuery(c, WorktreeListQuery))));
+  app.get('/worktrees', (c) => redactedJson(c, svc().list(parseQuery(c, WorktreeListQuery))));
 
   app.post('/worktrees/discover', async (c) => {
     await svc().discover();
-    return c.json(svc().list({ state: 'active' }));
+    return redactedJson(c, svc().list({ state: 'active' }));
   });
 
   app.get('/worktrees/one', (c) => {
     const { path } = parseQuery(c, PathQuery);
     const view = svc().get(path);
     if (!view) throw new ServiceError('not_found', 404, `unknown worktree ${path}`);
-    return c.json(view);
+    return redactedJson(c, view);
   });
 
   app.post('/worktrees', async (c) => {
@@ -54,7 +59,7 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
     );
     if (!b.launch) {
       const { view, setupPtyId } = await svc().createWith(b, { runSetup: b.runSetup, actor: 'user' });
-      return c.json({ worktree: view, setupPtyId, launch: null });
+      return redactedJson(c, { worktree: view, setupPtyId, launch: null });
     }
     // `parseWith`, not `.parse`: a zod v4 ZodError is not an `Error` and would escape `onError`.
     const req = parseWith(LaunchRequest, {
@@ -73,7 +78,7 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
         .list({ repo: b.repo })
         .find((w) => w.branch === branch) ?? null;
     if (!view) throw new ServiceError('internal', 500, 'worktree was not recorded');
-    return c.json({ worktree: view, setupPtyId: null, launch });
+    return redactedJson(c, { worktree: view, setupPtyId: null, launch });
   });
 
   app.post('/worktrees/script', async (c) => {
@@ -94,7 +99,7 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
 
   app.get('/worktrees/sync-preview', async (c) => {
     const { path } = parseQuery(c, PathQuery);
-    return c.json(await svc().syncPreview(path));
+    return redactedJson(c, await svc().syncPreview(path));
   });
 
   app.post('/worktrees/sync', async (c) => {

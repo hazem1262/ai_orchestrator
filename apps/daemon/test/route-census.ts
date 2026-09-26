@@ -162,6 +162,95 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: 'redactValue',
     reason: 'the restored paths, and the 409 summary and target list, are transcript paths',
   },
+  // Phase 4 sub-apps (routes/worktrees, github, review, ship, plan). Their error bodies go through
+  // `phase4App`'s onError, which renders every one with `redactedApiError`.
+  'GET /api/worktrees': {
+    guardedBy: null,
+    reason:
+      'worktree views: paths discovered from session cwds, branches and session pks, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/worktrees/one': {
+    guardedBy: null,
+    reason: 'one worktree view, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/worktrees/discover': {
+    guardedBy: null,
+    reason: 'the refreshed worktree views, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/worktrees': {
+    guardedBy: null,
+    reason:
+      'the new worktree view plus daemon-minted pty/session ids, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/worktrees/script': { guardedBy: null, reason: '{ ptyId }: the daemon-minted pty id' },
+  'POST /api/worktrees/open': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/worktrees/sync-preview': {
+    guardedBy: null,
+    reason:
+      'worktree and main paths plus git-listed file names, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/worktrees/sync': { guardedBy: null, reason: '{ files: number }' },
+  'POST /api/worktrees/archive': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/github/status': { guardedBy: null, reason: '{ status }: one of four constants' },
+  'GET /api/github/pr': {
+    guardedBy: null,
+    reason: 'PR state, checks and review from gh for the PR the client named; no transcript data',
+  },
+  'GET /api/github/prs/mine': {
+    guardedBy: null,
+    reason: "the user's own open PRs from gh; no transcript data",
+  },
+  'GET /api/diff': {
+    guardedBy: null,
+    reason: 'git diff of a worktree (file contents), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/diff/revert': {
+    guardedBy: null,
+    reason: '{ reverted: path }, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/checkpoints': {
+    guardedBy: null,
+    reason:
+      'checkpoint records (session id, worktree path, refs), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/checkpoints/:id/diff': {
+    guardedBy: null,
+    reason:
+      'git diff between checkpoint snapshots (file contents), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/checkpoints': {
+    guardedBy: null,
+    reason: 'the new checkpoint record, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/checkpoints/:id/rewind': {
+    guardedBy: null,
+    reason: 'the safety checkpoint record, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/review/:source/:id': {
+    guardedBy: null,
+    reason:
+      'review summary: session cwd, recap, diff stats, last test, PR, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/review/:source/:id/comments': {
+    guardedBy: null,
+    reason:
+      '{ sent, text }: the review prompt built from the comments, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/ship/suggest': {
+    guardedBy: null,
+    reason:
+      'commit message, PR title and body built from the session recap and ticket, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/ship/commit': { guardedBy: null, reason: '{ sha }: the new commit id' },
+  'POST /api/ship/push': { guardedBy: null, reason: '{ ok: true }' },
+  'POST /api/ship/pr': { guardedBy: null, reason: '{ repo, number, url } of the PR gh just created' },
+  'POST /api/ship/merge': { guardedBy: null, reason: '{ ok: true }' },
+  'POST /api/ship/backmerge': {
+    guardedBy: null,
+    reason: '{ ptyId }: the daemon-minted pty id of the launched workflow',
+  },
+  'POST /api/sessions/:source/:id/plan/approve': { guardedBy: null, reason: '{ ok: true }' },
+  'POST /api/sessions/:source/:id/plan/reject': { guardedBy: null, reason: '{ ok: true }' },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -183,7 +272,6 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/export.ts',
-  // Phase 4 sub-apps: built and tested now, mounted under /api (with CENSUS rows) in Task 18.
   'apps/daemon/src/http/routes/github.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
@@ -192,11 +280,14 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/links.ts',
   'apps/daemon/src/http/routes/live.ts',
   'apps/daemon/src/http/routes/notifications.ts',
+  'apps/daemon/src/http/routes/plan.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
+  'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/views.ts',
   'apps/daemon/src/http/routes/worktrees.ts',
