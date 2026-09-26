@@ -77,7 +77,7 @@ describe('DiffService.revert', () => {
     expect(after).toContain('CHANGED 28');
     expect(g('rev-parse', 'HEAD').trim()).toBe(head);
     expect(g('for-each-ref', '--format=%(refname)', 'refs/orchestrator/reverts/')).toMatch(
-      /refs\/orchestrator\/reverts\/\d+/,
+      /refs\/orchestrator\/reverts\/[0-9a-f]{16}\/\d+/,
     );
     expect(audit.entries.map((e) => [e.action, e.result])).toContainEqual(['git.revert', 'ok']);
   });

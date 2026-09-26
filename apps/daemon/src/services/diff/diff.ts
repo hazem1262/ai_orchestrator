@@ -1,4 +1,5 @@
-import { existsSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, realpathSync, rmSync } from 'node:fs';
 import { isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { type DiffResult, hunkPatch, parseUnifiedDiff } from '@orc/core';
 import type { DaemonContext } from '../../context.ts';
@@ -14,6 +15,13 @@ export interface DiffService {
     file: string,
     opts: { hunkIndex?: number; from?: string },
   ): Promise<{ reverted: string }>;
+}
+
+/** Revert safety refs are namespaced per worktree so archiving one can prune only its own. */
+export function revertRefPrefix(worktreePath: string): string {
+  const real = existsSync(worktreePath) ? realpathSync(worktreePath) : worktreePath;
+  const key = createHash('sha1').update(real).digest('hex').slice(0, 16);
+  return `refs/orchestrator/reverts/${key}/`;
 }
 
 export async function defaultBase(cwd: string): Promise<string> {
@@ -88,7 +96,7 @@ export function createDiffService(ctx: DaemonContext): DiffService {
       async () => {
         const from = opts.from ?? (await mergeBase(root));
         const { commit } = await snapshotCommit(root, `orchestrator safety before reverting ${label}`);
-        await gitOut(root, ['update-ref', `refs/orchestrator/reverts/${Date.now()}`, commit]);
+        await gitOut(root, ['update-ref', `${revertRefPrefix(root)}${Date.now()}`, commit]);
 
         if (opts.hunkIndex === undefined) {
           const inBase =
