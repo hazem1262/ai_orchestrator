@@ -12,6 +12,7 @@ import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
+import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -19,6 +20,7 @@ import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
+import type { WorktreeService } from './services/worktree/worktree.ts';
 
 /** contracts §11 — Phase 1 fields. Later phases add optional services. */
 export interface DaemonContext {
@@ -52,6 +54,10 @@ export interface DaemonContext {
    * 503 `archive_unavailable` while it is unset.
    */
   archive?: ArchiveServiceRuntime | undefined;
+  /** P4 — git worktree discovery, creation, sync and archive. */
+  worktrees?: WorktreeService;
+  /** P4 — per-turn commit-tree checkpoints and rewind. */
+  checkpoints?: CheckpointService;
 }
 
 export interface BuildContextOptions {
