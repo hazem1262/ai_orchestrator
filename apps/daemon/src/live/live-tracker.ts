@@ -214,6 +214,8 @@ interface Entry {
   endedAt: number | null;
   live: LiveState | null;
   lastPublished: string;
+  /** False until `live` has reached `sessions.setLive`; a session not indexed yet cannot take it. */
+  liveApplied: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -262,6 +264,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       endedAt: null,
       live: null,
       lastPublished: '',
+      liveApplied: false,
     };
   }
 
@@ -392,8 +395,11 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     const key = `${JSON.stringify(e.live)}|${t.lastPrompt ?? ''}|${t.lastTest?.ts ?? ''}`;
     if (key !== e.lastPublished) {
       e.lastPublished = key;
-      if (ctx.sessions.getByPk(e.pk)) ctx.sessions.setLive(e.pk, e.live);
+      e.liveApplied = false;
+      applyLive(e);
       ctx.bus.emit({ type: 'session.updated', session: merged(e) });
+    } else if (!e.liveApplied) {
+      applyLive(e);
     }
     // Seeding, not a transition. The first pass discovers sessions that were *already* running
     // when the daemon started; per spike S3 their `statusUpdatedAt` is the AGE of the last change,
@@ -404,6 +410,12 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     if (change && initialPassDone) {
       ctx.bus.emit({ type: 'session.statusChanged', pk: e.pk, from: change.from, to: change.to });
     }
+  }
+
+  function applyLive(e: Entry): void {
+    if (!ctx.sessions.getByPk(e.pk)) return;
+    ctx.sessions.setLive(e.pk, e.live);
+    e.liveApplied = true;
   }
 
   function remove(e: Entry): void {
@@ -539,6 +551,12 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       await deps.registry.start();
       unsubs.push(deps.registry.onChange(() => void refresh()));
       unsubs.push(ctx.bus.on('pty.exited', () => void refresh()));
+      unsubs.push(
+        ctx.bus.on('session.indexed', (ev) => {
+          const e = entries.get(ev.pk);
+          if (e?.live && !e.liveApplied) applyLive(e);
+        }),
+      );
       await refresh();
       initialPassDone = true;
       timer = setInterval(() => void refresh(), ctx.config().live.pollMs);

@@ -424,6 +424,31 @@ describe('LiveTracker persistence for indexed sessions', () => {
       now: () => new Date(nowMs),
     });
 
+  it('applies ownership to a session that is indexed after the tracker first saw it', async () => {
+    expect(ctx.sessions.getByPk('claude:s-basic')).toBeNull(); // not indexed yet
+    pty.infos.push({
+      id: 'pty-late',
+      sessionPk: 'claude:s-basic',
+      command: 'claude',
+      args: [],
+      cwd: '/Users/test/Wakecap',
+      pid: 999_999,
+      startedAt: '',
+      exitedAt: null,
+      exitCode: null,
+      cols: 80,
+      rows: 24,
+    });
+    await tracker.refresh();
+    expect(tracker.get('claude:s-basic')?.live).toMatchObject({ ownership: 'owned', ptyId: 'pty-late' });
+    await indexFixtures(ctx);
+    await tracker.refresh();
+    expect(ctx.sessions.getByPk('claude:s-basic')?.live).toMatchObject({
+      ownership: 'owned',
+      ptyId: 'pty-late',
+    });
+  });
+
   it('persists live state through sessions.setLive and clears it when the entry is retired', async () => {
     await indexFixtures(ctx);
     expect(ctx.sessions.getByPk('claude:s-basic')).not.toBeNull(); // the guard's precondition
