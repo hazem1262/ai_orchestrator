@@ -56,6 +56,18 @@ const firstSentence = (text: string) =>
     .trim()
     .slice(0, 72);
 
+const SUMMARY_HEADING = /^##[ \t]+Summary[ \t]*$/im;
+
+/** Puts the summary under the template's own `## Summary` heading, or prepends one when it has none. */
+function withSummary(template: string | null, text: string): string {
+  if (!template) return `## Summary\n\n${text}\n`;
+  const body = template.trimEnd();
+  const m = SUMMARY_HEADING.exec(body);
+  if (!m) return `## Summary\n\n${text}\n\n${body}\n`;
+  const end = m.index + m[0].length;
+  return `${body.slice(0, end)}\n\n${text}\n${body.slice(end)}\n`;
+}
+
 export function createShipService(ctx: DaemonContext, opts: { launch?: Launcher } = {}): ShipService {
   // SUPERSEDED CALL SHAPE: the plan's `launchSession(ctx, req)` does not exist; the shipped P2
   // launcher is `ctx.launcher.launch(req)` (services/launch.ts).
@@ -190,9 +202,8 @@ export function createShipService(ctx: DaemonContext, opts: { launch?: Launcher 
     const subject = ticket ? `${ticket} ${summary}` : summary;
     const ticketUrl = ticket ? ctx.config().github.ticketUrlTemplate.replace('{ticket}', ticket) : null;
     const template = await readPrTemplate(root);
-    const summaryBlock = `## Summary\n\n${recap ?? summary}\n`;
     const footer = ticketUrl ? `\n---\nTicket: [${ticket}](${ticketUrl})\n` : '';
-    const body = template ? `${summaryBlock}\n${template.trimEnd()}\n${footer}` : `${summaryBlock}${footer}`;
+    const body = `${withSummary(template, recap ?? summary)}${footer}`;
     return { message: `${type}: ${subject}`, title: subject, body, base, branch, ticket };
   }
 
