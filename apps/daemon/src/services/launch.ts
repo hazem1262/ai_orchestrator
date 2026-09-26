@@ -4,6 +4,8 @@ import type { LaunchRequest, OrcConfig } from '@orc/api-contract';
 import type { Source } from '@orc/core';
 import type { DaemonContext } from '../context.ts';
 import { createLivenessChecker, type LivenessChecker, readClaudeRegistry } from '../live/liveness.ts';
+import { applyPlanMode } from './launch-plan-mode.ts';
+import { prepareLaunch } from './launch-prepare.ts';
 import { sessionPk } from './sessions.ts';
 import { composePrompt, TemplateError } from './templates.ts';
 
@@ -69,7 +71,8 @@ export const CLAUDE_SUBCOMMANDS: ReadonlySet<string> = new Set([
 
 /**
  * argv only, no shell: `[...profileArgs, ('--model', model)?, ('--')?, prompt?]`. The prompt is one
- * argv element, always the last one, and is left out entirely when it is blank.
+ * argv element, always the last one, and is left out entirely when it is blank. A Claude
+ * `planApproval` launch runs the options before the prompt through `applyPlanMode`.
  *
  * Codex gets `--` before the prompt. Codex parses its argv with clap, which reads everything after
  * `--` as the `[PROMPT]` positional and never as a subcommand (probed on codex-cli 0.152.1:
@@ -79,13 +82,16 @@ export const CLAUDE_SUBCOMMANDS: ReadonlySet<string> = new Set([
  */
 export function buildLaunchCommand(
   cfg: OrcConfig,
-  req: { source: 'claude' | 'codex'; model?: string; prompt: string },
+  req: { source: 'claude' | 'codex'; model?: string; prompt: string; planApproval?: boolean },
 ): { command: string; args: string[] } {
   const p = cfg.resumeProfile;
   const model = req.model ? ['--model', req.model] : [];
   const hasPrompt = req.prompt.trim() !== '';
+  const claudeOpts = req.planApproval
+    ? applyPlanMode([...p.claudeArgs, ...model])
+    : [...p.claudeArgs, ...model];
   return req.source === 'claude'
-    ? { command: p.claudeCommand, args: [...p.claudeArgs, ...model, ...(hasPrompt ? [req.prompt] : [])] }
+    ? { command: p.claudeCommand, args: [...claudeOpts, ...(hasPrompt ? [req.prompt] : [])] }
     : { command: p.codexCommand, args: [...p.codexArgs, ...model, ...(hasPrompt ? ['--', req.prompt] : [])] };
 }
 
@@ -156,22 +162,13 @@ export function createLaunchService(
   return {
     ownedCount,
 
-    async launch(req) {
-      if (req.planApproval) {
-        throw new LaunchError(501, 'not_implemented', 'plan approval is not implemented yet', {
-          field: 'planApproval',
-        });
-      }
-      if (req.worktree) {
-        throw new LaunchError(501, 'not_implemented', 'worktree launch is not implemented yet', {
-          field: 'worktree',
-        });
-      }
-      if (req.compare?.length) {
+    async launch(input) {
+      if (input.compare?.length) {
         throw new LaunchError(501, 'not_implemented', 'compare mode is not implemented yet', {
           field: 'compare',
         });
       }
+      const req = await prepareLaunch(ctx, input);
       if (!isAbsolute(req.cwd) || !isDir(req.cwd)) {
         throw new LaunchError(400, 'cwd_not_found', `cwd does not exist or is not a directory: ${req.cwd}`);
       }
@@ -217,6 +214,7 @@ export function createLaunchService(
         source: req.source,
         model: req.model,
         prompt,
+        planApproval: req.planApproval,
       });
       const info = ctx.pty.spawn({ command, args, cwd: req.cwd, sessionPk: null });
       ctx.log.info(

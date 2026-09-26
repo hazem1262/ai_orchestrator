@@ -18,6 +18,7 @@ import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
@@ -70,6 +71,8 @@ export interface DaemonContext {
   github?: GithubConnector;
   /** P4 — commit, push, PR create/merge, ship suggestions and backmerge. */
   ship?: ShipService;
+  /** P4 — approve or reject a plan an owned Claude session presented through ExitPlanMode. */
+  plans?: PlanApprovalService;
 }
 
 export interface BuildContextOptions {

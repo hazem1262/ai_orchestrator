@@ -122,22 +122,26 @@ describe('POST /api/sessions/launch', () => {
       source: 'claude',
       projectId: null,
       cwd,
-      planApproval: true,
+      compare: [{ source: 'codex' }],
     });
     expect(nyi.status).toBe(501);
     expect((await errorOf(nyi)).code).toBe('not_implemented');
   });
 
-  it.each([
-    [{ planApproval: true }, 'planApproval'],
-    [{ worktree: { repo: '/r', base: 'main', type: 'feat', slug: 'x' } }, 'worktree'],
-    [{ compare: [{ source: 'codex' }] }, 'compare'],
-  ])('answers 501 not_implemented with details.field for %j', async (over, field) => {
-    const res = await post('/api/sessions/launch', { source: 'claude', projectId: 'wakecap', cwd, ...over });
-    expect(res.status).toBe(501);
-    expect(await errorOf(res)).toMatchObject({ code: 'not_implemented', details: { field } });
-    expect(pty.spawned).toHaveLength(0);
-  });
+  it.each([[{ compare: [{ source: 'codex' }] }, 'compare']])(
+    'answers 501 not_implemented with details.field for %j',
+    async (over, field) => {
+      const res = await post('/api/sessions/launch', {
+        source: 'claude',
+        projectId: 'wakecap',
+        cwd,
+        ...over,
+      });
+      expect(res.status).toBe(501);
+      expect(await errorOf(res)).toMatchObject({ code: 'not_implemented', details: { field } });
+      expect(pty.spawned).toHaveLength(0);
+    },
+  );
 
   it('answers 429 concurrency_limit with projectId, max and running', async () => {
     cap = 1;
