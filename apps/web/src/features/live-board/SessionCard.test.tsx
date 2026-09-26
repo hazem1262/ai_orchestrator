@@ -80,7 +80,9 @@ describe('SessionCard', () => {
     expect(c.getByText('2 jobs')).toBeTruthy();
     expect(c.getByText('bypass')).toBeTruthy();
     expect(c.getByText('3 agents')).toBeTruthy();
-    expect((c.getByRole('button', { name: 'Diff' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(c.getByRole('link', { name: 'Diff' }).getAttribute('href')).toBe(
+      `/review/${full.source}/${full.id}`,
+    );
   });
 
   it('marks a non-attention status and drops Stop once the session ended', async () => {

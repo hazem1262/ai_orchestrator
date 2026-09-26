@@ -136,9 +136,13 @@ export function SessionCard({ session: s, now, compact = false, pinned, onToggle
         >
           Details
         </Link>
-        <Button size="sm" variant="ghost" disabled title="Available in Phase 4">
+        <Link
+          to="/review/$source/$id"
+          params={{ source: s.source, id: s.id }}
+          className="px-2 text-xs underline"
+        >
           Diff
-        </Button>
+        </Link>
         <Button
           size="sm"
           variant="ghost"
