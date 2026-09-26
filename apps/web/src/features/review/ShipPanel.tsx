@@ -1,4 +1,5 @@
 import type { PrRef, ReviewSummary } from '@orc/core';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useState } from 'react';
 import { getApiClient } from '@/api/client.ts';
 import { usePrStatus } from '@/api/queries/github.ts';
@@ -39,6 +40,13 @@ export function ShipPanel({ summary: s }: { summary: ReviewSummary }) {
 
   const prRef = created ?? s.pr?.pr ?? null;
   const pr = usePrStatus(prRef);
+  const qc = useQueryClient();
+  const hasSummaryPr = Boolean(s.pr);
+  // The daemon fills its PR cache only when the status is fetched, after the create's refetch of
+  // the review summary; refetch it again once the status is known so the summary shows the PR.
+  useEffect(() => {
+    if (pr.data && !hasSummaryPr) void qc.invalidateQueries({ queryKey: ['review'] });
+  }, [pr.data, hasSummaryPr, qc]);
   const commit = useConfirmedMutation(
     (m: string, confirm: boolean) => getApiClient().shipCommit({ cwd: s.cwd, message: m, confirm }),
     { invalidate: INVALIDATE },

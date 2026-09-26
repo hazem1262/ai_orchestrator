@@ -1,11 +1,12 @@
 import { ApiRequestError } from '@orc/api-contract';
-import type { CheckpointRecord, ReviewSummary } from '@orc/core';
+import type { CheckpointRecord, PrStatus, ReviewSummary } from '@orc/core';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
 import { renderWithProviders } from '@/test/render.tsx';
 import { CheckpointTimeline } from './CheckpointTimeline.tsx';
 import { PresetButtons } from './PresetButtons.tsx';
+import { ReviewAside } from './ReviewAside.tsx';
 import { ShipPanel } from './ShipPanel.tsx';
 import { SummaryCard } from './SummaryCard.tsx';
 
@@ -51,6 +52,66 @@ describe('SummaryCard', () => {
     expect(screen.getByText('Tests: 10 passed, 2 failed')).toBeDefined();
     expect(screen.getByText('No recap yet')).toBeDefined();
     expect(screen.getByText('No PR yet')).toBeDefined();
+  });
+
+  it('shows the PR once the ship panel has created it', async () => {
+    const ref = { repo: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' };
+    const status: PrStatus = {
+      pr: ref,
+      state: 'open',
+      title: 'SAF-1 x',
+      checks: 'none',
+      review: 'none',
+      updatedAt: 'x',
+      headRef: 'feat/SAF-1-x',
+      failedChecks: [],
+    };
+    // Daemon behaviour: `POST /ship/pr` stores prUrl on the worktree; the PR status lands in the
+    // pr cache only when `GET /github/pr` (or the poller) fetches it.
+    let prUrl: string | null = null;
+    let cached: PrStatus | null = null;
+    const base = summary();
+    const api = createFakeApi({
+      reviewGet: async () => ({
+        ...base,
+        worktree: base.worktree ? { ...base.worktree, prUrl, prStatus: cached } : null,
+        pr: cached,
+      }),
+      diffGet: async () => ({ cwd: '/w', from: 'b', to: 'WORKTREE', files: [], additions: 0, deletions: 0 }),
+      checkpointsList: async () => [],
+      shipSuggest: async () => ({
+        message: 'feat: SAF-1 x',
+        title: 'SAF-1 x',
+        body: 'b',
+        base: 'main',
+        branch: 'feat/SAF-1-x',
+        ticket: 'SAF-1',
+      }),
+      shipPr: vi.fn(async (b: { confirm: boolean }) => {
+        if (!b.confirm) throw needConfirm('pr?');
+        prUrl = ref.url;
+        return ref;
+      }) as unknown as FakeApi['shipPr'],
+      githubPr: async () => {
+        cached = status;
+        return status;
+      },
+    });
+    renderWithProviders(
+      <ReviewAside source="claude" id="s1" selected={{ kind: 'worktree' }} select={() => {}} />,
+      { api },
+    );
+    const card = await screen.findByRole('region', { name: 'Review summary' });
+    expect(within(card).getByText('No PR yet')).toBeDefined();
+    await waitFor(() =>
+      expect((screen.getByLabelText('PR title') as HTMLInputElement).value).toBe('SAF-1 x'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Create PR' }));
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Create PR' }).at(-1) as HTMLElement);
+    expect(await screen.findByText('#7 · open · checks none')).toBeDefined();
+    await waitFor(() => expect(within(card).queryByText('No PR yet')).toBeNull());
+    expect(within(card).getByText(/PR #7/)).toBeDefined();
   });
 });
 
