@@ -154,9 +154,7 @@ describe('LaunchDialog', () => {
       'Concurrency limit reached: 6/6 app-owned sessions in this project.',
     );
     expect(useLaunchStore.getState().open).toBe(true);
-    expect((screen.getByLabelText('Require plan approval (Phase 4)') as HTMLInputElement).disabled).toBe(
-      true,
-    );
+    expect((screen.getByLabelText('Require plan approval first') as HTMLInputElement).disabled).toBe(false);
   });
 
   it('describes errors', () => {

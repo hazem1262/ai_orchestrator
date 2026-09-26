@@ -70,7 +70,7 @@ describe('SessionCard', () => {
     expect(c.getByText('$1.25')).toBeTruthy();
     expect(c.getByText('ctx 42%')).toBeTruthy();
     expect(c.getByText('SAF-1787')).toBeTruthy();
-    expect(c.getByRole('link', { name: '#231' }).getAttribute('href')).toBe(
+    expect(c.getByRole('link', { name: 'PR #231' }).getAttribute('href')).toBe(
       'https://github.com/example-org/svc/pull/231',
     );
     expect(c.getByRole('list', { name: 'Stage' }).querySelector('[aria-current="step"]')?.textContent).toBe(

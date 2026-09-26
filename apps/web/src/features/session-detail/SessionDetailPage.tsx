@@ -1,4 +1,5 @@
 import type { Source } from '@orc/core';
+import { Link } from '@tanstack/react-router';
 import { useSession } from '@/api/queries/sessions.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
@@ -54,6 +55,9 @@ export function SessionDetailPage({ source, id, tab, agentId, file, onNavigate }
             >
               Audit
             </a>
+            <Link to="/review/$source/$id" params={{ source, id }} className="text-xs text-primary underline">
+              Review
+            </Link>
             <ExportButton source={source} id={id} />
             <ResumeActions
               target={{

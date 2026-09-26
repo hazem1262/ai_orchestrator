@@ -7,6 +7,7 @@ import { cn } from '@/components/ui/cn.ts';
 import { formatCost } from '@/lib/format.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { OpenInButton } from './OpenInButton.tsx';
+import { PrChip } from './PrChip.tsx';
 import { StageBar } from './StageBar.tsx';
 import {
   formatDuration,
@@ -103,15 +104,7 @@ export function SessionCard({ session: s, now, compact = false, pinned, onToggle
                 </Badge>
               ))}
               {s.prs.map((p) => (
-                <a
-                  key={p.url}
-                  href={p.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded border px-1.5 hover:bg-muted"
-                >
-                  {`#${p.number}`}
-                </a>
+                <PrChip key={p.url} pr={p} />
               ))}
             </div>
           ) : null}
