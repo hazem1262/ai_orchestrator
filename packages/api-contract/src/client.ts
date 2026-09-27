@@ -118,7 +118,7 @@ export function createApiClient(
   const seg = (source: Source, id: string) =>
     `/api/sessions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`;
 
-  const methods: ApiClient = {
+  const methods: Omit<ApiClient, keyof Phase7Api> = {
     healthGet: () => call(HealthResponseSchema, 'GET', '/api/health'),
     projectsList: () => call(z.array(ProjectSchema), 'GET', '/api/projects'),
     projectsGet: (id) => call(ProjectConfig, 'GET', `/api/projects/${encodeURIComponent(id)}`),

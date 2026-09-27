@@ -737,6 +737,7 @@ describe('dedupeKey is composed, never copied', () => {
     for (const root of roots) walk(root);
     expect(hits.sort()).toEqual([
       'apps/daemon/src/db/repos/inbox.ts', // reads and writes the column
+      'apps/daemon/src/db/repos/suggestions.ts', // automation_suggestions.dedupe_key — its own column, not the inbox key
       'apps/daemon/src/db/schema.ts', // declares the column and its unique index
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts

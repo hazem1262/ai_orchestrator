@@ -230,6 +230,28 @@ describe('live WS hub', () => {
           kind: 'turn',
         },
       },
+      'automation.runUpdated': {
+        type: 'automation.runUpdated',
+        run: {
+          id: 'r1',
+          automationId: 'a1',
+          startedAt: '2026-09-17T00:00:00.000Z',
+          endedAt: null,
+          status: 'running',
+          sessionPk: null,
+          costUsd: null,
+          summary: SECRET,
+          triggerKey: 'manual:r1',
+          triggerSource: 'manual',
+          vars: { note: SECRET },
+          ptyId: null,
+          worktreePath: null,
+          prUrl: null,
+          diffStat: null,
+          error: SECRET,
+          rerunOf: null,
+        },
+      },
     };
     // Internal events, interleaved: a leak would show up in the type sequence asserted below.
     ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:x', from: null, to: 'busy' });

@@ -4,6 +4,8 @@ export { createP3Methods, type P3ClientOptions, type P3Methods } from './client-
 export * from './client-p5.ts';
 export * from './client-p6.ts';
 export * from './client-phase4.ts';
+export * from './clients/automations.ts';
+export * from './clients/phase7.ts';
 export * from './config.ts';
 export * from './domain.ts';
 export * from './errors.ts';
@@ -11,6 +13,7 @@ export * from './live.ts';
 export * from './routes/analytics.ts';
 export * from './routes/archive.ts';
 export * from './routes/audit.ts';
+export * from './routes/automations.ts';
 export * from './routes/common.ts';
 export * from './routes/connectors.ts';
 export * from './routes/goals.ts';

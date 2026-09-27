@@ -29,6 +29,9 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
       return { type: 'pr.updated', status: redactValue(e.status) as typeof e.status };
     case 'checkpoint.created':
       return { type: 'checkpoint.created', checkpoint: redactValue(e.checkpoint) as typeof e.checkpoint };
+    // `summary`, `error` and `vars` carry agent output and trigger text.
+    case 'automation.runUpdated':
+      return { type: 'automation.runUpdated', run: redactValue(e.run) as typeof e.run };
     // Ids, counters and a timestamp only.
     case 'session.removed':
     case 'pty.exited':

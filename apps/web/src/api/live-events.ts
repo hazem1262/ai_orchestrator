@@ -23,6 +23,14 @@ export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
   applyP3LiveEvent(qc, e);
   applyP4LiveEvent(qc, e);
   applyP5LiveEvent(qc, e);
+  applyP7LiveEvent(qc, e);
+}
+
+/** Phase 7: an automation run changed; the list's stats and that automation's run history refetch. */
+function applyP7LiveEvent(qc: QueryClient, e: WireEvent): void {
+  if (e.type !== 'automation.runUpdated') return;
+  void qc.invalidateQueries({ queryKey: ['automations'] });
+  void qc.invalidateQueries({ queryKey: ['automation-runs', e.run.automationId] });
 }
 
 /** Phase 5: the daemon pushes a fresh usage snapshot whenever the quota picture changes. */

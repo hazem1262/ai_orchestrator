@@ -307,3 +307,69 @@ export const prCache = sqliteTable(
 
 export * from './schema-p5.ts';
 export * from './schema-p6.ts';
+
+// ── Phase 7: automations ─────────────────────────────────────────────
+export const automations = sqliteTable('automations', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  triggerJson: text('trigger_json').notNull(),
+  actionJson: text('action_json').notNull(),
+  budgetUsd: real('budget_usd').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
+export const automationRuns = sqliteTable(
+  'automation_runs',
+  {
+    id: text('id').primaryKey(),
+    automationId: text('automation_id')
+      .notNull()
+      .references(() => automations.id, { onDelete: 'cascade' }),
+    triggerKey: text('trigger_key').notNull(),
+    triggerSource: text('trigger_source').notNull(),
+    varsJson: text('vars_json').notNull().default('{}'),
+    startedAt: text('started_at').notNull(),
+    endedAt: text('ended_at'),
+    status: text('status').notNull(),
+    sessionPk: text('session_pk'),
+    ptyId: text('pty_id'),
+    worktreePath: text('worktree_path'),
+    costUsd: real('cost_usd'),
+    summary: text('summary'),
+    prUrl: text('pr_url'),
+    diffStatJson: text('diff_stat_json'),
+    logPath: text('log_path'),
+    error: text('error'),
+    rerunOf: text('rerun_of'),
+  },
+  (t) => [
+    uniqueIndex('automation_runs_trigger_key').on(t.automationId, t.triggerKey),
+    index('automation_runs_by_automation').on(t.automationId, t.startedAt),
+    index('automation_runs_by_status').on(t.status),
+  ],
+);
+
+export const automationSuggestions = sqliteTable(
+  'automation_suggestions',
+  {
+    id: text('id').primaryKey(),
+    source: text('source').notNull(),
+    projectId: text('project_id'),
+    title: text('title').notNull(),
+    detail: text('detail').notNull(),
+    ticket: text('ticket'),
+    file: text('file'),
+    line: integer('line'),
+    dedupeKey: text('dedupe_key').notNull(),
+    state: text('state').notNull().default('new'),
+    createdAt: text('created_at').notNull(),
+    decidedAt: text('decided_at'),
+    runPtyId: text('run_pty_id'),
+  },
+  (t) => [
+    uniqueIndex('automation_suggestions_dedupe').on(t.dedupeKey),
+    index('automation_suggestions_state').on(t.state, t.createdAt),
+  ],
+);

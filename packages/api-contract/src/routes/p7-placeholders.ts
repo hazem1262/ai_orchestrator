@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
-// Placeholders: each is replaced by the real schema in Tasks 2 / 11 / 20, which delete the line here.
-export const Suggestion = z.object({ id: z.string(), state: z.enum(['new', 'accepted', 'dismissed']) });
-export type Suggestion = z.infer<typeof Suggestion>;
+// Placeholders: each is replaced by the real schema in Tasks 11 / 20, which delete the line here.
 export const CompareGroup = z.object({ id: z.string() });
 export type CompareGroup = z.infer<typeof CompareGroup>;
 export const CompareEstimate = z.object({ variants: z.number() });
