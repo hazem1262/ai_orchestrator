@@ -244,6 +244,71 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: (_m, b) => str(b.channel),
     recordedBy: 'service',
   },
+  // Phase 7 automations. `AutomationService` and the settings handler record each entry with the
+  // real actor and parameters; the middleware records only a request that fails before they do.
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations$/,
+    action: 'settings.update',
+    target: (_m, b) => (str(b.id) ? `automation:${str(b.id)}` : null),
+    recordedBy: 'service',
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/automations\/settings$/,
+    action: 'settings.update',
+    target: () => 'config:automations',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/suggestions\/([^/]+)\/accept$/,
+    action: 'session.launch',
+    target: (m) => `suggestion:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/approve$/,
+    action: 'automation.approve',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/reject$/,
+    action: 'automation.reject',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/rerun$/,
+    action: 'automation.run',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/automations\/([^/]+)$/,
+    action: 'settings.update',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/([^/]+)\/enabled$/,
+    action: 'settings.update',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/([^/]+)\/run$/,
+    action: 'automation.run',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,
@@ -334,6 +399,12 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
   { method: 'POST', path: '/api/push/subscriptions', why: 'device-local notification preference' },
   { method: 'DELETE', path: '/api/push/subscriptions', why: 'device-local notification preference' },
   { method: 'POST', path: '/api/push/test', why: 'sends a test notification to the user’s own devices only' },
+  {
+    method: 'POST',
+    path: '/api/automations/suggestions/refresh',
+    why: 'read-only collection from Linear and git into the local suggestions table',
+  },
+  { method: 'POST', path: '/api/automations/suggestions/:id/dismiss', why: 'local state only, nothing runs' },
 ];
 
 export function matchAuditedRoute(

@@ -42,6 +42,7 @@ export interface AutomationDeps {
 export interface AutomationServiceImpl extends AutomationService {
   get(id: string): Automation | null;
   listWithStats(): AutomationWithStats[];
+  getWithStats(id: string): AutomationWithStats | null;
   remove(id: string): void;
   setEnabled(id: string, enabled: boolean): Automation;
   start(id: string, fire: TriggerFire): Promise<AutomationRunDetail | null>;
@@ -573,15 +574,20 @@ export function createAutomationService(deps: AutomationDeps): AutomationService
     });
   }
 
+  const withStats = (a: Automation): AutomationWithStats => ({
+    ...a,
+    stats: repo.runStats(ctx.db, a.id, monthStartIso(now())),
+    nextRunAt: nextRunAt(a, now()),
+  });
+
   const api: AutomationServiceImpl = {
     list: () => repo.listAutomations(ctx.db),
     get: (id) => repo.getAutomation(ctx.db, id),
-    listWithStats: () =>
-      repo.listAutomations(ctx.db).map((a) => ({
-        ...a,
-        stats: repo.runStats(ctx.db, a.id, monthStartIso(now())),
-        nextRunAt: nextRunAt(a, now()),
-      })),
+    listWithStats: () => repo.listAutomations(ctx.db).map(withStats),
+    getWithStats(id) {
+      const a = repo.getAutomation(ctx.db, id);
+      return a ? withStats(a) : null;
+    },
     save,
     remove(id) {
       mustGet(id);

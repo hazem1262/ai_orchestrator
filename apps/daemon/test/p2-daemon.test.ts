@@ -11,6 +11,7 @@ import type { DaemonContext } from '../src/context.ts';
 import { createApp } from '../src/http/app.ts';
 import { parseLstart } from '../src/live/liveness.ts';
 import { createDaemon, type Daemon } from '../src/main.ts';
+import { offlinePhase7 } from './fakes/phase7.ts';
 import { createTestContext } from './helpers.ts';
 import { FAKE_BIN_DIR, makeTempHomes, type TempHomes } from './homes.ts';
 import { offlinePhase6 } from './p6-connector-fakes.ts';
@@ -79,6 +80,7 @@ async function boot(before?: (h: TempHomes) => void): Promise<void> {
     launchExternal: async () => undefined,
     webDist: null,
     phase6: offlinePhase6(),
+    phase7: offlinePhase7(),
   });
   running = await daemon.start({ port: 0, watch: false });
   base = `http://127.0.0.1:${running.port}`;

@@ -510,6 +510,78 @@ export const CENSUS: Record<string, CensusEntry> = {
   'POST /api/push/test': { guardedBy: null, reason: '{ sent: number }' },
   'GET /api/remote/away': { guardedBy: null, reason: 'the away state: flags, mode, reason and idle seconds' },
   'POST /api/remote/away': { guardedBy: null, reason: 'the same away state as GET /api/remote/away' },
+  'GET /api/automations': {
+    guardedBy: null,
+    reason:
+      'user-authored automation config (name, trigger, template and project ids) with run counts and cost',
+  },
+  'POST /api/automations': {
+    guardedBy: null,
+    reason: 'the saved automation config the user just sent, round-tripped by the editor',
+  },
+  'GET /api/automations/settings': {
+    guardedBy: null,
+    reason: '{ enabled, maxConcurrent, suggestionsEnabled }',
+  },
+  'PATCH /api/automations/settings': {
+    guardedBy: null,
+    reason: 'the same automation settings as GET /api/automations/settings',
+  },
+  'GET /api/automations/suggestions': {
+    guardedBy: null,
+    reason:
+      'suggestions with Linear titles and TODO lines, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/automations/suggestions/refresh': { guardedBy: null, reason: '{ added: number }' },
+  'POST /api/automations/suggestions/:id/accept': {
+    guardedBy: null,
+    reason: '{ ptyId, sessionPk }; the 409 confirmation summary and suggestion go through redactedApiError',
+  },
+  'POST /api/automations/suggestions/:id/dismiss': {
+    guardedBy: null,
+    reason: 'the dismissed suggestion, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/runs/:runId': {
+    guardedBy: null,
+    reason: 'the run with its Claude summary, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/runs/:runId/log': {
+    guardedBy: null,
+    reason:
+      'run log lines: assistant text through core redact in formatStreamLine, then the body through redactedJson',
+  },
+  'POST /api/automations/runs/:runId/approve': {
+    guardedBy: null,
+    reason: 'the run, walked by redactedJson; the 409 confirmation plan goes through redactedApiError',
+  },
+  'POST /api/automations/runs/:runId/reject': {
+    guardedBy: null,
+    reason: 'the rejected run, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/automations/runs/:runId/rerun': {
+    guardedBy: null,
+    reason: 'the new run, walked by redactedJson, or { deduped: true }',
+  },
+  'GET /api/automations/:id': {
+    guardedBy: null,
+    reason: 'one automation config with its run counts and cost, round-tripped by the editor',
+  },
+  'DELETE /api/automations/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary names the automation the user created',
+  },
+  'POST /api/automations/:id/enabled': {
+    guardedBy: null,
+    reason: 'the automation config with the new enabled flag',
+  },
+  'POST /api/automations/:id/run': {
+    guardedBy: null,
+    reason: 'the queued run, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/:id/runs': {
+    guardedBy: null,
+    reason: 'the runs with their Claude summaries, walked by redactedJson (core redactDeep) on the way out',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -531,6 +603,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/automations.ts',
   'apps/daemon/src/http/routes/away.ts',
   'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',

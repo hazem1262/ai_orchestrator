@@ -26,6 +26,7 @@ import { type AnalyticsService, createAnalyticsService } from './services/analyt
 import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
+import type { AutomationServiceImpl } from './services/automations/service.ts';
 import type { SuggestionService } from './services/automations/suggestions.ts';
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import type { CompareService } from './services/compare/compare.ts';
@@ -147,6 +148,8 @@ export interface DaemonContext {
   slack?: SlackConnector;
   /** P6 — paired devices, pairing codes, step-up grants, the Funnel watch, passkeys and web push; set by `createPhase6`. */
   remoteAccess?: RemoteAccess;
+  /** P7 — scheduled and event-triggered automations (implements contracts §11 `AutomationService`); set by `createPhase7`. */
+  automations?: AutomationServiceImpl;
   /** P7 — automation suggestions (Jules-style suggested tasks). */
   suggestions?: SuggestionService;
   /** P7 — compare mode across agents. */

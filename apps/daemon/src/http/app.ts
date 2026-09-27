@@ -10,6 +10,7 @@ import { type RemoteGuardDeps, remoteGuard } from './remote-guard.ts';
 import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
+import { registerAutomationRoutes } from './routes/automations.ts';
 import { registerAwayRoutes } from './routes/away.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerExportRoutes } from './routes/export.ts';
@@ -76,6 +77,8 @@ export interface AppOptions {
  * routes (connectors, share, session actions, remote, WebAuthn, push, away) follow the same rule:
  * `createPhase6` sets their services on `ctx`, the handlers read them per request and answer
  * `503 unavailable` while they are unset, and `AppOptions.phase6` only supplies the guard deps.
+ * The phase 7 automation routes read `ctx.automations` and `ctx.suggestions` (set by
+ * `createPhase7`) per request and answer `409 not_enabled` while they are unset.
  */
 export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerHealthRoutes(app);
@@ -110,6 +113,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerWebAuthnRoutes(app, ctx);
   registerPushRoutes(app, ctx);
   registerAwayRoutes(app, ctx);
+  registerAutomationRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));

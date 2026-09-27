@@ -4,6 +4,7 @@ import { pino } from 'pino';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { createDaemon, type Daemon } from '../src/main.ts';
+import { offlinePhase7 } from './fakes/phase7.ts';
 import { createTestContext } from './helpers.ts';
 import { FAKE_CLAUDE, makeTempHomes, type TempHomes, writeClaudeSession } from './homes.ts';
 import { offlinePhase6 } from './p6-connector-fakes.ts';
@@ -31,6 +32,7 @@ async function boot(): Promise<number> {
     launchExternal: async () => undefined,
     webDist: null,
     phase6: offlinePhase6(),
+    phase7: offlinePhase7(),
   });
   const running = await daemon.start({ port: 0, watch: false });
   server = running;

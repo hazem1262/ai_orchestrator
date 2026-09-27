@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { LaunchRequest } from '@orc/api-contract';
 import { OrcConfig, type ProjectConfig } from '@orc/api-contract';
 import {
@@ -20,8 +20,10 @@ import {
 } from '@orc/core';
 import { execa } from 'execa';
 import { type InboxEngineRuntime, inboxDedupeKey } from '../../src/inbox/engine.ts';
+import type { Phase7Options } from '../../src/phase7.ts';
 import type { PtyInfo, PtyManager } from '../../src/pty/pty-manager.ts';
 import type { AuditService } from '../../src/services/audit/audit.ts';
+import type { HeadlessRunOptions, HeadlessRunResult } from '../../src/services/automations/headless.ts';
 import { ServiceError } from '../../src/services/errors.ts';
 import type { LaunchService } from '../../src/services/launch.ts';
 import type { ProjectServiceImpl } from '../../src/services/projects.ts';
@@ -593,5 +595,36 @@ export function createMemoryScheduler(): Scheduler & {
     async fire(kind, job) {
       for (const fn of handlers.get(kind) ?? []) await fn(job);
     },
+  };
+}
+
+/**
+ * Phase 7 overrides for every `createDaemon` in tests and the e2e fixture daemon: a headless runner
+ * that writes one assistant line to the run log and never spawns `claude`, and no `git diff` for
+ * TODO suggestions.
+ */
+export function offlinePhase7(): Phase7Options {
+  return {
+    runner: async (r: HeadlessRunOptions): Promise<HeadlessRunResult> => {
+      mkdirSync(dirname(r.logFile), { recursive: true });
+      writeFileSync(
+        r.logFile,
+        `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'offline run' }] } })}\n`,
+      );
+      return {
+        sessionId: r.resumeSessionId ?? r.sessionId ?? randomUUID(),
+        costUsd: 0,
+        durationMs: 1,
+        numTurns: 1,
+        resultText: r.permissionMode === 'plan' ? 'Plan: offline' : 'offline run',
+        isError: false,
+        subtype: 'success',
+        timedOut: false,
+        exitCode: 0,
+        events: 1,
+        stderrTail: '',
+      };
+    },
+    addedLines: async () => '',
   };
 }

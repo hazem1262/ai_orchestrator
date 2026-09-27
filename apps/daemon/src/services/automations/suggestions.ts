@@ -8,6 +8,7 @@ import { sessionPk } from '../sessions.ts';
 
 export interface SuggestionService {
   list(state?: Suggestion['state']): Suggestion[];
+  get(id: string): Suggestion | null;
   refresh(): Promise<{ added: number }>;
   accept(id: string): Promise<{ ptyId: string; sessionPk: string | null }>;
   dismiss(id: string): Suggestion;
@@ -176,6 +177,7 @@ export function createSuggestionService(deps: SuggestionDeps): SuggestionService
 
   const svc: SuggestionService = {
     list: (state) => repo.listSuggestions(ctx.db, state),
+    get: (id) => repo.getSuggestion(ctx.db, id),
     async refresh() {
       const added = (await collectLinear()) + (await collectTodos());
       return { added };
