@@ -340,6 +340,28 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       'the generated digest markdown (PR titles, session names), walked by redactedJson (core redactDeep) on the way out',
   },
+  'GET /api/recaps/session/:source/:id': {
+    guardedBy: null,
+    reason:
+      'the latest session recap (model output over a transcript digest), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/recaps/session/:source/:id': {
+    guardedBy: null,
+    reason: 'the generated session recap text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/recaps/daily': {
+    guardedBy: null,
+    reason:
+      'the latest daily project recap (session names, tickets, recaps), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/recaps/daily': {
+    guardedBy: null,
+    reason: 'the generated daily project recap text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/recaps/spend': {
+    guardedBy: null,
+    reason: "this month's recap spend and budget; numbers only",
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -373,6 +395,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/plan.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/recaps.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/session-detail.ts',

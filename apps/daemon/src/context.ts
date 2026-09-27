@@ -21,6 +21,7 @@ import { createExternalLauncher, type ExternalLauncher } from './services/extern
 import type { LaunchService } from './services/launch.ts';
 import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import { createRecapService, defaultRecapEngines, type RecapService } from './services/recap/recap.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
@@ -94,6 +95,8 @@ export interface DaemonContext {
   analytics?: AnalyticsService;
   /** P5 — the weekly markdown digest and its scheduled job; set by `buildContext()`, started by `createDaemon().start()`. */
   digests?: DigestService;
+  /** P5 — LLM session and daily recaps with a cache and a monthly budget; set by `buildContext()`, started by `createDaemon().start()`. */
+  recaps?: RecapService;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
   // reminders (T14).
 }
@@ -168,12 +171,15 @@ export function buildContext(o: BuildContextOptions): {
   ctx.analytics = analytics;
   const digests = createDigestService(ctx, { analytics, prs, meter: usage, scheduler });
   ctx.digests = digests;
+  const recaps = createRecapService(ctx, { engines: defaultRecapEngines(ctx), scheduler });
+  ctx.recaps = recaps;
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      recaps.stop();
       digests.stop();
       streams.stop();
       usage.stop();

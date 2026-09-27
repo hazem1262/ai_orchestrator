@@ -107,8 +107,9 @@ export async function createDaemon(
       const origins = () => allowedOrigins(boundPort);
       const phase2 = await startPhase2(ctx, { token, origins });
       const stopPhase4 = wirePhase4(ctx);
-      // The digest service registers its scheduler handler first, so overdue jobs have a handler when they fire.
+      // The digest and recap services register their scheduler handlers first, so overdue jobs have a handler when they fire.
       ctx.digests?.start();
+      ctx.recaps?.start();
       ctx.scheduler?.start();
       ctx.ledger?.start();
       ctx.usage?.start();
@@ -133,6 +134,7 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          ctx.recaps?.stop();
           ctx.digests?.stop();
           ctx.streams?.stop();
           ctx.usage?.stop();

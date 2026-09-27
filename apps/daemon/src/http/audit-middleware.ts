@@ -222,6 +222,16 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     path: '/api/analytics/digest',
     why: 'renders a local markdown digest; nothing is sent anywhere',
   },
+  {
+    method: 'POST',
+    path: '/api/recaps/session/:source/:id',
+    why: 'redacted digest to the configured recap engine; cost tracked in recaps',
+  },
+  {
+    method: 'POST',
+    path: '/api/recaps/daily',
+    why: 'redacted session list to the configured recap engine; cost tracked in recaps',
+  },
 ];
 
 export function matchAuditedRoute(
