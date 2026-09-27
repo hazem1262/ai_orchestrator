@@ -59,6 +59,8 @@ describe('buildPaletteSections', () => {
       ['History', 'g h'],
       ['Live board', undefined],
       ['Audit log', 'g a'],
+      ['Work streams', 'g s'],
+      ['Analytics', 'g u'],
       ['Settings', undefined],
     ]);
     expect(sections[1]?.items.map((i) => i.label)).toEqual([

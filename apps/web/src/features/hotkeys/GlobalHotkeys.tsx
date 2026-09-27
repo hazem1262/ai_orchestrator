@@ -46,6 +46,13 @@ export function GlobalHotkeys(): null {
         handler: () => void navigate({ to: '/audit' }),
       },
       {
+        id: 'go-streams',
+        keys: 'g s',
+        description: 'Go to work streams',
+        group: 'navigation',
+        handler: () => void navigate({ to: '/streams' }),
+      },
+      {
         id: 'go-analytics',
         keys: 'g u',
         description: 'Go to analytics',

@@ -147,6 +147,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             Audit
           </Link>
           <Link
+            to="/streams"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Streams
+          </Link>
+          <Link
             to="/analytics"
             className="rounded px-2 py-1 hover:bg-muted"
             activeProps={{ className: 'bg-muted font-medium' }}
