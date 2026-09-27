@@ -30,6 +30,13 @@ import { createWorktreeService } from './services/worktree/worktree.ts';
 
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
+/** `ORC_WEB_DIR` (set by the Tauri shell to its bundled web resources) wins over the repo's `apps/web/dist`. */
+function defaultWebDist(): string | null {
+  const fromEnv = process.env.ORC_WEB_DIR;
+  if (fromEnv) return fromEnv;
+  return existsSync(DEFAULT_WEB_DIST) ? DEFAULT_WEB_DIST : null;
+}
+
 const DISCOVER_EVERY_MS = 5 * 60_000;
 
 /**
@@ -106,8 +113,7 @@ export async function createDaemon(
     bus: ctx.bus,
     log: ctx.log,
   });
-  const webDist =
-    o.webDist === undefined ? (existsSync(DEFAULT_WEB_DIST) ? DEFAULT_WEB_DIST : null) : o.webDist;
+  const webDist = o.webDist === undefined ? defaultWebDist() : o.webDist;
 
   return {
     ctx,
