@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { connect as netConnect, type Socket } from 'node:net';
 import { PassThrough } from 'node:stream';
-import type { InboxItem } from '@orc/core';
+import type { InboxItem, UsageSnapshot } from '@orc/core';
 import { type Logger, pino } from 'pino';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
@@ -15,6 +15,26 @@ const homes = useTempHomes();
 
 const TOKEN = 'test-token';
 const SECRET = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';
+
+const usageSnapshot: UsageSnapshot = {
+  source: 'estimate',
+  generatedAt: '2026-09-17T10:00:00.000Z',
+  block: {
+    active: true,
+    start: '2026-09-17T09:00:00.000Z',
+    end: '2026-09-17T14:00:00.000Z',
+    tokens: 1200,
+    costUsd: 1.5,
+    pctOfLimit: null,
+  },
+  week: { tokens: 9000, costUsd: 30, pctOfLimit: null },
+  burnRateUsdPerHour: 1.5,
+  burnRateTokensPerMin: 20,
+  projectedBlockExhaustionAt: null,
+};
+
+/** A snapshot with one extra free-text key: the WS redaction walks every string, typed or not. */
+const usageWithSecret = { ...usageSnapshot, note: SECRET } as UsageSnapshot;
 let ctx: TestContext;
 let hub: LiveWsHub;
 let server: Server;
@@ -147,7 +167,7 @@ describe('live WS hub', () => {
       },
       'pty.exited': { type: 'pty.exited', ptyId: 'p1', code: 0 },
       'index.progress': { type: 'index.progress', done: 1, total: 2 },
-      'usage.updated': { type: 'usage.updated', snapshot: { byModel: [{ note: SECRET }] } },
+      'usage.updated': { type: 'usage.updated', snapshot: usageWithSecret },
       'audit.recorded': {
         type: 'audit.recorded',
         entry: {
@@ -228,7 +248,7 @@ describe('live WS hub', () => {
     const { messages } = await connect();
     await expect.poll(() => messages.length).toBe(1);
     ctx.bus.emit({ type: 'inbox.upserted', item: inboxItem({ reason: SECRET, payload: { note: SECRET } }) });
-    ctx.bus.emit({ type: 'usage.updated', snapshot: { byModel: [{ note: SECRET }] } });
+    ctx.bus.emit({ type: 'usage.updated', snapshot: usageWithSecret });
     await expect.poll(() => messages.length).toBe(3);
     expect(messages[1]).toMatchObject({
       type: 'inbox.upserted',
@@ -236,7 +256,7 @@ describe('live WS hub', () => {
     });
     expect(messages[2]).toEqual({
       type: 'usage.updated',
-      snapshot: { byModel: [{ note: '«redacted:github»' }] },
+      snapshot: { ...usageSnapshot, note: '«redacted:github»' },
     });
   });
 

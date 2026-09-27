@@ -11,19 +11,30 @@ import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
+import { type AnalyticsService, createAnalyticsService } from './services/analytics/analytics.ts';
+import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
+import { createGoalService, type GoalService } from './services/goals/goals.ts';
+import { createHandoffService, type HandoffService } from './services/handoff/handoff.ts';
 import type { LaunchService } from './services/launch.ts';
+import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
+import { createRecapService, defaultRecapEngines, type RecapService } from './services/recap/recap.ts';
+import { createReminderService, type ReminderService } from './services/reminders/reminders.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
+import { createScheduler, type Scheduler } from './services/scheduler/scheduler.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { ShipService } from './services/ship/ship.ts';
+import { createStreamService, type StreamService } from './services/streams/streams.ts';
 import type { TemplateRegistry } from './services/templates.ts';
+import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts';
+import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
 
@@ -73,6 +84,28 @@ export interface DaemonContext {
   ship?: ShipService;
   /** P4 — approve or reject a plan an owned Claude session presented through ExitPlanMode. */
   plans?: PlanApprovalService;
+  /** P5 — the persisted cron and one-shot scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
+  scheduler?: Scheduler;
+  /** P5 — the incremental per-message usage and tool ledger; set by `buildContext()`, started by `createDaemon().start()`. */
+  ledger?: UsageLedger;
+  /** P5 — quota snapshot, budgets, context fill and quota/budget alerts; set by `buildContext()`, started by `createDaemon().start()`. */
+  usage?: UsageMeter;
+  /** P5 — PR rows for work streams, read from the P4 `pr_cache`; set by `buildContext()`. */
+  prs?: PrSource;
+  /** P5 — ticket-keyed work streams; set by `buildContext()`, started by `createDaemon().start()`. */
+  streams?: StreamService;
+  /** P5 — cost, tool, timing, outcome and wstack aggregations over the ledger; set by `buildContext()`. */
+  analytics?: AnalyticsService;
+  /** P5 — the weekly markdown digest and its scheduled job; set by `buildContext()`, started by `createDaemon().start()`. */
+  digests?: DigestService;
+  /** P5 — LLM session and daily recaps with a cache and a monthly budget; set by `buildContext()`, started by `createDaemon().start()`. */
+  recaps?: RecapService;
+  /** P5 — session and stream goals with the merge and waiting rules; set by `buildContext()`, started by `createDaemon().start()`. */
+  goals?: GoalService;
+  /** P5 — persisted one-shot reminders on the scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
+  reminders?: ReminderService;
+  /** P5 — handoffs (structured evidence plus an LLM summary), markdown export and resume-fresh; set by `buildContext()`. */
+  handoffs?: HandoffService;
 }
 
 export interface BuildContextOptions {
@@ -104,6 +137,7 @@ export function buildContext(o: BuildContextOptions): {
     );
   const bus = createEventBus({ onError: (err, e) => log.error({ err, type: e.type }, 'bus handler failed') });
   const audit = createAuditService({ db: opened.db, bus });
+  const scheduler = createScheduler({ db: opened.db, log: log.child({ svc: 'scheduler' }) });
   const pty = withPtyInputAudit(createPtyManager({ bus }), audit);
   bus.on('pty.exited', () => pty.flushAll());
   const projects = createProjectService({ db: opened.db, paths: o.paths, config, saveConfig: save });
@@ -130,12 +164,38 @@ export function buildContext(o: BuildContextOptions): {
     userMeta,
     audit,
     denyList: createDenyList({ config, projects }),
+    scheduler,
   };
+  const ledger = createUsageLedger(ctx);
+  ctx.ledger = ledger;
+  const usage = createUsageMeter(ctx, { ledger });
+  ctx.usage = usage;
+  const prs = createPrSource(ctx);
+  ctx.prs = prs;
+  const streams = createStreamService(ctx, { prs, meter: usage });
+  ctx.streams = streams;
+  const analytics = createAnalyticsService(ctx, { ledger, prs });
+  ctx.analytics = analytics;
+  const digests = createDigestService(ctx, { analytics, prs, meter: usage, scheduler });
+  ctx.digests = digests;
+  const recaps = createRecapService(ctx, { engines: defaultRecapEngines(ctx), scheduler });
+  ctx.recaps = recaps;
+  ctx.handoffs = createHandoffService(ctx, { recaps });
+  const goals = createGoalService(ctx);
+  ctx.goals = goals;
+  ctx.reminders = createReminderService(ctx, { scheduler });
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
+      scheduler.stop();
+      goals.stop();
+      recaps.stop();
+      digests.stop();
+      streams.stop();
+      usage.stop();
+      ledger.stop();
       pty.disposeAll();
       opened.close();
     },

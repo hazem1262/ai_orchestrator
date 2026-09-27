@@ -6,6 +6,7 @@ import { getToken } from './client.ts';
 import { applyP3LiveEvent } from './live-p3.ts';
 import { inboxRootKey, upsertInboxItemInCache } from './queries/inbox.ts';
 import { liveKey } from './queries/live.ts';
+import { usageKeys } from './queries/usage.ts';
 
 /** The frames `/ws` sends (`packages/api-contract/src/live.ts`, daemon `http/live-ws.ts`). */
 export type WireEvent = LiveEvent;
@@ -21,6 +22,12 @@ export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
   applyP2LiveEvent(qc, e);
   applyP3LiveEvent(qc, e);
   applyP4LiveEvent(qc, e);
+  applyP5LiveEvent(qc, e);
+}
+
+/** Phase 5: the daemon pushes a fresh usage snapshot whenever the quota picture changes. */
+function applyP5LiveEvent(qc: QueryClient, e: WireEvent): void {
+  if (e.type === 'usage.updated') qc.setQueryData(usageKeys.snapshot, e.snapshot);
 }
 
 /** Phase 4: worktree lists are patched in place in every cached filter; PR status is keyed by repo and number. */
@@ -92,7 +99,7 @@ function applyP2LiveEvent(qc: QueryClient, e: WireEvent): void {
       void qc.invalidateQueries({ queryKey: liveKey });
       return;
     default:
-      // `index.progress`, `usage.updated` and anything a newer daemon adds.
+      // `index.progress`, `usage.updated` (phase 5) and anything a newer daemon adds.
       return;
   }
 }

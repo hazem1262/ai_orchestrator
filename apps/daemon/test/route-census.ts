@@ -67,6 +67,18 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: '{ ok: true }; the hook body is reduced to three fields and never echoed back',
   },
+  'GET /api/hooks/install': {
+    guardedBy: null,
+    reason: 'local paths, the hook command and the settings snippet; no transcript data',
+  },
+  'POST /api/hooks/install': {
+    guardedBy: null,
+    reason: 'the settings and backup paths; the 409 summary carries the same status fields',
+  },
+  'GET /api/hooks/statusline': {
+    guardedBy: null,
+    reason: 'the statusline command and its settings snippet; no user or transcript data',
+  },
   'GET /api/inbox': { guardedBy: 'redactInboxItem', reason: '' },
   'POST /api/inbox/:id/:action{done|snooze|reopen}': { guardedBy: 'redactInboxItem', reason: '' },
   'GET /api/templates': {
@@ -251,6 +263,161 @@ export const CENSUS: Record<string, CensusEntry> = {
   },
   'POST /api/sessions/:source/:id/plan/approve': { guardedBy: null, reason: '{ ok: true }' },
   'POST /api/sessions/:source/:id/plan/reject': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/usage': {
+    guardedBy: null,
+    reason: 'the quota snapshot: token counts, costs, fractions and daemon-derived ISO timestamps',
+  },
+  'GET /api/usage/budgets': {
+    guardedBy: null,
+    reason: 'budget rows (user-set scope ids and limits) with computed spend and period start',
+  },
+  'PUT /api/usage/budgets': { guardedBy: null, reason: 'echoes the budget row the client just sent' },
+  'DELETE /api/usage/budgets/:id': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/usage/concurrency': {
+    guardedBy: null,
+    reason: '{ projectId, owned, max } per configured project',
+  },
+  'GET /api/usage/context/:source/:id': {
+    guardedBy: null,
+    reason:
+      'session pk, transcript model name and token counts, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/usage/official': { guardedBy: null, reason: '204 with no body' },
+  'GET /api/settings': {
+    guardedBy: null,
+    reason: 'the recaps, limits, digest and hooks sections of the user’s own config',
+  },
+  'PUT /api/settings': {
+    guardedBy: null,
+    reason: 'echoes the config sections after schema validation',
+  },
+  'GET /api/streams': {
+    guardedBy: null,
+    reason:
+      'stream rows whose titles come from PR titles and session names, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/streams/refresh': {
+    guardedBy: null,
+    reason: 'the recomputed stream rows, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/streams/:ticket': {
+    guardedBy: null,
+    reason:
+      'stream detail with session prompts and recaps in the timeline, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/streams/:ticket/link': {
+    guardedBy: null,
+    reason: 'echoes the manual link row (ticket, kind, ref) the client just sent',
+  },
+  'POST /api/streams/:ticket/unlink': {
+    guardedBy: null,
+    reason: 'echoes the manual exclusion row (ticket, kind, ref) the client just sent',
+  },
+  'GET /api/analytics/cost': {
+    guardedBy: null,
+    reason:
+      'cost rows keyed by day, project, model, source or transcript-derived ticket, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/top': {
+    guardedBy: null,
+    reason:
+      'top sessions (session names, tickets) and tickets by cost, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/tools': {
+    guardedBy: null,
+    reason:
+      'tool, MCP server and skill names from transcripts with counts, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/timing': {
+    guardedBy: null,
+    reason: 'model and tool milliseconds and per-bucket cache hit rates; numbers and dates only',
+  },
+  'GET /api/analytics/outcomes': {
+    guardedBy: null,
+    reason:
+      'outcome, friction and goal-category counts from Claude facets, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/wstack': {
+    guardedBy: null,
+    reason:
+      'wstack skill names, outcome counts and durations, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/digest': {
+    guardedBy: null,
+    reason:
+      'the latest digest markdown (PR titles, session names), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/analytics/digest': {
+    guardedBy: null,
+    reason:
+      'the generated digest markdown (PR titles, session names), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/recaps/session/:source/:id': {
+    guardedBy: null,
+    reason:
+      'the latest session recap (model output over a transcript digest), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/recaps/session/:source/:id': {
+    guardedBy: null,
+    reason: 'the generated session recap text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/recaps/daily': {
+    guardedBy: null,
+    reason:
+      'the latest daily project recap (session names, tickets, recaps), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/recaps/daily': {
+    guardedBy: null,
+    reason: 'the generated daily project recap text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/recaps/spend': {
+    guardedBy: null,
+    reason: "this month's recap spend and budget; numbers only",
+  },
+  'GET /api/goals': {
+    guardedBy: null,
+    reason:
+      'goal objectives (prefilled from session prompts and stream titles), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/goals/:targetType/:targetId': {
+    guardedBy: null,
+    reason:
+      'the goal and its prefill from the session first prompt or stream title, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'PUT /api/goals/:targetType/:targetId': {
+    guardedBy: null,
+    reason: 'the saved goal, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/handoffs/session/:source/:id': {
+    guardedBy: null,
+    reason:
+      'the generated handoff (model output over a redacted digest), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/handoffs/session/:source/:id': {
+    guardedBy: null,
+    reason: 'the latest handoff and its markdown, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/handoffs/:id/markdown': {
+    guardedBy: null,
+    reason: 'the handoff markdown download, passed through core redact before it is sent',
+  },
+  'POST /api/handoffs/:id/resume-fresh': {
+    guardedBy: null,
+    reason:
+      'launches a session through the P2 launcher (argv rules, concurrency cap); needs {"confirm": true}; the confirmation summary goes through redactedApiError',
+  },
+  'GET /api/reminders': {
+    guardedBy: null,
+    reason: 'reminder rows with user-typed text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/reminders': {
+    guardedBy: null,
+    reason: 'the created reminder, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/reminders/:id/cancel': {
+    guardedBy: null,
+    reason: 'the cancelled reminder, walked by redactedJson (core redactDeep) on the way out',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -269,10 +436,13 @@ export const CENSUS: Record<string, CensusEntry> = {
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',
+  'apps/daemon/src/http/routes/goals.ts',
+  'apps/daemon/src/http/routes/handoffs.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',
@@ -283,12 +453,17 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/plan.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/recaps.ts',
+  'apps/daemon/src/http/routes/reminders.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
+  'apps/daemon/src/http/routes/settings.ts',
   'apps/daemon/src/http/routes/ship.ts',
+  'apps/daemon/src/http/routes/streams.ts',
   'apps/daemon/src/http/routes/templates.ts',
+  'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
   'apps/daemon/src/http/routes/worktrees.ts',
   'apps/daemon/src/http/static.ts',

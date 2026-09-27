@@ -304,3 +304,5 @@ export const prCache = sqliteTable(
   },
   (t) => [index('pr_cache_head_idx').on(t.headRef)],
 );
+
+export * from './schema-p5.ts';

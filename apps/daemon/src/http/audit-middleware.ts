@@ -40,6 +40,12 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
   },
   {
     method: 'POST',
+    pattern: /^\/api\/handoffs\/([^/]+)\/resume-fresh$/,
+    action: 'session.launch',
+    target: (m) => `handoff:${dec(m[1])}`,
+  },
+  {
+    method: 'POST',
     pattern: new RegExp(`^/api/sessions/${SRC}/([^/]+)/kill$`),
     action: 'session.kill',
     target: sessionTarget,
@@ -192,6 +198,12 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: sessionTarget,
     recordedBy: 'service',
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/hooks\/install$/,
+    action: 'hook.install',
+    target: () => 'claude-settings',
+  },
 ];
 
 /** Write routes that are local UI/config state, not actions on sessions or external systems. Every entry needs a reason. */
@@ -209,6 +221,40 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     method: 'POST',
     path: '/api/worktrees/discover',
     why: 'refreshes the local worktree index; read-only git',
+  },
+  { method: 'PUT', path: '/api/usage/budgets', why: 'local budget configuration' },
+  { method: 'DELETE', path: '/api/usage/budgets/:id', why: 'local budget configuration' },
+  { method: 'POST', path: '/api/usage/official', why: 'inbound statusline sample, not an app action' },
+  { method: 'PUT', path: '/api/settings', why: 'local app configuration' },
+  { method: 'POST', path: '/api/streams/refresh', why: 'recomputes local stream metadata' },
+  { method: 'POST', path: '/api/streams/:ticket/link', why: 'local stream metadata' },
+  { method: 'POST', path: '/api/streams/:ticket/unlink', why: 'local stream metadata' },
+  {
+    method: 'POST',
+    path: '/api/analytics/digest',
+    why: 'renders a local markdown digest; nothing is sent anywhere',
+  },
+  {
+    method: 'POST',
+    path: '/api/recaps/session/:source/:id',
+    why: 'redacted digest to the configured recap engine; cost tracked in recaps',
+  },
+  {
+    method: 'POST',
+    path: '/api/recaps/daily',
+    why: 'redacted session list to the configured recap engine; cost tracked in recaps',
+  },
+  { method: 'PUT', path: '/api/goals/:targetType/:targetId', why: 'local goal metadata' },
+  {
+    method: 'POST',
+    path: '/api/reminders',
+    why: 'schedules a local reminder; its PTY input is audited by withPtyInputAudit when it fires',
+  },
+  { method: 'POST', path: '/api/reminders/:id/cancel', why: 'local reminder state' },
+  {
+    method: 'POST',
+    path: '/api/handoffs/session/:source/:id',
+    why: 'builds a local handoff; the redacted digest goes to the configured recap engine',
   },
 ];
 

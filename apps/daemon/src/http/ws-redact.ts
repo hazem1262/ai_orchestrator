@@ -18,7 +18,8 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
       // `params` can hold PTY input or a write route's body.
       return { type: 'audit.recorded', entry: redactValue(e.entry) as typeof e.entry };
     case 'usage.updated':
-      return { type: 'usage.updated', snapshot: redactValue(e.snapshot) };
+      // Timestamps and numbers today; the walker keeps numeric token counts and masks any string.
+      return { type: 'usage.updated', snapshot: redactValue(e.snapshot) as typeof e.snapshot };
     // Paths, branch names, tickets, PR titles and URLs: all can carry text a user or agent wrote.
     case 'worktree.updated':
       return { type: 'worktree.updated', worktree: redactValue(e.worktree) as typeof e.worktree };

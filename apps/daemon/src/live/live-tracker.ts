@@ -1,6 +1,8 @@
 import {
   createLiveReducer,
   deriveLiveStatus,
+  hookStatusFor,
+  hookWins,
   type LiveReducer,
   type LiveState,
   type LiveStatus,
@@ -25,6 +27,7 @@ export interface HookEvent {
   event: string;
   message: string | null;
   ts: string;
+  tool?: string | null;
 }
 
 export interface LiveTracker {
@@ -46,19 +49,7 @@ export interface LiveTrackerDeps {
 }
 
 export function mapHookToStatus(event: string): RegistryStatus | null {
-  switch (event) {
-    case 'Notification':
-      return 'waiting';
-    case 'UserPromptSubmit':
-    case 'PreToolUse':
-    case 'PostToolUse':
-    case 'SubagentStart':
-      return 'busy';
-    case 'Stop':
-      return 'idle';
-    default:
-      return null;
-  }
+  return hookStatusFor(event);
 }
 
 /** Claude's standard context window. `createLiveReducer` assumes this when told nothing. */
@@ -94,6 +85,8 @@ export const CONTEXT_WINDOW_LADDER: readonly number[] = [200_000, 1_000_000];
  * is what makes the rounding pay off, and removing it passes every correctness test.
  */
 export const CONTEXT_WINDOW_STEP = 250_000;
+
+const LARGEST_KNOWN_WINDOW = CONTEXT_WINDOW_LADDER.at(-1) ?? CONTEXT_WINDOW_DEFAULT;
 
 /**
  * The context window a session must be running, inferred from the largest token usage it has
@@ -133,6 +126,8 @@ export function contextWindowForUsage(peakUsedTokens: number): number {
   for (const rung of CONTEXT_WINDOW_LADDER) if (peakUsedTokens <= rung) return rung;
   return Math.ceil(peakUsedTokens / CONTEXT_WINDOW_STEP) * CONTEXT_WINDOW_STEP;
 }
+
+type ContextWindows = { table: Record<string, number>; defaultWindow: number };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -176,8 +171,9 @@ export async function refoldUpTo(
   path: string,
   upToOffset: number,
   contextWindow: number,
+  windows?: ContextWindows,
 ): Promise<LiveReducer> {
-  const reducer = createLiveReducer({ contextWindow });
+  const reducer = createLiveReducer({ contextWindow, windows });
   if (upToOffset <= 0) return reducer;
   try {
     const res = await readJsonlFrom(path, 0);
@@ -202,7 +198,7 @@ interface Entry {
   registryStatus: RegistryStatus | null;
   registryAt: number;
   waitingFor: string | null;
-  hook: { status: RegistryStatus; at: number; message: string | null } | null;
+  hook: { status: RegistryStatus; at: number; message: string | null; tool: string | null } | null;
   transcriptPath: string | null;
   offset: number;
   reducer: LiveReducer;
@@ -232,6 +228,16 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
   let rerun = false;
   let timer: NodeJS.Timeout | null = null;
   const unsubs: Array<() => void> = [];
+  // Getters, not a snapshot: the reducer reads these on every record, so an edit to
+  // `limits.contextWindows` / `limits.defaultContextWindow` reaches sessions already on the board.
+  const windows: ContextWindows = {
+    get table() {
+      return ctx.config().limits.contextWindows;
+    },
+    get defaultWindow() {
+      return ctx.config().limits.defaultContextWindow;
+    },
+  };
 
   function newEntry(
     source: Source,
@@ -255,8 +261,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       hook: null,
       transcriptPath: null,
       offset: 0,
-      reducer: createLiveReducer({ contextWindow: CONTEXT_WINDOW_DEFAULT }),
-      contextWindow: CONTEXT_WINDOW_DEFAULT,
+      reducer: createLiveReducer({ windows }),
+      contextWindow: 0,
       peakUsed: 0,
       primed: initialPassDone,
       status: null,
@@ -316,8 +322,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       // The replacement is re-read from the start as catch-up, silently, for the same reason the
       // first pass is silent: it is history, not a new turn, and must not raise inbox items.
       e.offset = 0;
-      e.reducer = createLiveReducer({ contextWindow: CONTEXT_WINDOW_DEFAULT });
-      e.contextWindow = CONTEXT_WINDOW_DEFAULT;
+      e.reducer = createLiveReducer({ windows });
+      e.contextWindow = 0;
       e.peakUsed = 0; // a different file's peak says nothing about this one
       e.primed = false;
       try {
@@ -328,14 +334,16 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     }
     for (const l of res.lines) {
       const value = parseJsonLine(l.text);
-      // Widen the window *before* the record that proves it is too narrow reaches the reducer,
-      // so the very turn that broke 200k is the first one scaled correctly.
+      // Up to 1M the reducer scales each record against the configured per-model window
+      // (`limits.contextWindows`, the meter's rule). Above the largest known window, widen a
+      // floor *before* the record that proves it is too narrow reaches the reducer, so the very
+      // turn that broke it is the first one scaled honestly instead of clamped to 1.
       const used = usedTokensOfRecord(value);
       if (used !== null && used > e.peakUsed) {
         e.peakUsed = used;
         const w = contextWindowForUsage(used);
-        if (w !== e.contextWindow) {
-          if (w > (CONTEXT_WINDOW_LADDER.at(-1) ?? CONTEXT_WINDOW_DEFAULT) && !overLadderLogged.has(e.pk)) {
+        if (w > LARGEST_KNOWN_WINDOW && w > e.contextWindow) {
+          if (!overLadderLogged.has(e.pk)) {
             overLadderLogged.add(e.pk);
             ctx.log.warn(
               { pk: e.pk, peakUsed: used, largestKnownWindow: CONTEXT_WINDOW_LADDER.at(-1) },
@@ -343,7 +351,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
             );
           }
           e.contextWindow = w;
-          e.reducer = await refoldUpTo(path, l.offset, w);
+          e.reducer = await refoldUpTo(path, l.offset, w, windows);
         }
       }
       const eff = e.reducer.apply(value);
@@ -362,8 +370,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
 
   function update(e: Entry, alive: boolean, nowMs: number): void {
     const t = e.reducer.snapshot();
-    const hookWins = e.hook !== null && e.hook.at > e.registryAt;
-    const registryStatus = hookWins && e.hook ? e.hook.status : e.registryStatus;
+    const hookActive = hookWins(e.hook?.at ?? null, e.registryAt, nowMs, ctx.config().hooks.statusOverrideMs);
+    const registryStatus = hookActive && e.hook ? e.hook.status : e.registryStatus;
     const status = deriveLiveStatus({ alive, registryStatus, transcript: t });
     let change: { from: LiveStatus | null; to: LiveStatus } | null = null;
     if (status !== e.status) {
@@ -378,7 +386,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     // `waitingFor` is copied verbatim out of Claude Code's own registry file (or a hook payload):
     // free text from a process we do not control, and a field Phase 1 already caught leaking once.
     // It is redacted here, at the point it enters our own state, as well as at the HTTP boundary.
-    const waitingText = hookWins && e.hook?.message ? e.hook.message : (e.waitingFor ?? 'input needed');
+    const waitingText = hookActive && e.hook?.message ? e.hook.message : (e.waitingFor ?? 'input needed');
     e.live = {
       pid: e.pid,
       status,
@@ -387,7 +395,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       ownership: owner ? 'owned' : 'observed',
       ptyId: owner?.id ?? null,
       stage: t.stage,
-      currentTool: t.currentTool,
+      currentTool:
+        hookActive && e.hook?.status === 'busy' && e.hook.tool !== null ? e.hook.tool : t.currentTool,
       backgroundJobs: t.backgroundJobs,
       runningSubagents: t.runningSubagents,
       contextFill: t.contextFill,
@@ -593,7 +602,12 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       const e = entries.get(sessionPk('claude', ev.sessionId));
       if (!status || !e) return;
       const at = Date.parse(ev.ts);
-      e.hook = { status, at: Number.isFinite(at) ? at : now().getTime(), message: ev.message };
+      e.hook = {
+        status,
+        at: Number.isFinite(at) ? at : now().getTime(),
+        message: ev.message,
+        tool: ev.tool ?? null,
+      };
       void refresh();
     },
   };

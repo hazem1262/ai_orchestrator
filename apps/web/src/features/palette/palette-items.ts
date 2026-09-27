@@ -72,6 +72,20 @@ const NAVIGATION: PaletteItem[] = [
     action: { type: 'navigate', to: '/audit' },
   },
   {
+    id: 'nav:streams',
+    label: 'Work streams',
+    keywords: ['stream', 'ticket', 'kanban'],
+    shortcut: 'g s',
+    action: { type: 'navigate', to: '/streams' },
+  },
+  {
+    id: 'nav:analytics',
+    label: 'Analytics',
+    keywords: ['cost', 'usage', 'spend'],
+    shortcut: 'g u',
+    action: { type: 'navigate', to: '/analytics' },
+  },
+  {
     id: 'nav:settings',
     label: 'Settings',
     keywords: ['config', 'secrets'],

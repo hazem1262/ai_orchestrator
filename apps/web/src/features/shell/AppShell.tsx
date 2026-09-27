@@ -10,6 +10,7 @@ import { HotkeysListener } from '@/features/hotkeys/HotkeysListener.tsx';
 import { InboxCount } from '@/features/inbox/InboxCount.tsx';
 import { useInboxTitle } from '@/features/inbox/useInboxTitle.ts';
 import { LaunchDialog } from '@/features/launch/LaunchDialog.tsx';
+import { QuotaBars } from '@/features/limits/QuotaBars.tsx';
 import { CommandPalette } from '@/features/palette/CommandPalette.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { usePaletteStore } from '@/stores/palette.ts';
@@ -95,6 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           Search… ⌘K
         </Button>
+        <QuotaBars />
         <InboxCount count={openInboxCount} />
         <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
           New session
@@ -143,6 +145,20 @@ export function AppShell({ children }: { children: ReactNode }) {
             activeProps={{ className: 'bg-muted font-medium' }}
           >
             Audit
+          </Link>
+          <Link
+            to="/streams"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Streams
+          </Link>
+          <Link
+            to="/analytics"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Analytics
           </Link>
         </nav>
         <Workspace>{children}</Workspace>

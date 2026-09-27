@@ -11,7 +11,11 @@ export type BusEvent =
   | { type: 'session.indexed'; pk: string }
   | { type: 'pr.changed'; before: PrStatus | null; after: PrStatus }
   | { type: 'plan.pending'; pk: string; plan: string; toolUseId: string }
-  | { type: 'pr.reviewRequested'; pr: PrRef; title: string; active: boolean };
+  | { type: 'pr.reviewRequested'; pr: PrRef; title: string; active: boolean }
+  /** P5 — `updateConfig` replaced the config; daemon-internal, not forwarded over the live socket. */
+  | { type: 'config.changed' }
+  /** P5 — the daemon's first full index scan finished; daemon-internal, not forwarded over the live socket. */
+  | { type: 'index.initialComplete' };
 
 export interface EventBus {
   emit(e: BusEvent): void;

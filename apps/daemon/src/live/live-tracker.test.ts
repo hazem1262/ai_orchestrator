@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OrcConfig } from '@orc/api-contract';
-import type { LiveState } from '@orc/core';
+import { contextFill as coreContextFill, type LiveState } from '@orc/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakePty } from '../../test/fake-pty.ts';
 import { createTestContext, indexFixtures, type TestContext, useTempHomes } from '../../test/helpers.ts';
@@ -498,7 +498,10 @@ describe('LiveTracker context window', () => {
     REAL_PEAK_USAGE.cache_read_input_tokens +
     REAL_PEAK_USAGE.cache_creation_input_tokens;
 
-  const usageLine = (uuid: string, used: number, ts: string, model = 'claude-opus-5') =>
+  // A model id absent from `limits.contextWindows`, so these tests scale against
+  // `limits.defaultContextWindow` (200k) and keep exercising the widening rules. `claude-opus-5`
+  // is configured at 1M, which would make every sub-1M case below trivially 1M-scaled.
+  const usageLine = (uuid: string, used: number, ts: string, model = 'claude-unlisted-model') =>
     line(
       {
         type: 'assistant',
@@ -1011,6 +1014,95 @@ describe('mapHookToStatus', () => {
     expect(mapHookToStatus('UserPromptSubmit')).toBe('busy');
     expect(mapHookToStatus('PreToolUse')).toBe('busy');
     expect(mapHookToStatus('Stop')).toBe('idle');
-    expect(mapHookToStatus('SessionStart')).toBeNull();
+    expect(mapHookToStatus('SessionStart')).toBe('idle');
+    expect(mapHookToStatus('PostToolUse')).toBe('busy');
+    expect(mapHookToStatus('SubagentStop')).toBeNull();
+  });
+});
+
+describe('LiveTracker configured context window (limits.contextWindows)', () => {
+  const usageLine = (uuid: string, model: string, used: number, ts: string) =>
+    line(
+      {
+        type: 'assistant',
+        uuid,
+        timestamp: ts,
+        message: {
+          id: `m-${uuid}`,
+          role: 'assistant',
+          model,
+          content: [{ type: 'text', text: 'ok' }],
+          usage: {
+            input_tokens: used,
+            output_tokens: 1,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+          },
+        },
+      },
+      's-win',
+    );
+  const prompt = line(
+    {
+      type: 'user',
+      uuid: 'w0',
+      timestamp: '2026-09-01T09:10:01.000Z',
+      message: { role: 'user', content: 'window me' },
+    },
+    's-win',
+  );
+  const startWinSession = async (lines: string[]) => {
+    writeFileSync(transcriptFor('s-win'), lines.join(''));
+    reg(41030, 's-win', 'idle', T0);
+    alive.add(41030);
+    await tracker.refresh();
+    return tracker.get('claude:s-win');
+  };
+
+  it('scales an Opus 5 session against its configured 1M window, not the inferred 200k rung', async () => {
+    expect(cfg.limits.contextWindows['claude-opus-5']).toBe(1_000_000); // config default
+    const s = await startWinSession([
+      prompt,
+      usageLine('w1', 'claude-opus-5', 150_000, '2026-09-01T09:10:02.000Z'),
+    ]);
+    expect(s?.live?.contextFill).toBeCloseTo(0.15, 10);
+  });
+
+  it('reads the window from ctx.config().limits, so an edited table takes effect', async () => {
+    cfg = {
+      ...cfg,
+      limits: { ...cfg.limits, contextWindows: { 'claude-opus-5': 500_000 }, defaultContextWindow: 200_000 },
+    };
+    const s = await startWinSession([
+      prompt,
+      usageLine('w1', 'claude-opus-5', 150_000, '2026-09-01T09:10:02.000Z'),
+    ]);
+    expect(s?.live?.contextFill).toBeCloseTo(0.3, 10);
+  });
+
+  it('uses limits.defaultContextWindow for a model missing from the table', async () => {
+    cfg = { ...cfg, limits: { ...cfg.limits, contextWindows: {}, defaultContextWindow: 400_000 } };
+    const s = await startWinSession([
+      prompt,
+      usageLine('w1', 'claude-new-model', 100_000, '2026-09-01T09:10:02.000Z'),
+    ]);
+    expect(s?.live?.contextFill).toBeCloseTo(0.25, 10);
+  });
+
+  it('matches the meter context fill (core contextFill over the same limits) that GET /api/usage/context serves', async () => {
+    const used = 150_000;
+    const s = await startWinSession([
+      prompt,
+      usageLine('w1', 'claude-sonnet-5', used, '2026-09-01T09:10:02.000Z'),
+    ]);
+    const lim = ctx.config().limits;
+    const meterFill = coreContextFill(
+      { input: used, cacheRead: 0, cacheWrite: 0 },
+      'claude-sonnet-5',
+      lim.contextWindows,
+      lim.defaultContextWindow,
+    );
+    expect(meterFill?.fill).toBeCloseTo(0.15, 10);
+    expect(s?.live?.contextFill).toBeCloseTo(meterFill?.fill ?? Number.NaN, 10);
   });
 });

@@ -84,6 +84,7 @@ export async function createDaemon(
   ctx.updateConfig = (fn) => {
     const next = OrcConfig.parse(fn(ctx.config()));
     built.saveConfig(next);
+    ctx.bus.emit({ type: 'config.changed' });
     return next;
   };
   const indexer = createIndexer({
@@ -106,6 +107,15 @@ export async function createDaemon(
       const origins = () => allowedOrigins(boundPort);
       const phase2 = await startPhase2(ctx, { token, origins });
       const stopPhase4 = wirePhase4(ctx);
+      // The digest, recap and reminder services register their scheduler handlers first, so overdue jobs have a handler when they fire.
+      ctx.digests?.start();
+      ctx.recaps?.start();
+      ctx.goals?.start();
+      ctx.reminders?.start();
+      ctx.scheduler?.start();
+      ctx.ledger?.start();
+      ctx.usage?.start();
+      ctx.streams?.start();
       const app = createApp({ ctx, token, port: () => boundPort, webDist });
       const server = await new Promise<Server>((resolve) => {
         const s = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, (info: AddressInfo) => {
@@ -119,6 +129,7 @@ export async function createDaemon(
         .scanAll()
         .then(async (stats) => {
           ctx.log.info(stats, 'initial index complete');
+          ctx.bus.emit({ type: 'index.initialComplete' });
           if (watch) await indexer.watch();
         })
         .catch((err: unknown) => ctx.log.error({ err }, 'initial index failed'));
@@ -126,6 +137,13 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          ctx.goals?.stop();
+          ctx.recaps?.stop();
+          ctx.digests?.stop();
+          ctx.streams?.stop();
+          ctx.usage?.stop();
+          ctx.ledger?.stop();
+          ctx.scheduler?.stop();
           stopPhase4();
           await phase2.stop();
           await indexer.close();

@@ -7,6 +7,7 @@ import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
 import { ExportButton } from './ExportButton.tsx';
 import { SafetyBadges } from './SafetyBadges.tsx';
 import { SessionHeader } from './SessionHeader.tsx';
+import { SessionWorkPanel } from './SessionWorkPanel.tsx';
 import { type DetailNavigation, type DetailTab, SessionDetailTabs } from './tabs/SessionDetailTabs.tsx';
 import { ViewModeToggle } from './timeline/ViewModeToggle.tsx';
 
@@ -71,6 +72,7 @@ export function SessionDetailPage({ source, id, tab, agentId, file, onNavigate }
           </div>
         }
       />
+      <SessionWorkPanel session={session} />
       <SessionDetailTabs session={session} tab={tab} agentId={agentId} file={file} onNavigate={onNavigate} />
     </div>
   );

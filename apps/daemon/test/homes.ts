@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,14 +14,16 @@ export interface TempHomes {
   orcHome: string;
   claudeHome: string;
   codexHome: string;
+  wstackHome: string;
   userHome: string;
   paths: OrcPaths;
   env: Record<string, string>;
   cleanup(): void;
 }
 
-/** `root` pins the temp homes to a known path (the e2e harness needs one Playwright can compute);
- *  anything already there is removed first. Without it every call gets a fresh `mkdtemp`. */
+/** `root` pins the temp homes to a known path; anything already there is removed first. Without it
+ *  every call gets a fresh `mkdtemp`. `env.WSTACK_HOME` is an empty temp workflows home, for a
+ *  daemon process started on `env` (the process env of the test run itself is set by `setup-env.ts`). */
 export function makeTempHomes(opts: { root?: string } = {}): TempHomes {
   const root = opts.root ?? mkdtempSync(join(tmpdir(), 'orc-test-'));
   if (opts.root) {
@@ -33,11 +35,14 @@ export function makeTempHomes(opts: { root?: string } = {}): TempHomes {
   const codexHome = join(root, 'codex');
   cpSync(join(FIXTURES_DIR, 'claude-home'), claudeHome, { recursive: true });
   cpSync(join(FIXTURES_DIR, 'codex-home'), codexHome, { recursive: true });
+  const wstackHome = join(root, 'wstack');
   mkdirSync(orcHome, { recursive: true });
+  mkdirSync(join(wstackHome, 'workflows'), { recursive: true });
   const env = {
     ORC_HOME: orcHome,
     CLAUDE_HOME: claudeHome,
     CODEX_HOME: codexHome,
+    WSTACK_HOME: wstackHome,
     ORC_USER_HOME: FIXTURE_USER_HOME,
   };
   return {
@@ -45,11 +50,22 @@ export function makeTempHomes(opts: { root?: string } = {}): TempHomes {
     orcHome,
     claudeHome,
     codexHome,
+    wstackHome,
     userHome: FIXTURE_USER_HOME,
     paths: resolvePaths(env),
     env,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
+}
+
+/**
+ * The fixture e2e daemon's root: `ORC_E2E_ROOT` when the Playwright config pinned one (its specs
+ * compute the launch directory from it), else a fresh `mkdtemp`, so two e2e servers never share
+ * (and tear down) each other's homes. Resolved through realpath because a launched child reports
+ * its physical cwd on macOS.
+ */
+export function e2eRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ORC_E2E_ROOT ?? realpathSync(mkdtempSync(join(tmpdir(), 'orc-e2e-')));
 }
 
 /** Writes a minimal resumable transcript whose cwd exists on disk (fixture cwds do not). */

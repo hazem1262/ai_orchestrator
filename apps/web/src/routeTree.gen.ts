@@ -10,18 +10,26 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WorktreesRouteImport } from './routes/worktrees'
+import { Route as StreamsIndexRouteImport } from './routes/streams/index'
+import { Route as StreamsTicketRouteImport } from './routes/streams/$ticket'
 import { Route as ReviewSourceIdRouteImport } from './routes/review.$source.$id'
 import { Route as SessionsSourceIdRouteImport } from './routes/sessions/$source/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditRoute = AuditRouteImport.update({
@@ -54,6 +62,16 @@ const WorktreesRoute = WorktreesRouteImport.update({
   path: '/worktrees',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StreamsIndexRoute = StreamsIndexRouteImport.update({
+  id: '/streams/',
+  path: '/streams/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StreamsTicketRoute = StreamsTicketRouteImport.update({
+  id: '/streams/$ticket',
+  path: '/streams/$ticket',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReviewSourceIdRoute = ReviewSourceIdRouteImport.update({
   id: '/review/$source/$id',
   path: '/review/$source/$id',
@@ -67,35 +85,44 @@ const SessionsSourceIdRoute = SessionsSourceIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/streams/$ticket': typeof StreamsTicketRoute
+  '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/streams/$ticket': typeof StreamsTicketRoute
+  '/streams': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/streams/$ticket': typeof StreamsTicketRoute
+  '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
   '/sessions/$source/$id': typeof SessionsSourceIdRoute
 }
@@ -103,46 +130,58 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/analytics'
     | '/audit'
     | '/history'
     | '/inbox'
     | '/live'
     | '/settings'
     | '/worktrees'
+    | '/streams/$ticket'
+    | '/streams/'
     | '/review/$source/$id'
     | '/sessions/$source/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/analytics'
     | '/audit'
     | '/history'
     | '/inbox'
     | '/live'
     | '/settings'
     | '/worktrees'
+    | '/streams/$ticket'
+    | '/streams'
     | '/review/$source/$id'
     | '/sessions/$source/$id'
   id:
     | '__root__'
     | '/'
+    | '/analytics'
     | '/audit'
     | '/history'
     | '/inbox'
     | '/live'
     | '/settings'
     | '/worktrees'
+    | '/streams/$ticket'
+    | '/streams/'
     | '/review/$source/$id'
     | '/sessions/$source/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AnalyticsRoute: typeof AnalyticsRoute
   AuditRoute: typeof AuditRoute
   HistoryRoute: typeof HistoryRoute
   InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
   SettingsRoute: typeof SettingsRoute
   WorktreesRoute: typeof WorktreesRoute
+  StreamsTicketRoute: typeof StreamsTicketRoute
+  StreamsIndexRoute: typeof StreamsIndexRoute
   ReviewSourceIdRoute: typeof ReviewSourceIdRoute
   SessionsSourceIdRoute: typeof SessionsSourceIdRoute
 }
@@ -154,6 +193,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audit': {
@@ -198,6 +244,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorktreesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/streams/': {
+      id: '/streams/'
+      path: '/streams'
+      fullPath: '/streams/'
+      preLoaderRoute: typeof StreamsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/streams/$ticket': {
+      id: '/streams/$ticket'
+      path: '/streams/$ticket'
+      fullPath: '/streams/$ticket'
+      preLoaderRoute: typeof StreamsTicketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/review/$source/$id': {
       id: '/review/$source/$id'
       path: '/review/$source/$id'
@@ -217,12 +277,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AnalyticsRoute: AnalyticsRoute,
   AuditRoute: AuditRoute,
   HistoryRoute: HistoryRoute,
   InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
   SettingsRoute: SettingsRoute,
   WorktreesRoute: WorktreesRoute,
+  StreamsTicketRoute: StreamsTicketRoute,
+  StreamsIndexRoute: StreamsIndexRoute,
   ReviewSourceIdRoute: ReviewSourceIdRoute,
   SessionsSourceIdRoute: SessionsSourceIdRoute,
 }
