@@ -373,3 +373,23 @@ export const automationSuggestions = sqliteTable(
     index('automation_suggestions_state').on(t.state, t.createdAt),
   ],
 );
+
+// ── Phase 7: compare mode ────────────────────────────────────────────
+export const compareGroups = sqliteTable(
+  'compare_groups',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id'),
+    prompt: text('prompt').notNull(),
+    ticket: text('ticket'),
+    repo: text('repo').notNull(),
+    base: text('base').notNull(),
+    state: text('state').notNull().default('running'),
+    winnerIndex: integer('winner_index'),
+    estimateUsd: real('estimate_usd'),
+    variantsJson: text('variants_json').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('compare_groups_created').on(t.createdAt)],
+);

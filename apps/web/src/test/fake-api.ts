@@ -172,6 +172,11 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     suggestionsRefresh: unexpected('suggestionsRefresh'),
     suggestionsAccept: unexpected('suggestionsAccept'),
     suggestionsDismiss: unexpected('suggestionsDismiss'),
+    compareLaunch: unexpected('compareLaunch'),
+    compareEstimate: unexpected('compareEstimate'),
+    compareGet: unexpected('compareGet'),
+    comparePickWinner: unexpected('comparePickWinner'),
+    compareArchiveLosers: unexpected('compareArchiveLosers'),
   };
   return { ...base, ...overrides };
 }

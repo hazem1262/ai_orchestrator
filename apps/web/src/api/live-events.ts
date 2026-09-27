@@ -26,11 +26,20 @@ export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
   applyP7LiveEvent(qc, e);
 }
 
-/** Phase 7: an automation run changed; the list's stats and that automation's run history refetch. */
+/**
+ * Phase 7: an automation run changed, so the list's stats and that automation's run history refetch;
+ * a compare group changed, so its view refetches.
+ */
 function applyP7LiveEvent(qc: QueryClient, e: WireEvent): void {
-  if (e.type !== 'automation.runUpdated') return;
-  void qc.invalidateQueries({ queryKey: ['automations'] });
-  void qc.invalidateQueries({ queryKey: ['automation-runs', e.run.automationId] });
+  switch (e.type) {
+    case 'automation.runUpdated':
+      void qc.invalidateQueries({ queryKey: ['automations'] });
+      void qc.invalidateQueries({ queryKey: ['automation-runs', e.run.automationId] });
+      return;
+    case 'compare.updated':
+      void qc.invalidateQueries({ queryKey: ['compare', e.group.id] });
+      return;
+  }
 }
 
 /** Phase 5: the daemon pushes a fresh usage snapshot whenever the quota picture changes. */

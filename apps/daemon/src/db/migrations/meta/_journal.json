@@ -78,6 +78,13 @@
       "when": 1790529198620,
       "tag": "0010_phase7_automations",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790533609662,
+      "tag": "0011_phase7_compare",
+      "breakpoints": true
     }
   ]
 }

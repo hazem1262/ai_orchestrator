@@ -32,6 +32,9 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
     // `summary`, `error` and `vars` carry agent output and trigger text.
     case 'automation.runUpdated':
       return { type: 'automation.runUpdated', run: redactValue(e.run) as typeof e.run };
+    // The prompt, ticket, repo and worktree paths, and variant errors are user or agent text.
+    case 'compare.updated':
+      return { type: 'compare.updated', group: redactValue(e.group) as typeof e.group };
     // Ids, counters and a timestamp only.
     case 'session.removed':
     case 'pty.exited':

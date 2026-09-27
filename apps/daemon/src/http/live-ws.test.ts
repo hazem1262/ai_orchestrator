@@ -252,6 +252,35 @@ describe('live WS hub', () => {
           rerunOf: null,
         },
       },
+      'compare.updated': {
+        type: 'compare.updated',
+        group: {
+          id: 'g1',
+          projectId: null,
+          prompt: SECRET,
+          ticket: null,
+          repo: '/r',
+          base: 'main',
+          createdAt: '2026-09-17T00:00:00.000Z',
+          state: 'running',
+          winnerIndex: null,
+          estimateUsd: null,
+          variants: [
+            {
+              index: 0,
+              source: 'claude',
+              model: null,
+              label: 'v1 claude',
+              sessionId: null,
+              sessionPk: null,
+              ptyId: null,
+              worktreePath: null,
+              branch: null,
+              error: SECRET,
+            },
+          ],
+        },
+      },
     };
     // Internal events, interleaved: a leak would show up in the type sequence asserted below.
     ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:x', from: null, to: 'busy' });
