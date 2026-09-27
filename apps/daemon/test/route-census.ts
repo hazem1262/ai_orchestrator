@@ -443,6 +443,24 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: '{ ok: true }; the 409 confirmation summary is a constant sentence with the connector id',
   },
+  'GET /api/linear/issues/:identifier': {
+    guardedBy: null,
+    reason:
+      'the Linear issue (identifier, title, state, assignee, url, labels) from the user workspace; never a token',
+  },
+  'POST /api/linear/issues/:identifier/comment': {
+    guardedBy: null,
+    reason:
+      '{ ok: true }; the 409 confirmation preview is composed through core redact before it is returned',
+  },
+  'POST /api/linear/follow-up': {
+    guardedBy: null,
+    reason: 'the created Linear issue; the 409 preview of title and description goes through core redact',
+  },
+  'POST /api/slack/post': {
+    guardedBy: null,
+    reason: '{ ts }; the 409 confirmation preview is composed through core redact before it is returned',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -486,6 +504,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/settings.ts',
+  'apps/daemon/src/http/routes/share.ts',
   'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/streams.ts',
   'apps/daemon/src/http/routes/templates.ts',

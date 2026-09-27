@@ -221,6 +221,29 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: (m) => dec(m[1]),
     recordedBy: 'service',
   },
+  // Phase 6 sharing. `ShareService` records each post through `audited()` with a redacted preview
+  // of at most 300 chars, never the full body; a 409 confirmation_required is not recorded.
+  {
+    method: 'POST',
+    pattern: /^\/api\/linear\/issues\/([^/]+)\/comment$/,
+    action: 'linear.comment',
+    target: (m) => dec(m[1]),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/linear\/follow-up$/,
+    action: 'linear.issue.create',
+    target: (_m, b) => str(b.teamKey),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/slack\/post$/,
+    action: 'slack.post',
+    target: (_m, b) => str(b.channel),
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,
