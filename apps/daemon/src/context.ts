@@ -73,6 +73,8 @@ export interface DaemonContext {
   ship?: ShipService;
   /** P4 — approve or reject a plan an owned Claude session presented through ExitPlanMode. */
   plans?: PlanApprovalService;
+  // P5 — later tasks add their own optional fields here, in the task that creates the type:
+  // ledger (T5), prs and streams (T9), analytics and digests (T10), reminders (T14).
 }
 
 export interface BuildContextOptions {

@@ -84,6 +84,7 @@ export async function createDaemon(
   ctx.updateConfig = (fn) => {
     const next = OrcConfig.parse(fn(ctx.config()));
     built.saveConfig(next);
+    ctx.bus.emit({ type: 'config.changed' });
     return next;
   };
   const indexer = createIndexer({
