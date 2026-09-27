@@ -33,7 +33,8 @@
 | zod | `^4.6.5` |
 | pino | `^10.3.1` |
 | execa | `^10.0.1` |
-| croner | `^10.0.1` |
+| croner | `^10.0.1` (used from P5: `services/scheduler/scheduler.ts`) |
+| @anthropic-ai/sdk | `^0.128.0` (P5: the `anthropic-api` recap engine) |
 | web-push | `^3.6.7` |
 | @simplewebauthn/server | `^14.0.2` |
 | @modelcontextprotocol/sdk | `^1.30.0` |
@@ -64,6 +65,9 @@
 | @git-diff-view/react | `^0.1.7` |
 | vite-plugin-pwa | `^1.3.0` |
 | @playwright/test | `^1.63.0` (e2e) |
+| @testing-library/jest-dom | `^7.0.1` (dev dependency, P5: loaded by `src/test/setup.ts`) |
+
+The daemon package also ships a `bin` entry, `orc-statusline` → `dist/orc-statusline.js` (P5), built by tsup next to `dist/main.js`.
 
 **UI kit:** **shadcn/ui** — primitives copied into `apps/web/src/components/ui/` and owned by this repo (MIT, no registry auth, no private dependency). All UI code imports from `@/components/ui/*` and never from a vendor path, so swapping kits later touches that one folder and nothing else.
 
@@ -142,6 +146,7 @@ apps/web/src/features/worktrees/  apps/web/src/features/review/  apps/web/src/fe
 
 - **`ORC_HOME`** defaults to `~/.orchestrator`. Tests always set it to a temp dir.
 - **`CLAUDE_HOME`** defaults to `~/.claude`, and **`CODEX_HOME`** defaults to `~/.codex`. Tests point them at `fixtures/`.
+- **`WSTACK_HOME`** (P5) defaults to `~/.wstack`; the stream service and wstack analytics read `<home>/workflows/*.env` read-only and never `*.key`. Daemon unit tests get an empty temp one from `apps/daemon/test/setup-env.ts` (a vitest `setupFiles` entry); `makeTempHomes().env` carries one for a daemon started on those homes.
 - **`ORC_PORT`** overrides `OrcConfig.port` for one run (`apps/daemon/src/main.ts`).
 - **`ORC_NOTIFY=off`** (P2) registers no notification channel at all, so nothing is sent on any channel. The unit tests and the e2e run set it.
 
@@ -183,7 +188,7 @@ export const OrcConfig = z.object({
   resumeProfile: z.object({ claudeCommand: z.string().default('claude'), claudeArgs: z.array(z.string()).default(['--dangerously-skip-permissions']), codexCommand: z.string().default('codex'), codexArgs: z.array(z.string()).default([]) }).prefault({}),
   projects: z.array(ProjectConfig).default([]),
   codex: z.object({ showAutomated: z.boolean().default(false) }).prefault({}),
-  recaps: z.object({ enabled: z.boolean().default(false), trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'), engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'), autoModel: z.string().default('claude-haiku-4-5'), onDemandModel: z.string().default('claude-sonnet-5'), monthlyBudgetUsd: z.number().default(20), maxInputTokens: z.number().default(30000), minPrompts: z.number().default(2), language: z.string().default('en'), promptTemplate: z.string().nullable().default(null) }).prefault({}),
+  recaps: RecapsConfig.prefault({}),                                                                  // P5: named schema, see below
   notifications: z.record(z.string(), z.object({ enabled: z.boolean(), channels: z.array(z.enum(['macos', 'webpush', 'slack_dm'])) })).default({}),
   archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
   live: z.object({ pollMs: z.number().int().positive().default(1000), endedRetentionMin: z.number().int().positive().default(10), codexBusyWindowMs: z.number().int().positive().default(10000) }).prefault({}),   // P2
@@ -209,14 +214,64 @@ export const OrcConfig = z.object({
     implementTicketMode: z.enum(['precreate', 'conductor']).default('conductor'),
     checkpointsPerSession: z.number().int().positive().default(200),
   }).prefault({}),
+  limits: LimitsConfig.prefault({}),                                                                   // P5
+  digest: DigestConfig.prefault({}),                                                                   // P5
+  hooks: HooksConfig.prefault({}),                                                                     // P5
 }).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
+
+// P5 sections (as built, packages/api-contract/src/config.ts)
+export const RecapsConfig = z.object({
+  enabled: z.boolean().default(false),
+  trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'),
+  engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'),
+  autoModel: z.string().default('claude-haiku-4-5'),
+  onDemandModel: z.string().default('claude-sonnet-5'),
+  monthlyBudgetUsd: z.number().default(20),
+  maxInputTokens: z.number().default(30000),
+  minPrompts: z.number().default(2),
+  language: z.string().default('en'),
+  promptTemplate: z.string().nullable().default(null),
+  idleMinutes: z.number().int().positive().default(10),        // on_idle debounce
+  excludeProjectIds: z.array(z.string()).default([]),
+  dailyProjectIds: z.array(z.string()).default(['wakecap']),   // daily recap targets
+});
+export const LimitsConfig = z.object({
+  quotaSource: z.enum(['estimate', 'official']).default('official'),   // spike S7 (§14)
+  officialFieldPaths: z.object({
+    blockPct: z.string().nullable().default('rate_limits.five_hour.used_percentage'),
+    blockResetsAt: z.string().nullable().default('rate_limits.five_hour.resets_at'),
+    weekPct: z.string().nullable().default('rate_limits.seven_day.used_percentage'),
+    weekResetsAt: z.string().nullable().default('rate_limits.seven_day.resets_at'),
+  }).prefault({}),
+  blockTokenLimit: z.number().int().positive().nullable().default(null),   // user plan limit (5h)
+  weekTokenLimit: z.number().int().positive().nullable().default(null),    // user plan limit (7d)
+  warnPct: z.number().min(0).max(1).default(0.8),
+  contextWindows: z.record(z.string(), z.number().int().positive())
+    .default({ 'claude-opus-5': 1000000, 'claude-sonnet-5': 1000000, 'claude-haiku-4-5': 200000 }),
+  defaultContextWindow: z.number().int().positive().default(200000),
+  // USD per 1M tokens (list prices checked 2026-09-17; cache write = 1.25 × input, cache read = 0.1 × input). Estimates only.
+  pricing: z.record(z.string(), z.object({ input: z.number(), output: z.number(), cacheWrite: z.number(), cacheRead: z.number() }))
+    .default({
+      'claude-opus-5': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+      'claude-sonnet-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+      'claude-haiku-4-5': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+    }),
+  contextWarnFill: z.number().min(0).max(1).default(0.85),
+});
+export const DigestConfig = z.object({
+  enabled: z.boolean().default(true),
+  cron: z.string().default('0 9 * * 1'),               // weekly digest, Mon 09:00 local
+  dailyRecapCron: z.string().default('0 19 * * 1-5'),  // daily project recap
+});
+export const HooksConfig = z.object({ statusOverrideMs: z.number().int().positive().default(120000) });
+export type RecapsConfig = z.infer<typeof RecapsConfig>;   // and LimitsConfig, DigestConfig, HooksConfig
 ```
 
 
 > **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
-`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
+`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `recaps`, `limits`, `digest` and `hooks` (P5) also use `.prefault({})`; recaps stay `enabled: false` in every test daemon. The fixture e2e server roots its homes at `ORC_E2E_ROOT` (one `mkdtemp` per Playwright run, set by `apps/web/playwright.config.ts` together with `ORC_E2E_WORK`), or its own `mkdtemp` root when started by hand. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
 
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
@@ -430,7 +485,65 @@ export interface CheckpointRecord extends Checkpoint { kind: 'turn' | 'safety' |
 
 **P4 core git helpers** (`packages/core/src/git/index.ts`, pure): `branchName`, `ticketFromBranch`, `worktreeDirName`, `BranchType`, `parseUnifiedDiff`, `hunkPatch`, `buildReviewPrompt`, and everything in `status-porcelain.ts` and `worktree-porcelain.ts`. `branch.ts` declares its own `slugify` and `DEFAULT_TICKET_REGEX`; because `derive/` already exports both names, the barrel re-exports them as **`branchSlug`** and **`DEFAULT_BRANCH_TICKET_REGEX`**.
 
-**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`.
+**P5 domain types** (`packages/core/src/types/{usage,streams,recaps,bridge,analytics}.ts`, as built):
+```ts
+export type UsageSource = 'official' | 'estimate';
+export interface UsageSnapshot {            // pctOfLimit is a fraction (0..1, may exceed 1)
+  source: UsageSource; generatedAt: string;
+  block: { active: boolean; start: string; end: string; tokens: number; costUsd: number; pctOfLimit: number | null };
+  week: { tokens: number; costUsd: number; pctOfLimit: number | null };
+  burnRateUsdPerHour: number; burnRateTokensPerMin: number; projectedBlockExhaustionAt: string | null;
+}
+export interface OfficialQuotaSample { at: string; blockPct: number | null; blockResetsAt: string | null; weekPct: number | null; weekResetsAt: string | null }
+export type BudgetScopeType = 'global' | 'project' | 'ticket';
+export type BudgetPeriod = 'daily' | 'weekly' | 'monthly';
+export interface Budget { id: string; scopeType: BudgetScopeType; scopeId: string | null; period: BudgetPeriod; limitUsd: number; origin: 'table' | 'config' }
+export interface BudgetStatus { budget: Budget; spentUsd: number; pct: number; periodStart: string }
+export interface BudgetCheck { ok: boolean; pct: number; limitUsd: number | null }
+export interface ConcurrencyStatus { projectId: string; owned: number; max: number }
+export interface ContextFillInfo { sessionPk: string; model: string | null; usedTokens: number; windowTokens: number; fill: number; warn: boolean }
+export type StreamLinkKind = 'session' | 'pr' | 'plan' | 'worktree' | 'workflow';
+export interface StreamLink { ticket: string; kind: StreamLinkKind; ref: string; origin: 'auto' | 'manual'; excluded: boolean; createdAt: string }
+export type TicketSignalSource = 'session_tickets' | 'prompt' | 'branch' | 'pr_title' | 'pr_body' | 'plan_file' | 'wstack_workflow' | 'worktree' | 'manual';
+export interface TicketSignal { ticket: string; kind: StreamLinkKind; ref: string; source: TicketSignalSource }
+export interface StreamPr { pr: PrRef; title: string; state: 'open' | 'closed' | 'merged'; headRef: string | null; baseRef: string | null; isBackmerge: boolean; checks: 'pending' | 'success' | 'failure' | 'none'; review: 'approved' | 'changes_requested' | 'review_required' | 'none'; updatedAt: string; mergedAt: string | null }
+export type StreamTimelineKind = 'session' | 'pr' | 'plan' | 'worktree' | 'recap' | 'handoff' | 'goal' | 'workflow';
+export interface StreamTimelineItem { ts: string; kind: StreamTimelineKind; title: string; ref: string; detail: string | null }
+export interface StreamDetail { stream: WorkStream; prsDetailed: StreamPr[]; links: StreamLink[]; timeline: StreamTimelineItem[]; goal: Goal | null; handoff: Handoff | null; budget: BudgetCheck }
+export type RecapKind = 'session' | 'daily' | 'handoff';
+export type RecapEngineId = 'claude-cli' | 'anthropic-api';
+export interface Recap { id: string; kind: RecapKind; targetKey: string; transcriptOffset: number; model: string; engine: RecapEngineId; text: string; costUsd: number; inputTokensApprox: number; createdAt: string }
+export type ReminderState = 'pending' | 'fired' | 'cancelled';
+export interface Reminder { id: string; jobId: string; sessionPk: string | null; ticket: string | null; text: string; dueAt: string; sendToSession: boolean; state: ReminderState; createdAt: string; firedAt: string | null }
+export interface DigestRecord { weekStart: string; markdown: string; createdAt: string }
+export type HookEventName = 'SessionStart' | 'Stop' | 'Notification' | 'PreToolUse' | 'PostToolUse';
+export interface HookFields { sessionId: string; event: string; message: string | null; tool: string | null }   // the only fields kept from a hook payload
+export interface HookSignal { sessionId: string; event: string; status: 'busy' | 'idle' | 'waiting'; waitingFor: string | null; currentTool: string | null }
+export type AnalyticsGroupBy = 'day' | 'week' | 'project' | 'model' | 'source' | 'ticket';
+export interface TokenTotals { input: number; output: number; cacheRead: number; cacheWrite: number }
+export interface CostRow { key: string; costUsd: number; tokens: TokenTotals; sessions: number }
+export interface TopSession { pk: string; name: string | null; projectId: string | null; costUsd: number; tickets: string[] }
+export interface TopTicket { ticket: string; costUsd: number; sessions: number }
+export interface TopResult { sessions: TopSession[]; tickets: TopTicket[]; mergedPrs: number; costPerMergedPrUsd: number | null }
+export type ToolKind = 'tool' | 'mcp' | 'skill';
+export interface ToolUsageRow { bucket: string; kind: ToolKind; name: string; count: number }
+export interface TimingResult { modelMs: number; toolMs: number; modelShare: number | null; cacheHitTrend: Array<{ bucket: string; rate: number | null }> }
+export interface OutcomesResult { sessions: number; outcomes: Record<string, number>; friction: Record<string, number>; goalCategories: Record<string, number> }
+export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<string, number>; avgDurationS: number | null }
+// Handoff.sessionId holds the session pk (`source:id`).
+```
+
+**P5 core helpers** (pure, exported from `@orc/core`):
+- `derive/quota.ts`: `buildBlocks`, `activeBlock`, `windowTotals`, `burnRate`, `projectExhaustion`, `projectFromPct`, `computeUsageSnapshot`, `contextWindowFor`, `contextFill`, `readPath`, `mapOfficialQuota`, `BLOCK_MS`, `WEEK_MS`, `OFFICIAL_MAX_AGE_MS`.
+- `derive/pricing.ts`: `PriceTable`, `estimateCostUsd(model, usage, prices): number | null`.
+- `derive/ledger.ts`: `extractLedgerFacts` (`LedgerUsageFact`, `LedgerToolFact`).
+- `derive/streams.ts`: `collectTicketSignals`, `applyManualLinks`, `groupSignals`, `computeStreamStage`, `isBackmergePr`, `planTicket`, `parseWstackEnv`, `extractTicketsFrom`, `prTickets`, `STREAM_STAGES`, `REVIEW_SKILLS`, `RELEASE_SKILLS`, `STREAM_TICKET_PATTERN`.
+- `derive/analytics.ts`: `bucketKey`, `groupCost`, `topSessionCosts`, `topTickets`, `costPerMergedPr`, `toolUsageRows`, `timingSummary`, `summarizeFacets`, `summarizeWstackTimeline`; `derive/digest.ts`: `renderWeeklyDigest`.
+- `derive/hooks.ts`: `pickHookFields`, `hookStatusFor`, `mapHookPayload`, `hookWins`, `BRIDGE_HOOK_EVENTS` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop), `HOOK_BODY_LIMIT_BYTES` (256 KiB).
+- `recap/digest.ts`: `buildRecapDigest`, `renderPromptTemplate`, `DEFAULT_RECAP_PROMPT`, `DEFAULT_DAILY_PROMPT`, `DEFAULT_HANDOFF_PROMPT`, `approxTokens`, `truncateText`, `firstLine`; `recap/handoff.ts`: `collectHandoffEvidence`, `parseHandoffJson`, `handoffToMarkdown`, `buildResumePrompt`.
+- `derive/live-transcript.ts`: `createLiveReducer` takes `opts.windows: { table, defaultWindow }` and scales context fill with `contextFill`, keeping the widest window a session has needed.
+
+**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`. P5: `POST /api/handoffs/:id/resume-fresh` records `session.launch` (target `handoff:<id>`), and `POST /api/hooks/install` records `hook.install` (target `claude-settings`).
 
 ## 5. SQLite & migrations
 
@@ -461,7 +574,7 @@ export interface CheckpointRecord extends Checkpoint { kind: 'turn' | 'safety' |
 | `worktrees` | 4 | `path` |
 | `checkpoints` | 4 | `id`; unique `ref` |
 | `pr_cache` | 4 | `key` = `${repo}#${number}` |
-| `streams`, `stream_links`, `recaps`, `goals`, `handoffs`, `reminders`, `budgets`, `usage_blocks` | 5 | — |
+| `streams`, `stream_links`, `recaps`, `goals`, `handoffs`, `reminders`, `budgets`, `usage_blocks`, `scheduled_jobs`, `usage_entries`, `tool_uses`, `ledger_cursors`, `digests` | 5 | migration `0008_phase5.sql`; Drizzle tables in `apps/daemon/src/db/schema-p5.ts`, repos in `db/repos/{budgets,digests,goals,handoffs,recaps,reminders,scheduled-jobs,streams,usage-ledger}.ts` |
 | `connector_tokens_meta`, `push_subscriptions`, `webauthn_credentials`, `slack_threads` | 6 | — |
 | `automations`, `automation_runs`, `compare_groups`, `supervisor_rules`, `supervisor_decisions` | 7 | — |
 
@@ -481,7 +594,7 @@ export interface CheckpointRecord extends Checkpoint { kind: 'turn' | 'safety' |
 | `checkpoints` | `id` pk, `session_pk`, `session_id` (source-native id), `worktree_path`, `turn`, `ref`, `commit`, `kind` (`turn`\|`safety`\|`manual`), `created_at`. Unique `checkpoints_ref_uq` on `ref`; indexes on `session_pk` and `worktree_path`. Refs are `refs/orchestrator/checkpoints/<sessionId>/<turn>` for `turn`, and `…/<turn>-safety-<epochMs>-<rand8>` / `…/<turn>-manual-<epochMs>-<rand8>` for the other kinds. |
 | `pr_cache` | `key` pk (`${repo}#${number}`), `repo`, `number`, `url`, `state`, `title`, `checks`, `review`, `head_ref`, `failed_checks_json`, `updated_at`, `fetched_at`. Index `pr_cache_head_idx`. |
 
-  A hunk or file revert stores its safety commit at `refs/orchestrator/reverts/<epochMs>` (not a checkpoint row; not pruned when the worktree is archived).
+  A hunk or file revert stores its safety commit at `refs/orchestrator/reverts/<worktree-hash>/<epochMs>` (not a checkpoint row); archiving the worktree deletes that worktree's revert refs.
 
 - **Repositories:** each table group has a repo module in `apps/daemon/src/db/repos/<name>.ts` that exports plain functions taking `db: OrcDb` as the first argument, e.g. `upsertSession(db, s)`. **Routes never run SQL directly.** P2 adds `db/repos/inbox.ts`, `db/repos/test-results.ts` and `db/repos/archive.ts`.
 
@@ -542,7 +655,7 @@ P2  POST   /api/archive/restore                      body { source, id, confirm?
 P2  POST   /api/archive/sync                         → { copied: number }
 P2  GET    /api/config/notifications                 → NotificationPrefs
 P2  PUT    /api/config/notifications                 body NotificationPrefs → NotificationPrefs
-P2  POST   /api/hooks                                body HookIngestBody → { ok: true }   (minimal ingest; the full bridge is P5)
+P2  POST   /api/hooks                                body HookIngestBody → { ok: true }   (P5 extends it in place: maps every BRIDGE_HOOK_EVENTS event and answers { ok: true, accepted })
 P2  WS     /ws                                       hello, then LiveEvent deltas (below)
 P3  GET    /api/sessions/:source/:id/stats           → SessionStatsResponse { session: SessionStats; turns: TurnStats[]; agents: { agentId: string; stats: SessionStats }[] }
 P3  GET    /api/sessions/:source/:id/deliverables    → TurnDeliverables[]
@@ -586,7 +699,45 @@ P4  GET    /api/github/prs/mine                         → PrStatus[]
 P4  POST   /api/sessions/:source/:id/plan/approve       body { confirm } → { ok: true }                      (confirm)
 P4  POST   /api/sessions/:source/:id/plan/reject        body { feedback, confirm } → { ok: true }            (confirm)
 P4  POST   /api/sessions/launch                         LaunchRequest.planApproval and .worktree are supported; the P2 501 for both is gone (compare stays 501 until P7)
-P5  /api/streams…  /api/analytics…  /api/usage…  /api/recaps…  /api/goals…  /api/handoffs…  /api/reminders…  /api/hooks (bridge ingest)
+P5  GET    /api/usage                                   → UsageSnapshot
+P5  GET    /api/usage/budgets                           → BudgetStatus[]
+P5  PUT    /api/usage/budgets                           body BudgetUpsertBody → Budget                        (NON_ACTION)
+P5  DELETE /api/usage/budgets/:id                       → { ok: true }                                       (NON_ACTION)
+P5  GET    /api/usage/concurrency                       → ConcurrencyStatus[]
+P5  GET    /api/usage/context/:source/:id               → ContextFillInfo | null
+P5  POST   /api/usage/official                          raw statusline JSON → 204                            (NON_ACTION)
+P5  GET    /api/settings                                → Settings { recaps, limits, digest, hooks }
+P5  PUT    /api/settings                                body SettingsUpdateBody → Settings                    (NON_ACTION)
+P5  GET    /api/streams?projectId&stage                 → WorkStream[]   (refreshes first when older than 30 s)
+P5  POST   /api/streams/refresh                         → WorkStream[]                                       (NON_ACTION)
+P5  GET    /api/streams/:ticket                         → StreamDetail
+P5  POST   /api/streams/:ticket/link | /unlink          body { kind, ref } → StreamLink                     (NON_ACTION)
+P5  GET    /api/analytics/cost?from&to&projectId&groupBy → { rows: CostRow[]; estimated: boolean }
+P5  GET    /api/analytics/top?from&to&projectId&limit   → TopResult
+P5  GET    /api/analytics/tools?from&to&projectId&bucket → ToolUsageRow[]
+P5  GET    /api/analytics/timing?from&to&projectId&bucket → TimingResult
+P5  GET    /api/analytics/outcomes?from&to&projectId    → OutcomesResult
+P5  GET    /api/analytics/wstack?from&to                → WstackSkillRow[]
+P5  GET    /api/analytics/digest                        → DigestRecord | null
+P5  POST   /api/analytics/digest                        body { weekStart? } → DigestRecord                   (NON_ACTION)
+P5  GET    /api/recaps/session/:source/:id              → Recap | null
+P5  POST   /api/recaps/session/:source/:id              body { onDemand } → RecapRunResponse                 (NON_ACTION)
+P5  GET    /api/recaps/daily?projectId&date             → Recap | null
+P5  POST   /api/recaps/daily                            body { projectId, date } → { text }                 (NON_ACTION)
+P5  GET    /api/recaps/spend                            → { spentUsd, budgetUsd }
+P5  GET    /api/goals?state                             → Goal[]
+P5  GET    /api/goals/:targetType/:targetId             → { goal, prefill }
+P5  PUT    /api/goals/:targetType/:targetId             body GoalPutBody → Goal                              (NON_ACTION)
+P5  GET    /api/handoffs/session/:source/:id            → { handoff, markdown } | null
+P5  POST   /api/handoffs/session/:source/:id            → Handoff                                            (NON_ACTION)
+P5  GET    /api/handoffs/:id/markdown                   → text/markdown
+P5  POST   /api/handoffs/:id/resume-fresh               body { confirm } → { ptyId }                         (confirm; audited as session.launch)
+P5  GET    /api/reminders?state&sessionPk               → Reminder[]
+P5  POST   /api/reminders                               body ReminderCreateBody → Reminder                   (NON_ACTION)
+P5  POST   /api/reminders/:id/cancel                    → Reminder                                           (NON_ACTION)
+P5  GET    /api/hooks/install                           → HookInstallStatus   (never writes)
+P5  POST   /api/hooks/install                           body { confirm } → { installed, settingsPath, backupPath } (confirm; audited as hook.install)
+P5  GET    /api/hooks/statusline                        → { command, snippet }
 P6  /api/connectors…  /api/push…  /api/webauthn…
 P7  /api/automations…  /api/compare…  /api/supervisor…
 ```
@@ -596,6 +747,14 @@ P2's zod schemas live in `packages/api-contract/src/routes/{live,launch,inbox,te
 P3's zod schemas live in `packages/api-contract/src/routes/{session-detail,links,safety,audit}.ts`. They reuse `UsageSchema` from `packages/api-contract/src/domain.ts` rather than declaring a second one. P3's client methods (`packages/api-contract/src/client-p3.ts`, folded into `createApiClient`) are `sessionsStats`, `sessionsDeliverables`, `sessionsFiles`, `sessionsUsageSeries`, `sessionsSafety`, `sessionsLinks`, `sessionsRaw`, `sessionsExport`, `plansList`, `plansContent`, `auditList`, `safetySecrets`, `safetyDenyCheck`. They throw P1's `ApiRequestError`; `client-p3.ts` re-exports it under the alias `ApiCallError` for the Phase 3 tests only, and it is the same class (§13).
 
 P4's zod schemas live in `packages/api-contract/src/routes/`: `worktrees.ts` (`WorktreeViewSchema`, `WorktreeType`, `CreateWorktreeBody`, `CreateWorktreeResult`, `WorktreeListQuery`, `WorktreeScriptBody`, `WorktreeOpenBody`, `SyncPreview`, `WorktreePathBody`, `WorktreeArchiveBody`), `review.ts` (`DiffQuery`, `DiffFileSchema`, `DiffResultSchema`, `DiffRevertBody`, `CheckpointRecordSchema`, `CheckpointCreateBody`, `CheckpointRewindBody`, `ReviewCommentSchema`, `ReviewCommentsBody`, `ReviewSummarySchema`), `ship.ts` (`ShipPrRefSchema`, `PrStatusSchema`, `ShipSuggestion`, `ShipCommitBody`, `ShipPushBody`, `ShipPrBody`, `ShipMergeBody`, `ShipBackmergeBody`), `plan.ts` (`PlanApproveBody`, `PlanRejectBody`), and `common.ts` (`Confirm`, `IsoString`). P4's client methods live in `packages/api-contract/src/client-phase4.ts` (`createPhase4Methods`, type `Phase4Client`), spread into `createApiClient`: `worktreesList`, `worktreesDiscover`, `worktreesGet`, `worktreesCreate`, `worktreesScript`, `worktreesOpen`, `worktreesSyncPreview`, `worktreesSync`, `worktreesArchive`, `diffGet`, `diffRevert`, `checkpointsList`, `checkpointsDiff`, `checkpointsCreate`, `checkpointsRewind`, `reviewGet`, `reviewComments`, `shipSuggest`, `shipCommit`, `shipPush`, `shipPr`, `shipMerge`, `shipBackmerge`, `planApprove`, `planReject`, `githubStatus`, `githubPr`, `githubMine`.
+
+P5's zod schemas live in `packages/api-contract/src/routes/{usage,settings,streams,analytics,recaps,goals,reminders,handoffs,hooks}.ts`. P5's client methods live in `packages/api-contract/src/client-p5.ts` (`p5ClientMethods`, type `P5ClientMethods`), spread into `createApiClient`: `usageGet`, `usageBudgets`, `usageBudgetUpsert`, `usageBudgetDelete`, `usageConcurrency`, `usageContext`, `settingsGet`, `settingsUpdate`, `analyticsCost` (its `groupBy` is required), `analyticsTop`, `analyticsTools`, `analyticsTiming`, `analyticsOutcomes`, `analyticsWstack`, `analyticsDigestLatest`, `analyticsDigestGenerate`, `streamsList`, `streamsRefresh`, `streamsGet`, `streamsLink`, `streamsUnlink`, `recapsGetSession`, `recapsRunSession`, `recapsGetDaily`, `recapsRunDaily`, `recapsSpend`, `goalsList`, `goalsGet`, `goalsSet`, `handoffsLatest`, `handoffsGenerate`, `handoffsResumeFresh`, `remindersList`, `remindersCreate`, `remindersCancel`, `hooksInstallStatus`, `hooksInstall`, `hooksStatusline`.
+
+**P5 routes** are registered on the main app by `register{Usage,Settings,Stream,Analytics,Recap,Goal,Reminder,Handoff}Routes` (`http/app.ts`); each reads its service with `need(ctx.<svc>, name)` (`services/need.ts`, which throws `<name> is not wired in DaemonContext` while unset) and parses with `readBody`/`readQuery` from `http/p5-util.ts`. Every P5 body that can carry transcript-derived text (stream titles, timelines, recaps, goals, reminders, handoffs, analytics names, the digest) answers through `redactedJson`.
+
+**P5 LiveEvent change:** `usage.updated` is typed `{ type: 'usage.updated'; snapshot: UsageSnapshot }` and goes through `toWireEvent` like the rest.
+
+**P5 BusEvent additions** (daemon-internal): `{ type: 'config.changed' }` (emitted by `ctx.updateConfig`), `{ type: 'index.initialComplete' }` (emitted by `createDaemon().start()` once the first `scanAll` finishes; the stream service rebuilds on it).
 
 **P4 errors.** Routes are mounted on `phase4App()` (`http/routes/git-guard.ts`), whose `onError` answers every error through `redactedApiError`. Services throw `GitError` (`services/git/exec.ts`) or P1's `ServiceError` (`services/errors.ts`); `toHttpError` maps a `GitError` to a `ServiceError` with the status from `GIT_ERROR_STATUS`. There is no `HttpError`. Codes and statuses: `not_found`, `not_a_worktree`, `no_worktree`, `hunk_not_found`, `no_script` → 404; `not_owned` → 403; `forbidden_git_args`, `validation_failed` → 400; `dirty_worktree`, `main_dirty`, `external_worktree`, `worktree_exists`, `is_main_checkout`, `nothing_to_commit`, `protected_branch`, `push_rejected`, `no_pending_plan`, `confirmation_required` → 409; `git_failed` → 502; `gh_unavailable` and `unavailable` (service not wired on `ctx`) → 503.
 
@@ -613,7 +772,7 @@ export type LiveEvent =
   | { type: 'inbox.upserted'; item: InboxItem }
   | { type: 'pty.exited'; ptyId: string; code: number | null }
   | { type: 'index.progress'; done: number; total: number }
-  | { type: 'usage.updated'; snapshot: unknown }          // typed in phase 5
+  | { type: 'usage.updated'; snapshot: UsageSnapshot }    // typed in phase 5
   | { type: 'hello'; serverTime: string }
   | { type: 'audit.recorded'; entry: AuditEntry };        // P3; also in the daemon's LIVE_EVENT_TYPES
 ```
@@ -629,7 +788,9 @@ export type BusEvent = LiveEvent
   | { type: 'session.statusChanged'; pk: string; from: LiveStatus | null; to: LiveStatus }
   | { type: 'session.turnEnded'; pk: string; turn: number }
   | { type: 'session.indexed'; pk: string }   // P1: emitted by the indexer whenever a session's rows change (new file, append, truncation-recovery re-read); daemon-internal only, not on the /ws LiveEvent wire
-  | { type: 'tests.recorded'; pk: string; result: TestResult };
+  | { type: 'tests.recorded'; pk: string; result: TestResult }
+  | { type: 'config.changed' }         // P5
+  | { type: 'index.initialComplete' }; // P5
 export interface EventBus { emit(e: BusEvent): void; on<T extends BusEvent['type']>(type: T, fn: (e: Extract<BusEvent, { type: T }>) => void): () => void }
 export function createEventBus(): EventBus
 ```
@@ -672,6 +833,8 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
   ```
 - **Where redaction happens:** API responses that carry transcript text (`events`, `sessions` list snippets, export) are redacted **in the route layer**. The DB keeps the raw text.
 - Routes send transcript JSON through `redactedJson` (`apps/daemon/src/http/redacted-json.ts`). FTS snippets use the daemon's `redactSnippet` (which composes `redactPartialTokens`). WS events pass through `toWireEvent` (`apps/daemon/src/http/ws-redact.ts`). Error bodies go through `redactedApiError(code, message, details?)` in `apps/daemon/src/http/redact-out.ts`, because messages and details can carry cwds, session names and zod issues.
+- **P5:** every P5 route that returns transcript-derived text answers through `redactedJson`; `usage.updated` goes through `toWireEvent`.
+- **LLM calls** (recaps, daily recaps, handoffs) send only a redacted digest built by `buildRecapDigest`. Tool outputs and tool inputs are never sent.
 - **Logging:** pino writes JSON to `$ORC_HOME/logs/daemon.log`, and pretty output in dev. Transcript text is never logged.
 - **IDs:** `crypto.randomUUID()`, except that the session pk is `${source}:${id}`.
 
@@ -699,6 +862,7 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
   | `codex-basic` | rollout with session_meta, token_count |
   | `codex-automated` | `originator: codex_sdk_ts` |
 
+- **P5 test isolation:** `apps/daemon/test/setup-env.ts` points `WSTACK_HOME` at an empty temp dir for every daemon test file; tests that need workflows stub it with `vi.stubEnv`. Recap tests use fake engines or `apps/daemon/test/bin/fake-claude-print`; no test reaches the Anthropic API.
 - **Daemon HTTP tests** use `app.request()` (Hono) without opening a port. WS/PTY tests use a real ephemeral port (`port: 0`).
 - **External CLIs** (`claude`, `codex`, `gh`, `git`) are faked in unit tests with small shell scripts in `apps/daemon/test/bin/`, prepended to `PATH`. Real `git` is used in temp repos for worktree and checkpoint tests.
 
@@ -744,11 +908,17 @@ export interface DaemonContext {
   diff?: DiffService;                      // P4
   review?: ReviewService;                  // P4
   plans?: PlanApprovalService;             // P4 — all P4 services are set by wirePhase4(), not buildContext()
+  scheduler?: Scheduler;                   // P5 — extended in P7
+  ledger?: UsageLedger;                    // P5
   usage?: UsageMeter;                      // P5
+  prs?: PrSource;                          // P5
+  streams?: StreamService;                 // P5
+  analytics?: AnalyticsService;            // P5
+  digests?: DigestService;                 // P5
   recaps?: RecapService;                   // P5
-  handoffs?: HandoffService;               // P5
   goals?: GoalService;                     // P5
-  scheduler?: Scheduler;                   // P5 (reminders) — extended in P7
+  reminders?: ReminderService;             // P5
+  handoffs?: HandoffService;               // P5 — every P5 service is set by buildContext(); the ones with start() are started by createDaemon().start()
   linear?: LinearConnector;                // P6
   slack?: SlackConnector;                  // P6
   automations?: AutomationService;         // P7
@@ -876,6 +1046,12 @@ export function createInboxEngine(ctx: DaemonContext, opts?: { now?: () => Date;
 //     raised when a merged PR's worktree is dirty or external
 //   plan-approval (inbox/rules/plan-approval.ts, on session.statusChanged; finds a pending ExitPlanMode and emits plan.pending),
 //     kind 'plan_approval', scope { session: pk }; resolved when the status leaves 'waiting' or after approve/reject
+// P5 inbox keys (every caller passes { kind, scope, facet? }):
+//   budget alerts (services/usage/budgets.ts budgetInboxKey): kind 'budget', scope { project } | { ticket } | { global: true }, facet `${period}:${periodStart day}:${'warn'|'over'}`
+//   quota alerts (services/usage/meter.ts quotaAlertKeys): kind 'budget', scope { domain: 'quota', id: 'block' } facet block start, or { domain: 'quota', id: 'week' } facet week key;
+//     the block alert opens at pctOfLimit >= limits.warnPct or when projected exhaustion is within 60 min
+//   recap monthly budget (services/recap/recap.ts): kind 'budget', scope { domain: 'recap-budget', id: <month> }
+//   reminders (services/reminders/reminders.ts): kind 'reminder', scope { domain: 'reminder', id: <reminder id> }
 // The stored keys are therefore e.g. `pr_event:pr:o%2Fr%234:checks`, `pr_event:worktree:<enc path>:archive_blocked`, `plan_approval:session:claude%3A<id>`.
 
 // P2 — apps/daemon/src/notify/notifier.ts
@@ -937,7 +1113,9 @@ export interface AuditedRoute { method: 'GET' | 'POST' | 'DELETE' | 'PATCH' | 'P
 // unknown path, ownership check. POST /api/worktrees/discover is in NON_ACTION_ROUTES (read-only git).
 export async function withAuditScope(fn: () => Promise<void>): Promise<Set<string>>   // services/audit/audit.ts; AsyncLocalStorage set of the actions audited() recorded inside fn
 export const AUDITED_ROUTES: AuditedRoute[]
-export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: string }>   // pin, label, views, inbox actions, notification prefs, project PATCH, hooks ingest, deny-check
+export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: string }>   // pin, label, views, inbox actions, notification prefs, project PATCH, hooks ingest, deny-check;
+//   P5: budgets PUT/DELETE, usage/official, settings PUT, streams refresh/link/unlink, analytics digest POST, recaps session/daily POST,
+//   goals PUT, reminders POST and cancel, handoffs session POST — each with its reason. P5 audited: handoffs resume-fresh (session.launch), hooks install (hook.install).
 export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler   // mounted on /api/* in createApp right after the token middleware
 // P3 — apps/daemon/src/pty/audited-pty.ts
 export function withPtyInputAudit(pty: PtyManager, audit: AuditService, opts?: { idleMs?: number; actor?: AuditActor }): PtyManager & { flushAll(): void }   // wired in buildContext
@@ -1022,16 +1200,83 @@ export function wirePhase4(ctx: DaemonContext, opts?: { startPollers?: boolean }
 // DaemonContext additions (P4): diff?: DiffService; review?: ReviewService; plans?: PlanApprovalService; worktrees/checkpoints/ship/github as above.
 // bus additions (P4): pr.changed, plan.pending, pr.reviewRequested (§6).
 
-// P5 — services/usage/meter.ts
-export interface UsageSnapshot { source: 'official' | 'estimate'; block: { start: string; end: string; tokens: number; costUsd: number; pctOfLimit: number | null }; week: { tokens: number; costUsd: number; pctOfLimit: number | null }; burnRateUsdPerHour: number; projectedBlockExhaustionAt: string | null }
-export interface UsageMeter { snapshot(): UsageSnapshot; checkBudget(scope: { projectId?: string; ticket?: string }): { ok: boolean; pct: number; limitUsd: number | null } }
-// P5 — services/recap/recap.ts ; services/handoff/handoff.ts ; services/goals.ts
-export interface RecapService { recap(sessionPk: string, opts?: { onDemand?: boolean }): Promise<{ text: string; costUsd: number; model: string }>; daily(projectId: string, date: string): Promise<string> }
-export interface HandoffService { generate(sessionPk: string): Promise<Handoff>; toMarkdown(h: Handoff): string; latest(sessionPk: string): Handoff | null }
-export interface GoalService { get(targetType: Goal['targetType'], targetId: string): Goal | null; set(g: Omit<Goal, 'id' | 'updatedAt'>): Goal }
-// P5 — services/scheduler/scheduler.ts
+// P5 (as built) — services/usage/meter.ts, ledger.ts, budgets.ts
+export interface UsageMeter {
+  snapshot(): UsageSnapshot; checkBudget(scope: { projectId?: string; ticket?: string }): BudgetCheck;
+  refresh(now?: Date): UsageSnapshot;                        // recompute; emits usage.updated only when changed
+  ingestOfficial(raw: unknown): OfficialQuotaSample | null;  // null unless limits.quotaSource === 'official'
+  budgets(now?: Date): BudgetStatus[]; contextFill(sessionPk: string): ContextFillInfo | null; concurrency(): ConcurrencyStatus[];
+  start(): void; stop(): void;
+}
+export function quotaAlertKeys(s: UsageSnapshot, warnPct: number): Array<{ key: InboxKey; reason: string }>
+export interface UsageLedger {
+  syncSession(sessionPk: string): Promise<{ added: number }>; backfill(sinceIso: string): Promise<{ sessions: number }>;
+  entries(q: LedgerQuery): LedgerEntry[]; tools(q: Omit<LedgerQuery, 'ticket'>): LedgerTool[]; sumCost(q: LedgerQuery): number;
+  latestMainUsage(sessionPk: string): { model: string; usage: Usage } | null; start(): void; stop(): void;
+}   // LedgerQuery = { from; to; projectId?; ticket? }
+// budgets.ts: periodStart, configBudgets, allBudgets (table wins over config), evaluateBudgets, checkBudgetScope, budgetAlertLevel, budgetInboxKey, raiseBudgetAlerts
+// P5 — services/recap/{recap,engines}.ts ; services/handoff/handoff.ts ; services/goals/goals.ts ; services/reminders/reminders.ts
+export interface RecapService {
+  recap(sessionPk: string, opts?: { onDemand?: boolean }): Promise<{ text: string; costUsd: number; model: string; cached: boolean }>;
+  daily(projectId: string, date: string): Promise<string>;
+  latest(sessionPk: string): Recap | null; latestDaily(projectId: string, date: string): Recap | null;
+  findCached(kind: RecapKind, targetKey: string, offset: number): Recap | null;
+  runLlm(kind: RecapKind, targetKey: string, offset: number, prompt: string, opts: { onDemand: boolean; approxTokens: number }): Promise<Recap>;
+  monthSpend(now?: Date): { spentUsd: number; budgetUsd: number };
+  syncSchedule(): void; start(): void; stop(): void;
+}
+export interface RecapEngine { id: RecapEngineId; run(prompt: string, opts: { model: string; maxBudgetUsd: number; timeoutMs?: number }): Promise<{ text: string; costUsd: number; model: string; engine: RecapEngineId }> }
+export class RecapEngineError extends Error { readonly code: 'engine_failed' | 'engine_unavailable' | 'bad_output' }
+export function defaultRecapEngines(ctx: DaemonContext): Record<RecapEngineId, RecapEngine>   // createClaudeCliEngine (`claude -p … --output-format json`), createAnthropicApiEngine (@anthropic-ai/sdk)
+export interface HandoffService {
+  generate(sessionPk: string): Promise<Handoff>; toMarkdown(h: Handoff): string; latest(sessionPk: string): Handoff | null;
+  get(id: string): Handoff | null; resumeFresh(handoffId: string): Promise<{ ptyId: string }>;
+}   // the P3 export ZIP writes latest(pk) as handoff.md, redacted with the rest of the bundle
+export interface GoalService {
+  get(targetType: Goal['targetType'], targetId: string): Goal | null; set(g: Omit<Goal, 'id' | 'updatedAt'>): Goal;
+  list(filter: { state?: GoalState[] }): Goal[]; prefill(targetType: Goal['targetType'], targetId: string): string;
+  sweep(now?: Date): number; start(): void; stop(): void;
+}   // rules: PR merged → complete; waiting > WAITING_BLOCK_MS (30 min) → blocked with NEEDS_ANSWER
+export interface CreateReminderInput { sessionPk: string | null; ticket: string | null; text: string; dueAt: string; sendToSession: boolean }
+export interface ReminderService { create(i: CreateReminderInput): Reminder; list(f: { state?: ReminderState[]; sessionPk?: string }): Reminder[]; cancel(id: string): Reminder; fire(reminderId: string): Promise<void>; start(): void }
+// P5 — services/scheduler/scheduler.ts (croner, persisted in scheduled_jobs; one-shot jobs fire at most once)
 export interface ScheduledJob { id: string; kind: 'reminder' | 'automation' | 'digest'; cron: string | null; runAt: string | null; payload: Record<string, unknown>; enabled: boolean }
-export interface Scheduler { add(job: Omit<ScheduledJob, 'id'>): ScheduledJob; remove(id: string): void; list(kind?: ScheduledJob['kind']): ScheduledJob[]; onFire(kind: ScheduledJob['kind'], fn: (job: ScheduledJob) => Promise<void>): void }
+export interface Scheduler {
+  add(job: Omit<ScheduledJob, 'id'>): ScheduledJob; remove(id: string): void; list(kind?: ScheduledJob['kind']): ScheduledJob[];
+  onFire(kind: ScheduledJob['kind'], fn: (job: ScheduledJob) => Promise<void>): void; get(id: string): ScheduledJob | null; start(): void; stop(): void;
+}
+export function createScheduler(opts: { db: OrcDb; log: Logger; now?: () => Date }): Scheduler
+export function ensureCronJob(s: Scheduler, kind: ScheduledJob['kind'], type: string, cron: string, extra?: Record<string, unknown>): ScheduledJob
+export function removeJobsOfType(s: Scheduler, kind: ScheduledJob['kind'], type: string): number
+// P5 — services/streams/streams.ts, services/pr-source.ts, services/wstack.ts
+export interface StreamService {
+  refresh(): Promise<WorkStream[]>; refreshIfStale(): Promise<void>;   // stale after 30 s; also rebuilt every 120 s, on pr.changed (marks stale) and on index.initialComplete
+  list(q: { projectId?: string; stage?: StreamStage }): WorkStream[]; get(ticket: string): Promise<StreamDetail | null>;
+  link(ticket: string, kind: StreamLinkKind, ref: string): StreamLink; unlink(ticket: string, kind: StreamLinkKind, ref: string): StreamLink;
+  start(): void; stop(): void;
+}
+export interface PrSource { list(): StreamPr[] }   // reads the P4 pr_cache; toStreamPr(p: PrStatus): StreamPr
+export function resolveWstackHome(env?: NodeJS.ProcessEnv): string   // WSTACK_HOME ?? ~/.wstack
+export function readWstackWorkflows(home: string): StreamWorkflowInput[]; export function readWstackTimelines(home: string): unknown[]
+// P5 — services/analytics/{analytics,digest,facets}.ts
+export interface AnalyticsQuery { from: string; to: string; projectId?: string }
+export interface AnalyticsService {
+  cost(q: AnalyticsQuery & { groupBy: AnalyticsGroupBy }): { rows: CostRow[]; estimated: boolean };
+  top(q: AnalyticsQuery & { limit: number }): TopResult; tools(q: AnalyticsQuery & { bucket: 'day' | 'week' }): ToolUsageRow[];
+  timing(q: AnalyticsQuery & { bucket: 'day' | 'week' }): TimingResult; outcomes(q: AnalyticsQuery): OutcomesResult; wstack(q: AnalyticsQuery): WstackSkillRow[];
+}
+export interface DigestService { generate(weekStart?: string): Promise<DigestRecord>; latest(): DigestRecord | null; syncSchedule(): void; start(): void; stop(): void }
+// P5 — services/hooks/install.ts and src/bin/orc-statusline.ts
+export function shellQuote(s: string): string   // single-argument quoting for the hook command (not P1's shellQuote(parts[]))
+export function buildHookCommand(o: { tokenFile: string; port: number }): string
+export function hookSettingsFragment(command: string): { hooks: Record<string, HookEntry[]> }
+export function mergeHookSettings(settings: Record<string, unknown>, command: string): Record<string, unknown>   // idempotent; keeps foreign hooks
+export function isHookInstalled(settings: unknown): boolean; export function hookInstallStatus(ctx: DaemonContext): HookInstallStatus
+export function installHooks(ctx: DaemonContext, now?: () => Date): { settingsPath: string; backupPath: string | null }   // backup under $ORC_HOME/backups
+export function statuslineCommand(): string; export function statuslineSnippet(): string   // shown only; the app never writes statusLine
+// P2 changes made by P5: HookEvent gains `tool?: string | null`; mapHookToStatus (live/live-tracker.ts) delegates to hookStatusFor; POST /api/hooks maps bodies with pickHookFields/mapHookPayload; LiveTracker's hook precedence uses hookWins(…, hooks.statusOverrideMs).
+// P5 — apps/daemon/src/main.ts: createDaemon().start() starts digests, recaps, goals, reminders, scheduler, ledger, usage and streams (in that order, so handlers exist before overdue jobs fire),
+//   then emits index.initialComplete after the first scanAll.
 
 // P6 — connectors/linear/linear.ts ; connectors/slack/slack.ts
 export interface LinearIssue { id: string; identifier: string; title: string; state: string; assignee: string | null; url: string; labels: string[] }
@@ -1095,6 +1340,12 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   - The kit has no Dialog primitive, so every P4 confirmation renders through `GitDialog` (backdrop, labelled `role="dialog"`, Escape closes); `useConfirmedMutation` turns a `409 confirmation_required` into a `GitConfirmDialog` and resends with `confirm: true`.
   - `features/live-board/PrChip.tsx` (`PrChip({ pr })`, live PR state via `usePrStatus`) and `features/inbox/InboxItemActions.tsx` (plan approve/reject and PR-event actions on inbox items) are new P4 components. PR status shows on session cards through `PrChip` only.
   - Hooks and keys: `api/queries/worktrees.ts` → `useWorktrees(f)`, `useDiscoverWorktrees()`, `worktreeKeys = { all: ['worktrees'], list: (f) => ['worktrees', f] }`; `api/queries/review.ts` → `useDiff` `['diff', cwd, from ?? null, to ?? null]`, `useCheckpoints` `['checkpoints', sessionPk]`, `useCheckpointDiff` `['checkpoint-diff', id]`, `useReview` `['review', source, id]`; `api/queries/github.ts` → `usePrStatus` `['pr', repo, number]`, `useGithubStatus` `['github', 'status']`; `api/queries/ship.ts` → `useShipSuggest` `['ship-suggest', cwd, sessionPk]`. There is no `['github', 'mine']` query yet.
+- **P5 web (as built):**
+  - Routes `routes/streams/index.tsx` → `/streams`, `routes/streams/$ticket.tsx` → `/streams/$ticket`, `routes/analytics.tsx` → `/analytics`.
+  - Features: `features/streams/` (`StreamsPage.tsx` list + kanban, `StreamDetailPage.tsx`, `stages.ts`), `features/analytics/` (`AnalyticsPage.tsx`, `analytics-options.ts`, echarts), `features/limits/` (`QuotaBars.tsx` in the AppShell top bar with the `estimated` badge, `ContextFillBadge.tsx`, `format.ts`), `features/recaps/RecapPanel.tsx`, `features/goals/` (`GoalEditor.tsx`, `goal-format.ts`), `features/handoffs/HandoffPanel.tsx`, `features/reminders/ReminderPanel.tsx`, `features/session-detail/SessionWorkPanel.tsx`, and `features/settings/{RecapSettings,LimitsSettings,BridgeSettings,NumberInput}.tsx`.
+  - Store: `stores/streams.ts` → `useStreamViewStore` `{ view: 'list' | 'kanban'; setView(v) }`, persisted in localStorage under `orc.stream-view`.
+  - Hooks and keys: `api/queries/usage.ts` (`['usage']`, `['usage','budgets']`, `['usage','concurrency']`, `['usage','context',source,id]`, `['analytics',name,params]`, `['digest']`), `api/queries/streams.ts` (`['streams',filters]`, `['stream',ticket]`), `api/queries/work.ts` (`['recap',source,id]`, `['recaps','spend']`, `['goal',targetType,targetId]`, `['goals',states]`, `['handoff',source,id]`, `['reminders',filters]`), `api/queries/settings.ts` (`['settings']`, `['hooks','install']`, `['hooks','statusline']`). `usage.updated` is applied to `['usage']` in `api/live-events.ts`.
+  - Tests load `@testing-library/jest-dom` in `src/test/setup.ts`.
 - **Tests:** component tests with Testing Library and an MSW-free fake client (`api/client.ts` exports `setApiClientForTests`). E2E runs with Playwright against the daemon started on fixtures (`apps/web/e2e/*.spec.ts`, via `pnpm --filter @orc/web e2e`).
 
 ## 13. Symbol ownership & de-duplication
@@ -1107,7 +1358,7 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `isTestCommand`, `parseTestOutput` | **P1** `packages/core/src/derive/tests.ts` | P2 imports them; its Task 3 covers stage inference only. |
 | `splitPk`, `sessionPk` | **P1** `apps/daemon/src/db/keys.ts` (re-exported from `services/sessions.ts`) | P2/P4/P7 import. |
 | `slugify` | **P1** `packages/core/src/derive/name.ts` — `slugify(name: string): string` for project ids | P4's branch slug is a **different** function. As built it is declared as `slugify` in `packages/core/src/git/branch.ts` and exported from the `git/index.ts` barrel as **`branchSlug`** (the plan's `slugifyBranch` name was not used). Import `branchSlug`, never `git/branch.ts`'s `slugify`, next to `derive/`. |
-| `shellQuote` | **P1** `apps/daemon/src/services/sessions/external.ts` — `shellQuote(parts: string[]): string` | P5 needs single-argument quoting: name it `quoteArg(s: string): string` in `apps/daemon/src/services/hooks/install.ts`. |
+| `shellQuote` | **P1** `apps/daemon/src/services/sessions/external.ts` — `shellQuote(parts: string[]): string` | P5's single-argument quoting shipped as a second, module-local `shellQuote(s: string): string` in `apps/daemon/src/services/hooks/install.ts` (not `quoteArg`). Import the one whose signature you need, by path. |
 | `permissionBadge`, `PermissionBadge` | **P3** `packages/core/src/derive/permission.ts` (as built; `prod.ts` keeps P1's `DEFAULT_PROD_PATTERNS`, and P3's prod detection is `derive/prod-detect.ts`) — `permissionBadge(modes: readonly (string \| null \| undefined)[]): PermissionBadge` | P2's card helper takes one mode: name it `badgeForMode(mode: string \| null)` in `apps/web/src/features/live-board/format.ts`, or call the P3 function with `[mode]` once P3 has shipped. |
 | `createLiveReducer`, `LiveReducer`, `TranscriptLive` | **P2** `packages/core/src/derive/live-transcript.ts` | P5 extends the options (`windows`) by **modifying** that file; its context-window table lives in config. |
 | `registerHookRoutes`, `mapHookToStatus` | **P2** `apps/daemon/src/http/routes/hooks.ts` (minimal ingest) | P5 replaces the body by **modifying** the same file; the route path stays `POST /api/hooks`. |
@@ -1143,6 +1394,12 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `createPhase4Methods`, `Phase4Client` | **P4** `packages/api-contract/src/client-phase4.ts` | Spread into `createApiClient`; later phases follow the same per-phase client file pattern. |
 | `wirePhase4` | **P4** `apps/daemon/src/main.ts` | Creates the P4 services and their bus hooks; called by `createDaemon()` and by tests with `{ startPollers: false }`. |
 
+| `p5ClientMethods`, `P5ClientMethods` | **P5** `packages/api-contract/src/client-p5.ts` | Spread into `createApiClient`, like `createPhase4Methods`. |
+| `need` (daemon) | **P5** `apps/daemon/src/services/need.ts` | Routes that read an optional `DaemonContext` service use it; do not add another "service not wired" helper. |
+| `readBody`, `readQuery`, `confirmationRequired`, `notFound`, `sendError`, `parseStates` | **P5** `apps/daemon/src/http/p5-util.ts` | Later main-app route files reuse them. |
+| `Scheduler`, `ensureCronJob`, `removeJobsOfType` | **P5** `apps/daemon/src/services/scheduler/scheduler.ts` | P7 extends the `ScheduledJob['kind']` union and registers `onFire('automation', …)` there; no second scheduler. |
+| `resolveWstackHome`, `readWstackWorkflows`, `readWstackTimelines` | **P5** `apps/daemon/src/services/wstack.ts` | The only reader of `WSTACK_HOME`. |
+| `makeP5Context`, `makeSession` (P5 variant), `fakeSessions`, `withWakecap`, `ev` | **P5** `apps/daemon/test/p5-helpers.ts` | Service tests that need a fake session list use these. |
 | `Indexer`, `createIndexer` | **P1** `apps/daemon/src/indexer/indexer.ts` | Not in the original §11 draft. Later phases that need indexing hooks modify this file rather than creating a parallel indexer. |
 | `UserMetaService`, `createUserMetaService` | **P1** `apps/daemon/src/services/user-meta.ts` | Owns pins/labels/saved views (F3). Not anticipated by the original plan; later phases extend by modifying this file. |
 | `ExternalLauncher`, `createExternalLauncher`, `resumeCommandLine`, `appleScriptString` | **P1** `apps/daemon/src/services/external.ts` | `resumeCommandLine`/`shellQuote` were originally drafted under `services/sessions/external.ts`; the as-built path is `services/external.ts` (no `sessions/` subdirectory). P2/P7 import from this path. |

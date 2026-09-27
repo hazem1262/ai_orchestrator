@@ -21,6 +21,72 @@
 - `docs/README.md`: decisions "Slack/Linear act as me" and "Remote = Tailscale only, passkey for actions"
 - `plan/00-contracts.md`: §3, §5, §6, §7, §8, §11, §12
 
+## Starting state (what Phase 6 builds on)
+
+**Branch:** cut `phase/6-linear-slack-remote` from `main` after the Phase 5 merge
+(`merge: phase 5 streams, analytics, limits, recaps, goals and the real-time bridge`). Phases 0 to 5
+are done and merged.
+
+**Read first:** [`00-contracts.md`](00-contracts.md) — Phase 5's contract additions are merged into
+§1, §3, §4, §5, §6, §8, §9, §11, §12 and §13 — this file, [`phase-5-evidence.md`](phase-5-evidence.md)
+and the spike reports in [`spikes/`](spikes/).
+
+**Baseline** (measured 2026-09-27 on `phase/5-streams-analytics-limits-recaps-goals` at `5fcb119`):
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `pnpm run lint` | clean — `Checked 687 files`, 1 info (biome asks for `biome migrate` on its own config) |
+| Typecheck | `pnpm run typecheck` | clean |
+| Unit tests | `pnpm run test` | `Test Files 206 passed (206)`, `Tests 1714 passed (1714)` |
+| Fixtures | `pnpm run check:fixtures` | clean |
+| E2E | `pnpm --filter @orc/web e2e` | 11 passed |
+| M4 E2E | `pnpm --filter @orc/web e2e:m4` | 1 passed (19.5 s) |
+
+Test count over time: 289 at the Phase 1 exit → 1116 at Phase 2 → 1339 at Phase 3 → 1509 at Phase 4
+→ 1714 at Phase 5.
+
+**Phase 5 wiring to know about:**
+- Every Phase 5 service is set on `DaemonContext` by `buildContext()` and started by
+  `createDaemon().start()`; `wirePhase4()` still owns the Phase 4 services.
+- Phase 5 routes live on the main app (`register*Routes`), read services with `need(...)` and answer
+  transcript-derived text through `redactedJson`.
+- The scheduler (`services/scheduler/scheduler.ts`) is persisted in `scheduled_jobs`; reuse it for
+  any timed work instead of adding timers.
+- Test isolation: `apps/daemon/test/setup-env.ts` sets an empty temp `WSTACK_HOME` for daemon tests;
+  the fixture e2e server takes a per-run `ORC_E2E_ROOT`/`ORC_E2E_WORK` from
+  `apps/web/playwright.config.ts` and is stopped with `SIGTERM`.
+- The daemon emits `index.initialComplete` after the first index scan; the stream service rebuilds on it.
+
+**Carried items** — known gaps Phase 6 inherits rather than causes:
+- `apps/daemon/src/services/sessions.test.ts:237` and
+  `apps/web/src/features/settings/settings.test.tsx` fail now and then under parallel load and pass
+  alone — timing races in the tests. Both passed in the Phase 5 exit run.
+- The web build warns about chunks over 500 kB: `review._source._id-*.js` 1,073,796 bytes and the
+  echarts chunk `installCanvasRenderer-*.js` 536,992 bytes (Phase 5, `/analytics`).
+- `NON_ACTION_ROUTES` exempts from the audit log: pin, label, saved views, inbox actions,
+  notification prefs, project PATCH, the hooks ingest, `deny-check`, and from Phase 5 the budgets
+  PUT/DELETE, `usage/official`, settings PUT, streams refresh/link/unlink, the analytics digest POST,
+  the recap session/daily POSTs (they send a redacted digest to the recap engine), goals PUT,
+  reminders create/cancel and the handoff POST.
+- `analytics.top()` runs one session query per merged PR to find its sessions (N+1).
+- `pnpm --filter @orc/web e2e:m4` takes about 18 s, most of it waiting for the indexer's 15 s
+  reconcile tick before the session shows as owned.
+- Recaps are disabled by default (`recaps.enabled: false`); the daily and idle triggers only run
+  when a user turns them on.
+- `safety.secretScanPaths` defaults still expand `~` against the real home directory.
+
+**Phase 5 exit criteria not confirmed** — recorded in [`phase-5-evidence.md`](phase-5-evidence.md):
+- Real recap engines (`claude -p`, Anthropic API) were never called; every recap ran through a fake.
+- The hook installer never ran on the real `~/.claude/settings.json`; hook status latency and the
+  statusline inside a real `claude` session were not measured.
+- The official quota source (`rate_limits.*` from the statusline stdin) is unverified against real
+  data, so no live quota warning was seen.
+- A real Wakecap ticket's stream, the weekly digest by eye, and "Resume fresh with handoff" in the
+  browser.
+
+**Phase 4 items still unconfirmed:** see the Starting state of
+[`phase-5-streams-analytics-limits-recaps-goals.md`](phase-5-streams-analytics-limits-recaps-goals.md#starting-state-what-phase-5-builds-on).
+
 ## Global Constraints
 - Node `>=22.12 <23`, pnpm `10.18.3`, TypeScript `~6.0.3` strict (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`), Vitest `^5.0.1`, Biome `^2.5.14` (`noNonNullAssertion` and `noExplicitAny` are errors).
 - **The daemon binds to `127.0.0.1` only.** Remote access goes only through `tailscale serve` inside the tailnet. **Never `tailscale funnel`.** The daemon blocks every remote request while a Funnel is detected.

@@ -32,43 +32,44 @@ Phases depend only on earlier phases. Phases 1–3 make up the **core viewer**, 
 | 2 | [Live board, inbox & archive](phase-2-live-board-inbox-archive.md) | M2 | F1, F15, F4 (launch, templates, presets), F5 | 20 | ☑ done (2026-09-23) — 20/20 tasks, merged as `e817f1b`; 1116 unit tests + 7 Playwright e2e, all green; exit check in [phase-2-evidence.md](phase-2-evidence.md) |
 | 3 | [Session detail, safety & audit](phase-3-session-detail-safety-audit.md) | M3 | F2 (full), F9, F24, F8 | 19 | ☑ done (2026-09-24) — 19/19 tasks, merged into `main` with `--no-ff`; 1339 unit tests in 117 files + 9 Playwright e2e, all green; exit check in [phase-3-evidence.md](phase-3-evidence.md) |
 | 4 | [Worktrees, review & merge](phase-4-worktrees-review-merge.md) | M4 | F17, F18, F11 (GitHub), plan approval | 22 | ☑ done (2026-09-26) — 22/22 tasks; 1509 unit tests in 156 files + 9 Playwright e2e + 1 M4 Playwright e2e, all green; plan approval not yet checked in the real TUI; exit check in [phase-4-evidence.md](phase-4-evidence.md) |
-| 5 | [Streams, analytics, limits, recaps, goals](phase-5-streams-analytics-limits-recaps-goals.md) | M5 | F6, F7, F19, F14, F16, F10 | 22 | ☐ |
+| 5 | [Streams, analytics, limits, recaps, goals](phase-5-streams-analytics-limits-recaps-goals.md) | M5 | F6, F7, F19, F14, F16, F10 | 22 | ☑ done (2026-09-27) — 22/22 tasks + 5 exit-fix commits; 1714 unit tests in 206 files + 11 Playwright e2e + 1 M4 Playwright e2e, all green; real recap engines, the real-home hook install and the official quota source not yet checked; exit check in [phase-5-evidence.md](phase-5-evidence.md) |
 | 6 | [Linear, Slack & remote](phase-6-linear-slack-remote.md) | M6 | F11 (Linear, Slack), F22, spike S9 | 22 | ☐ |
 | 7 | [Automations, compare, supervisor](phase-7-automations-compare-supervisor.md) | M7 | F20, F21, F23, AGNC (S4), Tauri, MCP server, F12 picks | 25 | ☐ |
 
 ## Resume here
 
-**Where the work stands:** Phases 0 to 4 are done. Phase 4 is complete on branch
-`phase/4-worktrees-review-merge` and goes into `main` with `--no-ff` as
-`merge: phase 4 worktrees, review and merge`. Phase 5 is next.
+**Where the work stands:** Phases 0 to 5 are done. Phase 5 is complete on branch
+`phase/5-streams-analytics-limits-recaps-goals` and goes into `main` with `--no-ff` as
+`merge: phase 5 streams, analytics, limits, recaps, goals and the real-time bridge`. Phase 6 is next.
 
-**Repository state** (expected after the Phase 4 merge, 2026-09-26)
+**Repository state** (expected after the Phase 5 merge, 2026-09-27)
 
 | Fact | Value | Proof |
 |---|---|---|
-| `main` head | `merge: phase 4 worktrees, review and merge` | `git log --oneline -1 main` |
-| Unpushed | `origin/main` is at `440fd45` (the Phase 3 merge). After the Phase 4 merge `main` is **29 commits ahead**: 28 branch commits plus the merge commit. Nothing from Phase 4 was pushed | `git rev-list --count origin/main..main` |
-| Phase 4 commits | `ab42440`…`d5089fc` (21 task commits), fixes `2537f60`, `f76d12e`, `644bc3f`, `f9d2edb`, the e2e commit `8adffc8` and the Task 22 docs commit; `5867531` (a Phase 3 docs note) is also on the branch | `git log --oneline main^1..main^2` |
-| Leftover branches | `phase/0-foundations`, `phase/2-live-board-inbox-archive`, `phase/3-session-detail-safety-audit`, `fix/macos-notify-parse`, `docs/phase-3-resume-pointer` and, after the merge, `phase/4-worktrees-review-merge` — all merged into `main` and safe to delete | `git branch --merged main` |
+| `main` head | `merge: phase 5 streams, analytics, limits, recaps, goals and the real-time bridge` (before the merge: `68360a6 Merge the phase 4 exit fixes`) | `git log --oneline -1 main` |
+| Unpushed | `origin/main` is at `440fd45` (the Phase 3 merge). `main` is 35 commits ahead before the merge; after it, **64 ahead**: 28 Phase 5 branch commits plus the merge commit. Nothing from Phases 4 or 5 was pushed | `git rev-list --count origin/main..main` |
+| Phase 5 commits | `b859d12`…`7b973b7` (22 task commits), fixes `5aee4e7`, `b2e4976`, `96d71bf`, `83701db`, `5fcb119`, and the Task 22 docs commit | `git log --oneline main^1..main^2` |
+| Leftover branches | `phase/5-streams-analytics-limits-recaps-goals` after the merge — merged and safe to delete | `git branch --merged main` |
 
-**Gates** (run 2026-09-26 on the Phase 4 branch at `8adffc8`): `pnpm run lint` clean with 1 info
-(biome asks for `biome migrate` on its own config), `pnpm run typecheck` clean, `pnpm run test` →
-1509 tests in 156 files, `pnpm run check:fixtures` clean, `pnpm --filter @orc/web e2e` → 9
-Playwright tests green, `pnpm --filter @orc/web e2e:m4` → 1 Playwright test green (18.4 s).
+**Gates** (run 2026-09-27 on the Phase 5 branch at `5fcb119`, `ANTHROPIC_API_KEY` unset):
+`pnpm run lint` clean with 1 info (biome asks for `biome migrate` on its own config),
+`pnpm run typecheck` clean, `pnpm run test` → 1714 tests in 206 files, `pnpm run check:fixtures`
+clean, `pnpm --filter @orc/web e2e` → 11 Playwright tests green, `pnpm --filter @orc/web e2e:m4` →
+1 Playwright test green (19.5 s).
 
 **How to run the app:** `pnpm dev` from the repo root. The web app serves on
 `http://localhost:5173` and the daemon on `http://127.0.0.1:4317`. Every API and WS request needs
-the token from `~/.orchestrator/token`, sent as the `x-orc-token` header.
+the token from `~/.orchestrator/token`, sent as the `x-orc-token` header. Recaps are off by default
+(`recaps.enabled: false`); the real-time bridge is installed only from Settings, after a confirmation.
 
-**What Phase 5 starts from:** the branch to cut, the baseline numbers, the carried items and the
-Phase 4 criteria still unconfirmed are all in
-[`phase-5-streams-analytics-limits-recaps-goals.md` → *Starting state*](phase-5-streams-analytics-limits-recaps-goals.md#starting-state-what-phase-5-builds-on).
-Phase 4's own exit check is in [`phase-4-evidence.md`](phase-4-evidence.md) and the manual
-scratch-repo check in [`spikes/M4-manual.md`](spikes/M4-manual.md).
+**What Phase 6 starts from:** the branch to cut, the baseline numbers, the carried items and the
+Phase 5 criteria still unconfirmed are all in
+[`phase-6-linear-slack-remote.md` → *Starting state*](phase-6-linear-slack-remote.md#starting-state-what-phase-6-builds-on).
+Phase 5's own exit check is in [`phase-5-evidence.md`](phase-5-evidence.md).
 
 Total: **161 tasks**, roughly 1,030 individually checkable steps.
 
-Spike reports go in [`spikes/`](spikes/).
+Spike reports go in [`spikes/`](spikes/). S7 (quota) took the `official` branch: `limits.quotaSource` defaults to `official` with the `rate_limits.five_hour.*` / `rate_limits.seven_day.*` field paths from the statusline stdin. The Phase 5 exit check ran on fixtures only, so no hooks were installed on the real home and no real `rate_limits` sample was ingested.
 
 ## Global constraints (apply to every task)
 - **Toolchain:** Node `>=22.12 <23`, pnpm `10.18.3`, TypeScript `~6.0.3` strict, Vitest 5, Biome 2. All versions are listed in contracts §1.
