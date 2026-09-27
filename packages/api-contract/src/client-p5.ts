@@ -1,4 +1,4 @@
-import type { GoalState, ReminderState, StreamLinkKind, StreamStage } from '@orc/core';
+import type { AnalyticsGroupBy, GoalState, ReminderState, StreamLinkKind, StreamStage } from '@orc/core';
 import { z } from 'zod';
 import type { Caller, HttpMethod } from './client-p2.ts';
 import {
@@ -73,7 +73,7 @@ export function p5ClientMethods(call: Caller) {
     settingsGet: () => v(SettingsSchema)('GET', '/api/settings'),
     settingsUpdate: (body: SettingsUpdateBody) => v(SettingsSchema)('PUT', '/api/settings', body),
     // analytics (F7)
-    analyticsCost: (q: AnalyticsCostQuery) =>
+    analyticsCost: (q: AnalyticsCostQuery & { groupBy: AnalyticsGroupBy }) =>
       v(CostResponseSchema)('GET', withQuery('/api/analytics/cost', q)),
     analyticsTop: (q: AnalyticsTopQuery) => v(TopResultSchema)('GET', withQuery('/api/analytics/top', q)),
     analyticsTools: (q: AnalyticsBucketQuery) =>
