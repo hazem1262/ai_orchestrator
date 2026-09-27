@@ -21,7 +21,7 @@ export const RecapRunResponseSchema = z.object({
   cached: z.boolean(),
 });
 export type RecapRunResponse = z.infer<typeof RecapRunResponseSchema>;
-const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const DailyRecapQuery = z.object({ projectId: z.string(), date: IsoDate });
 export const DailyRecapBody = z.object({ projectId: z.string(), date: IsoDate });
 export const RecapSpendSchema = z.object({ spentUsd: z.number(), budgetUsd: z.number() });

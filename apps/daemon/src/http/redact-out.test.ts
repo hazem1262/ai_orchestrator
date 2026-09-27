@@ -1,5 +1,4 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import type { HttpBindings } from '@hono/node-server';
 import {
   AgentNodeSchema,
   InboxItemSchema,
@@ -35,6 +34,7 @@ import {
   redactValue,
   SECRET_KEY_PATTERNS,
 } from './redact-out.ts';
+import type { OrcEnv } from './types.ts';
 
 /**
  * The exhaustive guard for the daemon's single redaction boundary.
@@ -500,7 +500,7 @@ describe('the boundary census', () => {
     // the live daemon with the whole suite green, because the census calls `createApp` without
     // it. Asserting the two agree means a route can only reach the daemon through
     // `registerAllRoutes`, which is the function this file calls directly.
-    const viaSinglePath = new Hono<{ Bindings: HttpBindings }>();
+    const viaSinglePath = new Hono<OrcEnv>();
     registerAllRoutes(viaSinglePath, stub);
     expect(routesOf(viaSinglePath)).toEqual(served.filter((r) => !CREATE_APP_LOCAL.includes(r)));
   });

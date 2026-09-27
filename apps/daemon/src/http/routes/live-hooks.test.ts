@@ -1,4 +1,3 @@
-import type { HttpBindings } from '@hono/node-server';
 import type { LiveState, Session } from '@orc/core';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -6,7 +5,7 @@ import { createFakeLive } from '../../../test/fake-live.ts';
 import { createTestContext, type TestContext, useTempHomes } from '../../../test/helpers.ts';
 import type { BusEvent } from '../../live/event-bus.ts';
 import { stubSession } from '../../live/stub-session.ts';
-import type { OrcApp } from '../types.ts';
+import type { OrcApp, OrcEnv } from '../types.ts';
 import { HOOK_BODY_LIMIT_BYTES, registerHookRoutes } from './hooks.ts';
 import { registerLiveRoutes } from './live.ts';
 
@@ -50,7 +49,7 @@ beforeEach(() => {
     session('b', 'forza', 'hello'),
   ]);
   ctx.live = fake;
-  app = new Hono<{ Bindings: HttpBindings }>();
+  app = new Hono<OrcEnv>();
   registerLiveRoutes(app, ctx);
   registerHookRoutes(app, ctx);
 });

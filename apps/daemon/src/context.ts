@@ -4,6 +4,8 @@ import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
 import type { GithubConnector } from './connectors/github/github.ts';
+import type { LinearConnector } from './connectors/linear/linear.ts';
+import type { SlackConnector } from './connectors/slack/slack.ts';
 import { type OrcDb, openDb } from './db/client.ts';
 import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
@@ -11,6 +13,7 @@ import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
+import type { AwayService } from './remote/away.ts';
 import { type AnalyticsService, createAnalyticsService } from './services/analytics/analytics.ts';
 import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
@@ -25,11 +28,14 @@ import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import { createRecapService, defaultRecapEngines, type RecapService } from './services/recap/recap.ts';
 import { createReminderService, type ReminderService } from './services/reminders/reminders.ts';
+import type { SessionActions } from './services/remote/session-actions.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createScheduler, type Scheduler } from './services/scheduler/scheduler.ts';
+import type { SecretStore } from './services/secrets/secret-store.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
+import type { ShareService } from './services/share/share.ts';
 import type { ShipService } from './services/ship/ship.ts';
 import { createStreamService, type StreamService } from './services/streams/streams.ts';
 import type { TemplateRegistry } from './services/templates.ts';
@@ -106,6 +112,18 @@ export interface DaemonContext {
   reminders?: ReminderService;
   /** P5 — handoffs (structured evidence plus an LLM summary), markdown export and resume-fresh; set by `buildContext()`. */
   handoffs?: HandoffService;
+  /** P6 — Linear/Slack tokens and OAuth client secrets in the macOS Keychain. */
+  secrets?: SecretStore;
+  /** P6 — redact → confirm → audit posts to Linear and Slack. */
+  share?: ShareService;
+  /** P6 — reply and approve for owned sessions from the PWA or the Slack DM bridge. */
+  sessionActions?: SessionActions;
+  /** P6 — away mode (manual toggle and macOS idle) that routes notifications to the phone. */
+  away?: AwayService;
+  /** P6 — Linear, acting as the user. */
+  linear?: LinearConnector;
+  /** P6 — Slack, acting as the user through a user token. */
+  slack?: SlackConnector;
 }
 
 export interface BuildContextOptions {

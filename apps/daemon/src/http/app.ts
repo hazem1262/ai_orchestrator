@@ -1,4 +1,3 @@
-import type { HttpBindings } from '@hono/node-server';
 import { apiError } from '@orc/api-contract';
 import { type Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -38,7 +37,7 @@ import { registerUsageRoutes } from './routes/usage.ts';
 import { registerViewRoutes } from './routes/views.ts';
 import { worktreesRoutes } from './routes/worktrees.ts';
 import { registerStatic } from './static.ts';
-import type { OrcApp } from './types.ts';
+import type { OrcApp, OrcEnv } from './types.ts';
 
 export interface AppOptions {
   ctx: DaemonContext;
@@ -99,7 +98,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
 }
 
 export function createApp(o: AppOptions): OrcApp {
-  const app: OrcApp = new Hono<{ Bindings: HttpBindings }>();
+  const app: OrcApp = new Hono<OrcEnv>();
   const hostOf = (c: Context) => c.req.header('host') ?? new URL(c.req.url).host;
   const hostOk = (c: Context) => allowedHosts(o.port(), o.env).includes(hostOf(c));
 

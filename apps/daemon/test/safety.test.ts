@@ -1,11 +1,11 @@
 import { mkdirSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { HttpBindings } from '@hono/node-server';
 import { OrcConfig } from '@orc/api-contract';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { registerSafetyRoutes } from '../src/http/routes/safety.ts';
+import type { OrcEnv } from '../src/http/types.ts';
 import { createDenyList } from '../src/services/safety/deny-list.ts';
 import {
   createSecretsScanner,
@@ -133,7 +133,7 @@ describe('safety routes', () => {
   it('GET /api/safety/secrets returns the report', async () => {
     const home = makeHome();
     const cfg = OrcConfig.parse({ safety: { secretScanPaths: ['~/Wakecap/.mcp.json'] } });
-    const app = new Hono<{ Bindings: HttpBindings }>();
+    const app = new Hono<OrcEnv>();
     registerSafetyRoutes(app, { ...t.ctx, config: () => cfg }, { home });
     const res = await app.request('/api/safety/secrets');
     expect(res.status).toBe(200);

@@ -1,4 +1,4 @@
-import type { LiveEvent } from '@orc/api-contract';
+import type { LinearIssue, LiveEvent } from '@orc/api-contract';
 import type { LiveStatus, PrRef, PrStatus, TestResult } from '@orc/core';
 
 /** contracts §6 (LiveEvent) + daemon-internal events (session.indexed etc.). */
@@ -15,7 +15,13 @@ export type BusEvent =
   /** P5 — `updateConfig` replaced the config; daemon-internal, not forwarded over the live socket. */
   | { type: 'config.changed' }
   /** P5 — the daemon's first full index scan finished; daemon-internal, not forwarded over the live socket. */
-  | { type: 'index.initialComplete' };
+  | { type: 'index.initialComplete' }
+  /** P6 — the Linear assigned-to-me poller; `before: null` means newly assigned. Daemon-internal. */
+  | { type: 'linear.issueChanged'; before: LinearIssue | null; after: LinearIssue }
+  /** P6 — the Slack mention poller; `text` is already redacted. Daemon-internal. */
+  | { type: 'slack.mention'; channel: string; ts: string; text: string }
+  /** P6 — away mode changed (manual toggle or macOS idle). Daemon-internal. */
+  | { type: 'away.changed'; away: boolean; reason: 'manual' | 'idle' | 'present' };
 
 export interface EventBus {
   emit(e: BusEvent): void;
