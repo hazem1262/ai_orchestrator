@@ -21,6 +21,7 @@ import { createProjectService, type ProjectServiceImpl } from './services/projec
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
+import { createScheduler, type Scheduler } from './services/scheduler/scheduler.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { ShipService } from './services/ship/ship.ts';
 import type { TemplateRegistry } from './services/templates.ts';
@@ -73,6 +74,8 @@ export interface DaemonContext {
   ship?: ShipService;
   /** P4 — approve or reject a plan an owned Claude session presented through ExitPlanMode. */
   plans?: PlanApprovalService;
+  /** P5 — the persisted cron and one-shot scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
+  scheduler?: Scheduler;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
   // ledger (T5), prs and streams (T9), analytics and digests (T10), reminders (T14).
 }
@@ -106,6 +109,7 @@ export function buildContext(o: BuildContextOptions): {
     );
   const bus = createEventBus({ onError: (err, e) => log.error({ err, type: e.type }, 'bus handler failed') });
   const audit = createAuditService({ db: opened.db, bus });
+  const scheduler = createScheduler({ db: opened.db, log: log.child({ svc: 'scheduler' }) });
   const pty = withPtyInputAudit(createPtyManager({ bus }), audit);
   bus.on('pty.exited', () => pty.flushAll());
   const projects = createProjectService({ db: opened.db, paths: o.paths, config, saveConfig: save });
@@ -132,12 +136,14 @@ export function buildContext(o: BuildContextOptions): {
     userMeta,
     audit,
     denyList: createDenyList({ config, projects }),
+    scheduler,
   };
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
+      scheduler.stop();
       pty.disposeAll();
       opened.close();
     },
