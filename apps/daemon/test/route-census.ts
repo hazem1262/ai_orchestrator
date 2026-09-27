@@ -279,6 +279,28 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'echoes the config sections after schema validation',
   },
+  'GET /api/streams': {
+    guardedBy: null,
+    reason:
+      'stream rows whose titles come from PR titles and session names, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/streams/refresh': {
+    guardedBy: null,
+    reason: 'the recomputed stream rows, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/streams/:ticket': {
+    guardedBy: null,
+    reason:
+      'stream detail with session prompts and recaps in the timeline, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/streams/:ticket/link': {
+    guardedBy: null,
+    reason: 'echoes the manual link row (ticket, kind, ref) the client just sent',
+  },
+  'POST /api/streams/:ticket/unlink': {
+    guardedBy: null,
+    reason: 'echoes the manual exclusion row (ticket, kind, ref) the client just sent',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -317,6 +339,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/settings.ts',
   'apps/daemon/src/http/routes/ship.ts',
+  'apps/daemon/src/http/routes/streams.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',

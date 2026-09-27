@@ -214,6 +214,9 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
   { method: 'DELETE', path: '/api/usage/budgets/:id', why: 'local budget configuration' },
   { method: 'POST', path: '/api/usage/official', why: 'inbound statusline sample, not an app action' },
   { method: 'PUT', path: '/api/settings', why: 'local app configuration' },
+  { method: 'POST', path: '/api/streams/refresh', why: 'recomputes local stream metadata' },
+  { method: 'POST', path: '/api/streams/:ticket/link', why: 'local stream metadata' },
+  { method: 'POST', path: '/api/streams/:ticket/unlink', why: 'local stream metadata' },
 ];
 
 export function matchAuditedRoute(

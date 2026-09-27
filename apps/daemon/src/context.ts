@@ -17,6 +17,7 @@ import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import type { LaunchService } from './services/launch.ts';
+import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
@@ -24,6 +25,7 @@ import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createScheduler, type Scheduler } from './services/scheduler/scheduler.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { ShipService } from './services/ship/ship.ts';
+import { createStreamService, type StreamService } from './services/streams/streams.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts';
 import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
@@ -82,8 +84,12 @@ export interface DaemonContext {
   ledger?: UsageLedger;
   /** P5 — quota snapshot, budgets, context fill and quota/budget alerts; set by `buildContext()`, started by `createDaemon().start()`. */
   usage?: UsageMeter;
+  /** P5 — PR rows for work streams, read from the P4 `pr_cache`; set by `buildContext()`. */
+  prs?: PrSource;
+  /** P5 — ticket-keyed work streams; set by `buildContext()`, started by `createDaemon().start()`. */
+  streams?: StreamService;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
-  // prs and streams (T9), analytics and digests (T10), reminders (T14).
+  // analytics and digests (T10), reminders (T14).
 }
 
 export interface BuildContextOptions {
@@ -148,12 +154,17 @@ export function buildContext(o: BuildContextOptions): {
   ctx.ledger = ledger;
   const usage = createUsageMeter(ctx, { ledger });
   ctx.usage = usage;
+  const prs = createPrSource(ctx);
+  ctx.prs = prs;
+  const streams = createStreamService(ctx, { prs, meter: usage });
+  ctx.streams = streams;
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      streams.stop();
       usage.stop();
       ledger.stop();
       pty.disposeAll();
