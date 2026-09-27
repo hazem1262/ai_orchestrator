@@ -1,16 +1,15 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { OrcConfig } from '@orc/api-contract';
 import { saveConfig } from '../src/config.ts';
 import { createDaemon } from '../src/main.ts';
 import { projectConfigFor } from '../src/services/projects.ts';
-import { FAKE_CLAUDE, makeTempHomes, writeClaudeSession } from './homes.ts';
+import { e2eRoot, FAKE_CLAUDE, makeTempHomes, writeClaudeSession } from './homes.ts';
 
 const port = Number(process.env.ORC_E2E_PORT ?? 4399);
-// A fixed root, resolved through realpath because a launched child reports its physical cwd on
-// macOS: the Playwright spec computes the same path and asserts the launch dialog offers it.
-const root = join(realpathSync(tmpdir()), 'orc-e2e');
+// Unique per run unless the Playwright config pinned ORC_E2E_ROOT; the specs read the launch
+// directory from ORC_E2E_WORK, which the config derives from the same root.
+const root = e2eRoot();
 const homes = makeTempHomes({ root });
 // A launched PTY inherits the daemon's own environment (`sanitizedChildEnv`), so the temp homes
 // have to be on it: without CLAUDE_HOME the fake `claude` falls back to echo mode, writes no

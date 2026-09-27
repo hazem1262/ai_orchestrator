@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,6 +56,16 @@ export function makeTempHomes(opts: { root?: string } = {}): TempHomes {
     env,
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
+}
+
+/**
+ * The fixture e2e daemon's root: `ORC_E2E_ROOT` when the Playwright config pinned one (its specs
+ * compute the launch directory from it), else a fresh `mkdtemp`, so two e2e servers never share
+ * (and tear down) each other's homes. Resolved through realpath because a launched child reports
+ * its physical cwd on macOS.
+ */
+export function e2eRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.ORC_E2E_ROOT ?? realpathSync(mkdtempSync(join(tmpdir(), 'orc-e2e-')));
 }
 
 /** Writes a minimal resumable transcript whose cwd exists on disk (fixture cwds do not). */

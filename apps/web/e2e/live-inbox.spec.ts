@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
-// The e2e daemon roots its temp homes at $TMPDIR/orc-e2e and puts the launchable work directory at
-// orc-e2e/work/Wakecap, which is the Wakecap project's first pathPrefix and so the launch dialog's
-// default cwd. ORC_E2E_WORK overrides it when the daemon is started by hand somewhere else.
+// The e2e daemon puts the launchable work directory at ORC_E2E_WORK (set by playwright.config.ts
+// under the run's temp root), which is the Wakecap project's first pathPrefix and so the launch
+// dialog's default cwd. The fallback matches a daemon started by hand with ORC_E2E_ROOT=$TMPDIR/orc-e2e.
 const WORK = process.env.ORC_E2E_WORK ?? join(realpathSync(tmpdir()), 'orc-e2e', 'work', 'Wakecap');
 
 test.describe.configure({ mode: 'serial' });
