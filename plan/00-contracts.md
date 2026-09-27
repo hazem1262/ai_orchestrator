@@ -38,7 +38,7 @@
 | web-push | `^3.6.7` (P6: installed 3.6.7) |
 | @types/web-push | `^3.6.4` (dev dependency, P6) |
 | @simplewebauthn/server | `^14.0.2` (P6: installed 14.0.3) |
-| @modelcontextprotocol/sdk | `^1.30.0` |
+| @modelcontextprotocol/sdk | `^1.30.0` (P7: installed 1.30.1; the AGNC connector's Streamable HTTP client) |
 | @linear/sdk | `^95.1.0` (P6: installed 95.2.0; 96.0.0 exists and was not adopted) |
 | @slack/web-api | `^8.1.1` |
 | node-notifier | `^10.0.1` |
@@ -74,6 +74,25 @@
 
 The daemon package also ships a `bin` entry, `orc-statusline` → `dist/orc-statusline.js` (P5), built by tsup next to `dist/main.js`.
 
+**P7 packages (as built)**
+
+| Package | Dependency | Version |
+|---|---|---|
+| `@orc/mcp` (`apps/mcp`) | @modelcontextprotocol/sdk | `^1.30.0` (installed 1.30.1) |
+| | zod | `^4.6.5` (installed 4.6.5) |
+| | @orc/core | `workspace:*` |
+| | tsup, tsx (dev) | `^8.5.1` (8.5.1), `^4.23.13` (4.23.13) |
+| `@orc/desktop` (`apps/desktop`, npm) | @tauri-apps/cli (dev) | `^2.11.4` (installed 2.12.0) |
+| `orchestrator-desktop` (`apps/desktop/src-tauri/Cargo.toml`) | tauri | `2`, feature `tray-icon` |
+| | tauri-build (build dependency) | `2` |
+| | tauri-plugin-shell, tauri-plugin-notification | `2` |
+| | tauri-plugin-global-shortcut | `2` (macOS, Windows and Linux targets only) |
+| | reqwest | `0.12`, `default-features = false`, features `json`, `rustls-tls` |
+| | tokio | `1`, feature `time` |
+| | serde (feature `derive`), serde_json | `1` |
+
+`@orc/mcp` ships the `bin` `orc-mcp` → `dist/main.js`. `@orc/desktop` is version `0.7.0` and has the scripts `sidecar`, `dev:app`, `build:app` (both run `node ../../scripts/build-sidecar.mjs` first) and `test:rust` (`cargo test`). **No Rust crate version is resolved yet:** Rust is not installed on the dev machine, so there is no `Cargo.lock` and the crates have never been built.
+
 **UI kit:** **shadcn/ui** — primitives copied into `apps/web/src/components/ui/` and owned by this repo (MIT, no registry auth, no private dependency). All UI code imports from `@/components/ui/*` and never from a vendor path, so swapping kits later touches that one folder and nothing else.
 
 ## 2. Repository layout
@@ -93,7 +112,9 @@ orchestrator/
 │  └─ api-contract/             # @orc/api-contract — zod schemas for HTTP/WS + typed client
 ├─ apps/
 │  ├─ daemon/                   # @orc/daemon — Node service
-│  └─ web/                      # @orc/web — React UI (Vite)
+│  ├─ web/                      # @orc/web — React UI (Vite)
+│  ├─ mcp/                      # @orc/mcp — stdio MCP server `orc-mcp`, a thin client of the daemon HTTP API (P7)
+│  └─ desktop/                  # @orc/desktop — Tauri 2 shell; runs the daemon as the sidecar `orc-node` + resources/daemon (P7)
 ├─ spikes/                      # throwaway spike code (Phase 0), not part of the build
 ├─ docs/                        # design docs (spec)
 └─ plan/                        # these plans; plan/spikes/<id>.md spike reports
@@ -147,6 +168,29 @@ apps/daemon/src/http/routes/      # + git-guard.ts, worktrees.ts, github.ts, rev
 apps/web/src/features/worktrees/  apps/web/src/features/review/  apps/web/src/features/git/
 ```
 
+**P7 folders (as built):**
+```
+apps/daemon/src/phase7.ts                    # createPhase7 + Phase7Options (the only P7 wiring point)
+apps/daemon/src/services/automations/        # guardrails.ts, headless.ts, pty-wait.ts, service.ts, schedules.ts, triggers.ts, dispatcher.ts, suggestions.ts, types.ts
+apps/daemon/src/services/compare/            # compare.ts
+apps/daemon/src/services/supervisor/         # rules.ts, classifier.ts, supervisor.ts
+apps/daemon/src/services/git/                # + git-info.ts (diffStat, addedLinesDiff, defaultBranch, remoteSlug) beside P4's exec.ts / audit.ts
+apps/daemon/src/services/launch/             # spawn.ts (assertOwnedCapacity, spawnClaudeSession, spawnCodexSession) — P2's services/launch.ts stays where it is
+apps/daemon/src/connectors/agnc/             # agnc.ts, oauth-provider.ts, normalize.ts
+apps/daemon/src/collectors/agnc/             # agnc-collector.ts (remote-session poller)
+apps/daemon/src/notify/stdout-bridge.ts      # ORC_NOTIFY_BRIDGE=stdout channel
+apps/daemon/src/http/p7-guard.ts             # ConfirmBody, requireConfirmed, need, API_BASE, TEST_TOKEN
+apps/daemon/src/http/routes/                 # + automations.ts, compare.ts, supervisor.ts, agnc.ts
+apps/daemon/src/db/migrations/               # + 0010_phase7_automations.sql, 0011_phase7_compare.sql, 0012_phase7_supervisor.sql
+packages/api-contract/src/routes/            # + automations.ts, compare.ts, supervisor.ts, agnc.ts, p7-common.ts (DiffStatSchema)
+packages/api-contract/src/clients/           # automations.ts, compare.ts, supervisor.ts, agnc.ts, phase7.ts (phase7Client)
+apps/web/src/features/                       # + automations/, compare/, supervisor/, agnc/
+apps/mcp/src/                                # main.ts, server.ts, tools.ts, daemon-client.ts
+apps/desktop/src-tauri/                      # Cargo.toml, tauri.conf.json, capabilities/default.json, src/{main,lib,bridge}.rs
+scripts/build-sidecar.mjs                    # builds binaries/orc-node-<triple>, resources/daemon/, resources/web/ (needs rustc for the triple)
+apps/daemon/test/fakes/phase7.ts             # P7 test fakes + offlinePhase7(); fakes/agnc-server.ts (in-memory AGNC MCP server)
+```
+
 ## 3. Configuration & paths
 
 - **`ORC_HOME`** defaults to `~/.orchestrator`. Tests always set it to a temp dir.
@@ -154,6 +198,9 @@ apps/web/src/features/worktrees/  apps/web/src/features/review/  apps/web/src/fe
 - **`WSTACK_HOME`** (P5) defaults to `~/.wstack`; the stream service and wstack analytics read `<home>/workflows/*.env` read-only and never `*.key`. Daemon unit tests get an empty temp one from `apps/daemon/test/setup-env.ts` (a vitest `setupFiles` entry); `makeTempHomes().env` carries one for a daemon started on those homes.
 - **`ORC_PORT`** overrides `OrcConfig.port` for one run (`apps/daemon/src/main.ts`).
 - **`ORC_NOTIFY=off`** (P2) registers no notification channel at all, so nothing is sent on any channel. The unit tests and the e2e run set it.
+- **`ORC_NOTIFY_BRIDGE=stdout`** (P7, set by the Tauri shell) replaces the node-notifier `macos` channel with `createStdoutNotifyChannel()` (`notify/stdout-bridge.ts`). It keeps the channel id `macos`, so notification preferences route to it unchanged, and prints one line per notification: `ORC_NOTIFY ` + JSON `{ title, body, url, kind }` (`body` is `redact(item.reason)`, at most 240 chars). `ORC_NOTIFY=off` still wins.
+- **`ORC_WEB_DIR`** (P7, set by the Tauri shell to its bundled `resources/web`) overrides the static web root; it wins over the repo's `apps/web/dist` (`main.ts`).
+- **`orc-mcp`** reads `ORC_URL`, then `ORC_PORT`, then `port` from `$ORC_HOME/config.json`, then `4317`; the token is `ORC_TOKEN` or `$ORC_HOME/token` (read-only). `ORC_HOME` defaults to `~/.orchestrator`.
 
 ```
 $ORC_HOME/
@@ -225,6 +272,10 @@ export const OrcConfig = z.object({
   remote: RemoteConfig.prefault({}),                                                                   // P6
   away: AwayConfig.prefault({}),                                                                       // P6
   connectors: ConnectorsConfig.prefault({}),                                                           // P6
+  automations: z.object({ … }).prefault({}),                                                           // P7, see below
+  supervisor: z.object({ … }).prefault({}),                                                            // P7
+  compare: z.object({ maxVariants: z.number().int().min(2).max(6).default(4) }).prefault({}),          // P7
+  agnc: z.object({ … }).prefault({}),                                                                  // P7
 }).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
@@ -307,11 +358,34 @@ export const ConnectorsConfig = z.object({
   }).prefault({}),
 });
 export type RemoteConfig = z.infer<typeof RemoteConfig>;   // and AwayConfig, ConnectorsConfig
+
+// P7 sections (as built, inline in OrcConfig, packages/api-contract/src/config.ts). Every switch is off by default.
+automations: z.object({
+  enabled: z.boolean().default(false),                    // master switch: cron schedules and event triggers attach only while on
+  maxConcurrent: z.number().int().positive().default(2),
+  suggestions: z.object({ enabled: z.boolean().default(false), intervalMin: z.number().int().positive().default(60) }).prefault({}),
+}).prefault({}),
+supervisor: z.object({
+  enabled: z.boolean().default(false),                    // master switch; per-session / per-project targets live in supervisor_targets
+  model: z.string().default('claude-haiku-4-5'),
+  confidenceThreshold: z.number().min(0).max(1).default(0.85),
+  maxPerSessionPerHour: z.number().int().nonnegative().default(3),
+  maxPerHour: z.number().int().nonnegative().default(10),
+  monthlyBudgetUsd: z.number().nonnegative().default(5),
+  quietHours: z.object({ start: z.string().regex(/^\d{2}:\d{2}$/), end: z.string().regex(/^\d{2}:\d{2}$/) }).nullable().default(null),
+  debounceMs: z.number().int().nonnegative().default(3000),
+}).prefault({}),
+compare: z.object({ maxVariants: z.number().int().min(2).max(6).default(4) }).prefault({}),   // no switch: runs only when the user launches a comparison
+agnc: z.object({
+  enabled: z.boolean().default(false),
+  url: z.string().default('https://agnc.wakecap.ai/mcp'),
+  pollSeconds: z.number().int().positive().default(30),
+}).prefault({}),
 ```
 
 
 > **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
-`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `recaps`, `limits`, `digest` and `hooks` (P5) and `remote`, `away` and `connectors` (P6) also use `.prefault({})`; recaps stay `enabled: false` in every test daemon. The fixture e2e server roots its homes at `ORC_E2E_ROOT` (one `mkdtemp` per Playwright run, set by `apps/web/playwright.config.ts` together with `ORC_E2E_WORK`), or its own `mkdtemp` root when started by hand. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
+`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `recaps`, `limits`, `digest` and `hooks` (P5) and `remote`, `away` and `connectors` (P6) and `automations`, `supervisor`, `compare` and `agnc` (P7) also use `.prefault({})`; recaps stay `enabled: false` in every test daemon. The fixture e2e server roots its homes at `ORC_E2E_ROOT` (one `mkdtemp` per Playwright run, set by `apps/web/playwright.config.ts` together with `ORC_E2E_WORK`), or its own `mkdtemp` root when started by hand. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
 
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
@@ -583,7 +657,7 @@ export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<
 - `recap/digest.ts`: `buildRecapDigest`, `renderPromptTemplate`, `DEFAULT_RECAP_PROMPT`, `DEFAULT_DAILY_PROMPT`, `DEFAULT_HANDOFF_PROMPT`, `approxTokens`, `truncateText`, `firstLine`; `recap/handoff.ts`: `collectHandoffEvidence`, `parseHandoffJson`, `handoffToMarkdown`, `buildResumePrompt`.
 - `derive/live-transcript.ts`: `createLiveReducer` takes `opts.windows: { table, defaultWindow }` and scales context fill with `contextFill`, keeping the widest window a session has needed.
 
-**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`. P5: `POST /api/handoffs/:id/resume-fresh` records `session.launch` (target `handoff:<id>`), and `POST /api/hooks/install` records `hook.install` (target `claude-settings`). P6 adds `connector.connect`, `connector.configure`, `connector.disconnect`, `linear.issue.create`, `inbox.approve`, `remote.configure`, `remote.pairing_code`, `remote.pair`, `remote.revoke`, `webauthn.register` and `away.set`, and is the first phase to record `linear.comment`, `slack.post` and `remote.approve`; remote replies record `pty.input` with actor `remote` and `actorDetail` `"<device> (<login>)"` or `slack_dm`. Connector and share entries never carry a token, a client secret or the full post body (a redacted preview of at most 300 chars).
+**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`. P5: `POST /api/handoffs/:id/resume-fresh` records `session.launch` (target `handoff:<id>`), and `POST /api/hooks/install` records `hook.install` (target `claude-settings`). P6 adds `connector.connect`, `connector.configure`, `connector.disconnect`, `linear.issue.create`, `inbox.approve`, `remote.configure`, `remote.pairing_code`, `remote.pair`, `remote.revoke`, `webauthn.register` and `away.set`, and is the first phase to record `linear.comment`, `slack.post` and `remote.approve`; remote replies record `pty.input` with actor `remote` and `actorDetail` `"<device> (<login>)"` or `slack_dm`. Connector and share entries never carry a token, a client secret or the full post body (a redacted preview of at most 300 chars). P7 adds `automation.approve`, `automation.reject`, `compare.launch`, `compare.pick`, `compare.archive`, `supervisor.escalate`, `supervisor.feedback`, `supervisor.rule`, `agnc.connect`, `agnc.disconnect`, `agnc.prompt`, `agnc.create` and `settings.update`, and is the first phase to record `automation.run` (actor `automation` for cron/event/rerun runs) and `supervisor.answer` (actor `supervisor`, `actorDetail` = the classifier model). `settings.update` covers automation create/save/enable/delete, `PATCH …/automations/settings`, `PATCH …/supervisor/settings` and `PUT …/supervisor/targets`. Accepting a suggestion records `session.launch`; archiving compare losers also records `session.kill` for each running loser. Supervisor answers are sent inside `actorScope.run({ actor: 'supervisor', actorDetail: model }, …)`, so their `pty.input` entry carries that actor. The AGNC prompt text is never in an audit entry (`omitParams: ['prompt']`). `supervisor.evaluate` names the `POST /api/supervisor/evaluate/:source/:id` route in `AUDITED_ROUTES`; the service itself records `supervisor.answer` or `supervisor.escalate` (nothing on a dry run), and the middleware records `supervisor.evaluate` only for a request that fails first.
 
 ## 5. SQLite & migrations
 
@@ -620,7 +694,12 @@ export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<
 | `webauthn_credentials` | 6 | `id` (credential id, base64url); `device_id` → `remote_devices.id` (cascade) |
 | `push_subscriptions` | 6 | `id`; unique `endpoint`; `device_id` nullable → `remote_devices.id` (cascade) |
 | `slack_threads` | 6 | `inbox_item_id` |
-| `automations`, `automation_runs`, `compare_groups`, `supervisor_rules`, `supervisor_decisions` | 7 | — |
+| `automations` | 7 | `id` — migration `0010_phase7_automations.sql` |
+| `automation_runs` | 7 | `id`; unique (`automation_id`, `trigger_key`) — one run per trigger key |
+| `automation_suggestions` | 7 | `id`; unique `dedupe_key` |
+| `compare_groups` | 7 | `id` — migration `0011_phase7_compare.sql` |
+| `supervisor_rules`, `supervisor_decisions` | 7 | `id` — migration `0012_phase7_supervisor.sql` |
+| `supervisor_targets` | 7 | (`target_type`, `target_id`) |
 
 - **P2 columns** (as built, `apps/daemon/src/db/schema.ts`):
 
@@ -818,8 +897,65 @@ P6  POST   /api/remote/away                             body { mode: 'auto'|'on'
 P6  POST   /api/webauthn/register/options | /api/webauthn/register/verify               (remote device only; verify audited as webauthn.register)
 P6  POST   /api/webauthn/stepup/options   | /api/webauthn/stepup/verify → { validUntil } (remote device only)
 P6  GET    /api/push/vapid-public-key → { publicKey } ; POST /api/push/subscriptions → { ok } ; DELETE /api/push/subscriptions body { endpoint } → { ok } ; POST /api/push/test → { sent }
-P7  /api/automations…  /api/compare…  /api/supervisor…
+P7  GET    /api/automations                          → AutomationWithStats[]
+P7  POST   /api/automations                          body AutomationInput → Automation                    (settings.update)
+P7  GET    /api/automations/settings                 → AutomationSettings { enabled, maxConcurrent, suggestionsEnabled }
+P7  PATCH  /api/automations/settings                 body AutomationSettingsPatch → AutomationSettings    (settings.update)
+P7  GET    /api/automations/suggestions?state        → Suggestion[]
+P7  POST   /api/automations/suggestions/refresh      → { added: number }                                  (NON_ACTION_ROUTES)
+P7  POST   /api/automations/suggestions/:id/accept   body { confirm: true } → { ptyId, sessionPk }       (session.launch)
+P7  POST   /api/automations/suggestions/:id/dismiss  → Suggestion                                         (NON_ACTION_ROUTES)
+P7  GET    /api/automations/runs/:runId              → AutomationRunDetail
+P7  GET    /api/automations/runs/:runId/log          → { lines: string[] }                                (redacted)
+P7  POST   /api/automations/runs/:runId/approve      body { confirm: true } → AutomationRunDetail (202)   (automation.approve)
+P7  POST   /api/automations/runs/:runId/reject       → AutomationRunDetail                                (automation.reject)
+P7  POST   /api/automations/runs/:runId/rerun        → AutomationRunDetail | { deduped: true }            (automation.run)
+P7  GET    /api/automations/:id                      → AutomationWithStats
+P7  DELETE /api/automations/:id                      body { confirm: true }                               (settings.update)
+P7  POST   /api/automations/:id/enabled              body { enabled: boolean } → Automation               (settings.update)
+P7  POST   /api/automations/:id/run                  body AutomationRunRequest { vars? } → AutomationRunDetail (202)   (automation.run)
+P7  GET    /api/automations/:id/runs                 → AutomationRunDetail[]
+P7  POST   /api/compare                              body LaunchRequest (compare required) → CompareGroup (201)   (compare.launch)
+P7  GET    /api/compare/estimate?projectId&n         → CompareEstimate
+P7  GET    /api/compare/:groupId                     → CompareView
+P7  POST   /api/compare/:groupId/winner              body { index } → { group: CompareGroup; reviewUrl: string }   (compare.pick)
+P7  POST   /api/compare/:groupId/archive-losers      body { confirm: true } → ArchiveLosersResult         (compare.archive)
+P7* POST   /api/sessions/launch                      body.compare non-empty → 201 { compareGroupId } (LaunchResponse is a union; 409 not_enabled without ctx.compare)
+P7  GET    /api/supervisor/status                    → SupervisorStatus
+P7  PATCH  /api/supervisor/settings                  body SupervisorSettingsPatch → SupervisorStatus     (settings.update)
+P7  GET    /api/supervisor/targets                   → SupervisorTarget[]
+P7  PUT    /api/supervisor/targets                   body SupervisorTarget → SupervisorTarget             (settings.update)
+P7  GET    /api/supervisor/rules                     → SupervisorRule[]
+P7  POST   /api/supervisor/rules                     body SupervisorRuleInput → SupervisorRule            (supervisor.rule)
+P7  DELETE /api/supervisor/rules/:id                 body { confirm: true }                               (supervisor.rule)
+P7  GET    /api/supervisor/decisions?sessionPk&limit → SupervisorDecisionView[]
+P7  POST   /api/supervisor/decisions/:id/wrong       → SupervisorRule                                     (supervisor.feedback)
+P7  POST   /api/supervisor/evaluate/:source/:id      → SupervisorDecisionView                             (supervisor.answer | supervisor.escalate)
+P7  GET    /api/connectors/agnc/status               → AgncStatus { enabled, status, url, sessions }
+P7  POST   /api/connectors/agnc/connect              → { authorizationUrl: string | null }                (loopback only; agnc.connect)
+P7  POST   /api/connectors/agnc/disconnect           body { confirm: true } → { ok }                      (loopback only; agnc.disconnect; forgets the stored tokens)
+P7  GET    /oauth/agnc/callback?code&state           → text/html   (public, GET only, in PUBLIC_API_PATHS; state checked before the code reaches AGNC)
+P7  GET    /api/agnc/sessions/:id/messages           → AgncMessage[]
+P7  GET    /api/agnc/sessions/:id/events?cursor      → { items: AgncEvent[]; nextCursor }
+P7  POST   /api/agnc/sessions/:id/prompt             body { prompt, model?, confirm: true } → { ok }      (agnc.prompt; prompt redacted before it leaves, never audited)
+P7  POST   /api/agnc/handoff                         body { source, id, confirm: true } → AgncSession     (agnc.create)
 ```
+
+**P7 routes** are registered once, in `registerAllRoutes` (`http/app.ts`), by `register{Automation,Compare,Supervisor,Agnc}Routes(app, ctx)` and `registerAgncOAuthRoute`; each reads its service per request with `need(ctx.<svc>, name)` from `http/p7-guard.ts` and answers `409 not_enabled` while it is unset (the AGNC routes also while `agnc.enabled` is off). Every P7 write route is in `AUDITED_ROUTES` with `recordedBy: 'service'` (the service records the entry with the real actor and params; the middleware records only a request that fails before it does), except `POST /api/automations/suggestions/refresh` and `…/:id/dismiss`, which are in `NON_ACTION_ROUTES`. `apps/daemon/test/p7/m7-exit.test.ts` checks this for every P7 write route. Run lists, run logs, suggestions, compare views, supervisor decisions and AGNC messages/events answer through `redactedJson`. Phase 7 adds no `REMOTE_RULES` entry: remote writes to P7 routes get the default `403 remote_forbidden`.
+
+`AutomationRunRequest = z.strictObject({ vars: z.partialRecord(TemplateVarSchema, z.string()).optional() })` (fix `576598b`): only the template's known var names, string values; anything else is `400 validation_failed`. `automationsRun(id, vars?)` sends it.
+
+`LaunchResponse = z.union([LaunchSessionResponse { ptyId, sessionId: string | null }, LaunchCompareResponse { compareGroupId }])` (`routes/launch.ts`); callers narrow on `'compareGroupId' in r`.
+
+P7's zod schemas live in `packages/api-contract/src/routes/{automations,compare,supervisor,agnc,p7-common}.ts`. The client methods live in `packages/api-contract/src/clients/{automations,compare,supervisor,agnc}.ts`, combined by `phase7Client(call: ApiCall): Phase7Api` (`clients/phase7.ts`), and `interface ApiClient extends Phase7Api`.
+
+**P7 error codes:** `not_enabled`, `over_budget`, `capacity_exceeded`, `invalid_state`, `confirmation_required`, `session_unknown` (all `409`), `not_owned` (`403`), `not_found` (`404`), `validation_failed` (`400`, including an invalid cron expression and unknown run-now vars). A guard refusal of an automation run is not an HTTP error: the run is recorded with status `denied` or `over_budget`.
+
+**P7 inbox items** (`inbox.upsert({ kind, scope })`; keys composed by the InboxEngine):
+- `automation_result` with `scope: { domain: 'automation-run', id: runId }` — a finished, failed, denied or over-budget run.
+- `plan_approval` with `scope: { domain: 'automation-run', id: runId }` — a headless run waiting in `awaiting_approval`; approve or reject resolves it.
+- `supervisor_escalation` with `scope: { session: sessionPk }` — the supervisor did not answer.
+- `waiting` with `scope: { session: sessionPk }` is **resolved** (not created) after the supervisor sends an answer.
 
 P2's zod schemas live in `packages/api-contract/src/routes/{live,launch,inbox,templates,archive,notifications,hooks}.ts`, with `export type LaunchRequest = z.infer<typeof LaunchRequest>` and `ArchiveStatus = z.object({ enabled, files, bytes, oldestTranscript, cleanupPeriodDays, codec, recommendedSnippet })`. P2's client methods (`packages/api-contract/src/client-p2.ts`, folded into `createApiClient`) are `liveList`, `sessionsLaunch`, `sessionsKill`, `sessionsOpenIn`, `inboxList`, `inboxDone`, `inboxSnooze`, `inboxReopen`, `templatesList`, `archiveStatus`, `archiveRestore`, `archiveSync`, `notificationsGet`, `notificationsPut`.
 
@@ -870,8 +1006,12 @@ export type LiveEvent =
   | { type: 'index.progress'; done: number; total: number }
   | { type: 'usage.updated'; snapshot: UsageSnapshot }    // typed in phase 5
   | { type: 'hello'; serverTime: string }
-  | { type: 'audit.recorded'; entry: AuditEntry };        // P3; also in the daemon's LIVE_EVENT_TYPES
+  | { type: 'audit.recorded'; entry: AuditEntry }         // P3; also in the daemon's LIVE_EVENT_TYPES
+  | { type: 'automation.runUpdated'; run: AutomationRunDetail }       // P7
+  | { type: 'compare.updated'; group: CompareGroup }                  // P7
+  | { type: 'supervisor.decided'; decision: SupervisorDecisionView }; // P7
 ```
+P7's three variants go through `toWireEvent` like the rest. P7 adds no `BusEvent` variant of its own: automation triggers subscribe to P4's `pr.changed` and P6's `linear.issueChanged` and `slack.mention` (`services/automations/dispatcher.ts`), and the supervisor to P1's `session.statusChanged`.
 - The server sends `hello` on connect, then deltas.
 - The web app maps events onto TanStack Query cache updates with `queryClient.setQueryData`.
 - Query keys: `['sessions', filters]`, `['session', source, id]`, `['live']`, `['inbox', filters]`, `['projects']`.
@@ -921,7 +1061,7 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
   - `xox[abposr]-`
   - `AKIA[0-9A-Z]{16}`
   - `postgres(ql)?://user:pass@`, `mongodb(+srv)?://…@`
-  - `password=`, `pwd=`, `secret=`, `token=`
+  - `password=`, `pwd=`, `secret=`, `token=`, `api_key=` (P7: an unquoted value now stops at whitespace, `&`, `;`, `)`, `]`, `}`, `'` or `"`, so `(token=abc)` and `{"env":"API_KEY=abc"}` keep their closing punctuation)
   - `Authorization: Bearer …`
 
   Matches are replaced with `«redacted:<kind>»`.
@@ -933,6 +1073,7 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
 - **Where redaction happens:** API responses that carry transcript text (`events`, `sessions` list snippets, export) are redacted **in the route layer**. The DB keeps the raw text.
 - Routes send transcript JSON through `redactedJson` (`apps/daemon/src/http/redacted-json.ts`). FTS snippets use the daemon's `redactSnippet` (which composes `redactPartialTokens`). WS events pass through `toWireEvent` (`apps/daemon/src/http/ws-redact.ts`). Error bodies go through `redactedApiError(code, message, details?)` in `apps/daemon/src/http/redact-out.ts`, because messages and details can carry cwds, session names and zod issues.
 - **P5:** every P5 route that returns transcript-derived text answers through `redactedJson`; `usage.updated` goes through `toWireEvent`.
+- **P7:** run logs are redacted line by line (`redactStreamLine`); the supervisor classifier gets only the redacted question; an escalation stores the redacted question; AGNC prompts are redacted before they leave; the stdout bridge line carries `redact(item.reason)`.
 - **LLM calls** (recaps, daily recaps, handoffs) send only a redacted digest built by `buildRecapDigest`. Tool outputs and tool inputs are never sent.
 - **Logging:** pino writes JSON to `$ORC_HOME/logs/daemon.log`, and pretty output in dev. Transcript text is never logged.
 - **IDs:** `crypto.randomUUID()`, except that the session pk is `${source}:${id}`.
@@ -1026,8 +1167,11 @@ export interface DaemonContext {
   sessionActions?: SessionActions;         // P6
   away?: AwayService;                      // P6
   remoteAccess?: RemoteAccess;             // P6 — { devices, pairing, stepUp, funnel, webauthn, vapid, webpush }; every P6 field is set by createPhase6(), not buildContext()
-  automations?: AutomationService;         // P7
-  supervisor?: Supervisor;                 // P7
+  automations?: AutomationServiceImpl;     // P7 — superset of AutomationService (below)
+  suggestions?: SuggestionService;         // P7
+  compare?: CompareService;                // P7
+  supervisor?: SupervisorImpl;             // P7 — superset of Supervisor (below)
+  agnc?: AgncConnector;                    // P7 — every P7 field is set by createPhase7(), not buildContext()
 }
 ```
 Once its phase has shipped, code must treat an optional service as present. Tests build a context with `createTestContext(overrides)` from `apps/daemon/test/helpers.ts` (created in P1 and extended by each phase).
@@ -1439,10 +1583,99 @@ export interface RemoteGuardDeps { config: () => OrcConfig; devices: DeviceServi
 // P7 — services/automations ; services/supervisor
 export interface AutomationService { list(): Automation[]; save(a: Automation): Automation; runNow(id: string): Promise<AutomationRun>; runs(id: string): AutomationRun[] }
 export interface Automation { id: string; name: string; enabled: boolean; trigger: { type: 'cron'; cron: string } | { type: 'github'; event: 'review_comment'|'check_failed'|'pr_merged' } | { type: 'linear'; event: 'assigned'|'labeled'; label?: string } | { type: 'slack'; event: 'mention'; channel: string } | { type: 'manual' }; action: { templateId: string; projectId: string; repo?: string; useWorktree: boolean; headless: boolean; model?: string; timeoutMin: number; planApproval: boolean }; budgetUsd: number }
-export interface AutomationRun { id: string; automationId: string; startedAt: string; endedAt: string | null; status: 'queued'|'running'|'success'|'failed'|'denied'|'over_budget'; sessionPk: string | null; costUsd: number | null; summary: string | null }
+export interface AutomationRun { id: string; automationId: string; startedAt: string; endedAt: string | null; status: 'queued'|'running'|'awaiting_approval'|'success'|'failed'|'denied'|'over_budget'; sessionPk: string | null; costUsd: number | null; summary: string | null }   // P7: 'awaiting_approval' added
 export interface SupervisorDecision { id: string; sessionPk: string; question: string; decision: 'answer'|'escalate'; answer: string | null; confidence: number; reason: string; ts: string }
 export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDecision>; enabledFor(sessionPk: string): boolean }
 ```
+
+**P7 as built.** `Automation`, `AutomationRun` and the rest are zod schemas in `@orc/api-contract` (`routes/automations.ts`); the daemon re-exports the types. `ctx.automations` and `ctx.supervisor` hold the implementation types `AutomationServiceImpl` and `SupervisorImpl`, which are supersets of the interfaces above.
+
+```ts
+// P7 — apps/daemon/src/phase7.ts
+export interface Phase7Options { runner?: HeadlessRunner; addedLines?: (cwd: string, base: string) => Promise<string>; classifier?: Classifier; agnc?: { factory?: AgncClientFactory; secrets?: SecretStore; intervalMs?: number } }
+export interface Phase7 { automations; suggestions; compare; supervisor; agnc; start(): void; stop(): void }   // start/stop idempotent
+export function createPhase7(ctx: DaemonContext, o?: Phase7Options): Phase7
+// Sets ctx.automations/suggestions/compare/supervisor/agnc. Cron schedules and event triggers attach once automations.enabled
+// is on (at boot, before ctx.scheduler.start(), or on the first config.changed that turns it on); a fired job starts nothing
+// while the switch is off again. start() follows automations.suggestions.enabled, supervisor.enabled and agnc.enabled on every
+// config.changed (turning agnc off disconnects). createDaemon({ …, phase7?: Phase7Options }) calls createPhase7 then phase7.start();
+// close() calls phase7.stop(). No register hook: routes are in registerAllRoutes.
+// apps/daemon/test/fakes/phase7.ts
+export function offlinePhase7(): Phase7Options   // every test daemon and the e2e fixture daemon: a runner that writes one line and never
+// spawns claude, no git diff, a classifier that always escalates, AGNC on the in-memory fake server with the memory secret store
+
+// P7 — routes/automations.ts (zod)
+export type TriggerSource = 'cron' | 'github' | 'linear' | 'slack' | 'manual' | 'rerun';
+export interface AutomationRunDetail extends AutomationRun { triggerKey: string; triggerSource: TriggerSource; vars: Record<string, string>; ptyId: string | null; worktreePath: string | null; prUrl: string | null; diffStat: DiffStat | null; error: string | null; rerunOf: string | null }
+export interface DiffStat { files: number; insertions: number; deletions: number; untracked: number }   // DiffStatSchema in routes/p7-common.ts; services/git/git-info.ts
+export interface RunStats { total; success; failed; successRate: number | null; lastRunAt: string | null; monthSpendUsd: number }
+// AutomationWithStats = Automation & { stats: RunStats; nextRunAt: string | null }
+// Suggestion { id, source: 'linear'|'todo', projectId, title, detail, ticket, file, line, state: 'new'|'accepted'|'dismissed', createdAt, … }
+
+// P7 — services/automations/service.ts
+export interface TriggerFire { key: string; source: TriggerSource; vars: Record<string, string>; rerunOf?: string | null }
+export interface AutomationServiceImpl extends AutomationService {
+  get(id: string): Automation | null; listWithStats(): AutomationWithStats[]; getWithStats(id: string): AutomationWithStats | null;
+  remove(id: string): void; setEnabled(id: string, enabled: boolean): Automation;
+  start(id: string, fire: TriggerFire): Promise<AutomationRunDetail | null>;   // null = trigger key already handled
+  approve(runId: string): Promise<AutomationRunDetail>; reject(runId: string): AutomationRunDetail; rerun(runId: string): Promise<AutomationRunDetail | null>;
+  runs(id: string): AutomationRunDetail[]; run(runId: string): AutomationRunDetail | null; waitFor(runId: string): Promise<AutomationRunDetail>;
+  logLines(runId: string): string[]; onChange(fn: (id: string, a: Automation | null) => void): () => void; stop(): void;
+}
+// services/automations/guardrails.ts: AUTOMATION_ALLOWED_TOOLS, AUTOMATION_DISALLOWED_TOOLS (includes Bash(gh pr merge *), Bash(git push --force *),
+//   Bash(kubectl *), Bash(terraform *)), AUTOMATION_DENY_PATTERNS, checkAutomationGuards(i) — master switch, deny-list, budgets, before every run and approval
+// services/automations/headless.ts: HeadlessRunner = (o: HeadlessRunOptions) => Promise<HeadlessRunResult>; runHeadless runs
+//   `claude -p --output-format stream-json --verbose --permission-prompts none …` with the prompt on stdin and env ORC_AUTOMATION=1
+//   (the parent env, including ANTHROPIC_API_KEY, is inherited — see phase-7-evidence.md)
+
+// P7 — services/automations/suggestions.ts
+export interface SuggestionService { list(state?: Suggestion['state']): Suggestion[]; get(id: string): Suggestion | null; refresh(): Promise<{ added: number }>; accept(id: string): Promise<{ ptyId: string; sessionPk: string | null }>; dismiss(id: string): Suggestion; start(): () => void }
+
+// P7 — services/compare/compare.ts
+export interface CompareService { launch(req: LaunchRequest): Promise<CompareGroup>; estimate(projectId: string | null, n: number): CompareEstimate; get(id: string): CompareGroup | null; view(id: string): Promise<CompareView>; pickWinner(id: string, index: number): { group: CompareGroup; reviewUrl: string }; archiveLosers(id: string): Promise<ArchiveLosersResult> }
+// createCompareService returns CompareService & { list(limit?) }. archiveLosers needs a winner (409 invalid_state), kills running losers
+// (session.kill), and archives only worktrees the group created through worktrees.archiveAs (dirty and external ones are refused and
+// reported per variant; `git worktree remove` keeps the branch).
+
+// P7 — services/supervisor/supervisor.ts
+export interface SupervisorImpl {
+  evaluate(sessionPk: string): Promise<SupervisorDecisionView>; enabledFor(sessionPk: string): boolean; start(): () => void;
+  setTarget(t: SupervisorTarget): SupervisorTarget; targets(): SupervisorTarget[];
+  rules(): SupervisorRule[]; addRule(r: SupervisorRuleInput): SupervisorRule; removeRule(id: string): boolean;
+  decisions(q: { sessionPk?: string; limit?: number }): SupervisorDecisionView[];
+  feedbackWrong(decisionId: string): SupervisorRule; status(): SupervisorStatus;
+}
+// Sends only canned allow-listed answers to owned sessions (ownership 'owned' and a ptyId). The question is checked against the
+// deny-list before the classifier; the canned answer is re-checked against ctx.denyList and SUPERVISOR_DENY_PATTERNS before it is sent.
+// A session target wins over a project target. Classifier: services/supervisor/classifier.ts (headless `claude -p`, strict JSON).
+
+// P7 — connectors/agnc/agnc.ts
+export interface AgncConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; beginAuth(): Promise<{ authorizationUrl: string | null }>; finishAuth(code: string, state: string): Promise<void>; listMySessions(): Promise<AgncSession[]>; getSession(id: string): Promise<AgncSession | null>; listMessages(id: string): Promise<AgncMessage[]>; listEvents(id: string, cursor?: string): Promise<{ items: AgncEvent[]; nextCursor: string | null }>; sendPrompt(id: string, prompt: string, model?: string): Promise<void>; createSession(i: { repoOwner: string; repoName: string; baseBranch?: string; title?: string; initialPrompt: string; model?: string }): Promise<AgncSession>; disconnect(): Promise<void>; signOut?(): Promise<void> }
+// Auth (spike S4 finding): AGNC answers `initialize` without a token, so a successful connect() proves nothing. The connector sends
+// client.listTools() after connect() and only then treats the client as live; an UnauthorizedError there, or from a later callTool,
+// sets the pending OAuth flow. OAuth client registration and tokens live only in the SecretStore (`agnc.client`, `agnc.tokens`);
+// the redirect URL is `http://127.0.0.1:<port>/oauth/agnc/callback`.
+
+// P7 — services/launch/spawn.ts ; services/git/git-info.ts ; http/p7-guard.ts
+export function assertOwnedCapacity(ctx: DaemonContext, projectId: string | null, needed?: number): void   // 409 capacity_exceeded
+export interface SpawnResult { ptyId: string; sessionId: string | null; sessionPk: string | null; command: string; args: string[] }
+export function spawnClaudeSession(ctx, i: { cwd; prompt; model?; args; sessionId? }): SpawnResult   // prompt after `--`
+export function spawnCodexSession(ctx, i: { cwd; prompt; model? }): SpawnResult
+export function parseShortStat(text): Omit<DiffStat, 'untracked'>; export function diffStat(cwd, base): Promise<DiffStat>; export function addedLinesDiff(cwd, base): Promise<string>
+export function defaultBranch(repo): Promise<string>; export function parseRemoteSlug(url): { owner; name } | null; export function remoteSlug(repo): Promise<{ owner; name } | null>
+export function requireConfirmed(body: { confirm?: boolean }, summary: string, details?): void   // 409 confirmation_required
+export function need<T>(svc: T | undefined, name: string): T                                     // 409 not_enabled
+export const ConfirmBody; export const API_BASE = 'http://127.0.0.1:4317'; export const TEST_TOKEN   // test constants
+
+// P7 — notify/stdout-bridge.ts
+export const NOTIFY_PREFIX = 'ORC_NOTIFY ';
+export function notifyLine(item: InboxItem, url: string): { title: string; body: string; url: string; kind: string }
+export function createStdoutNotifyChannel(write?: (line: string) => void): NotifyChannelImpl   // id 'macos'
+```
+
+**`orc-mcp` (`apps/mcp`).** A stdio MCP server built on `@modelcontextprotocol/sdk`, a thin read-mostly client of the daemon HTTP API (`daemon-client.ts`, which sends `x-orc-token` and turns API errors into `DaemonError`, reported as tool errors). Tools: `list_live_sessions`, `list_waiting` (attention inbox kinds only), `search_sessions`, `get_session_summary`, `get_stream`, `resume_session` (returns a resume command and a web link; launches only when asked). Registration with Claude and Codex is manual (`claude mcp add --scope user …`).
+
+**Desktop shell (`apps/desktop`).** Tauri 2 app `Orchestrator` (`dev.orchestrator.desktop`). It uses the daemon at `http://127.0.0.1:4317` when one is already running, and otherwise starts the sidecar `orc-node` on `resources/daemon` with `ORC_NOTIFY_BRIDGE=stdout` and `ORC_WEB_DIR=<resources/web>`, turns `ORC_NOTIFY ` stdout lines into native notifications (`bridge.rs`), injects the install token into the window, shows the waiting count and block percentage in the tray, and registers the global hotkey ⌘⇧O.
 
 ## 12. Web app conventions
 - **Routes** (TanStack Router, file-based under `apps/web/src/routes/`):
@@ -1559,7 +1792,11 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `p5ClientMethods`, `P5ClientMethods` | **P5** `packages/api-contract/src/client-p5.ts` | Spread into `createApiClient`, like `createPhase4Methods`. |
 | `need` (daemon) | **P5** `apps/daemon/src/services/need.ts` | Routes that read an optional `DaemonContext` service use it; do not add another "service not wired" helper. |
 | `readBody`, `readQuery`, `confirmationRequired`, `notFound`, `sendError`, `parseStates` | **P5** `apps/daemon/src/http/p5-util.ts` | Later main-app route files reuse them. |
-| `Scheduler`, `ensureCronJob`, `removeJobsOfType` | **P5** `apps/daemon/src/services/scheduler/scheduler.ts` | P7 extends the `ScheduledJob['kind']` union and registers `onFire('automation', …)` there; no second scheduler. |
+| `Scheduler`, `ensureCronJob`, `removeJobsOfType` | **P5** `apps/daemon/src/services/scheduler/scheduler.ts` | P7 extends the `ScheduledJob['kind']` union (`'reminder' \| 'automation' \| 'digest'`) and registers `onFire('automation', …)` there; no second scheduler. |
+| `createPhase7`, `Phase7Options`, `offlinePhase7` | **P7** `apps/daemon/src/phase7.ts`, `apps/daemon/test/fakes/phase7.ts` | The only P7 wiring point; every test `createDaemon` passes `phase7: offlinePhase7()`. |
+| `ConfirmBody`, `requireConfirmed`, `need` (P7 flavour), `API_BASE`, `TEST_TOKEN` | **P7** `apps/daemon/src/http/p7-guard.ts` | P7 routes and tests import from there; `need` here answers `409 not_enabled` (P5's `services/need.ts` and P6's `http/p6-util.ts` keep their own). |
+| `DiffStat` / `DiffStatSchema` | **P7** `packages/api-contract/src/routes/p7-common.ts`, `apps/daemon/src/services/git/git-info.ts` | Automations and compare share it. |
+| `median` (compare) | **P7** `apps/daemon/src/services/compare/compare.ts` | A local `median(values: number[])` beside P3's `derive/step-stats.ts` one; fold them together when one moves. |
 | `resolveWstackHome`, `readWstackWorkflows`, `readWstackTimelines` | **P5** `apps/daemon/src/services/wstack.ts` | The only reader of `WSTACK_HOME`. |
 | `makeP5Context`, `makeSession` (P5 variant), `fakeSessions`, `withWakecap`, `ev` | **P5** `apps/daemon/test/p5-helpers.ts` | Service tests that need a fake session list use these. |
 | `Indexer`, `createIndexer` | **P1** `apps/daemon/src/indexer/indexer.ts` | Not in the original §11 draft. Later phases that need indexing hooks modify this file rather than creating a parallel indexer. |
@@ -1587,3 +1824,4 @@ Phase 0's spikes settled several questions the phase plans left open. These over
 | **P1 Task 19, search-perf cardinality cap** | A synthetic-then-real two-stage tuning exercise, not a spike, but the empirical constant it produced binds the search-quality/perf tradeoff for later phases. `toFtsQuery` prefix-matches only the *last* (still-being-typed) token of a query, 3+ characters; every earlier token becomes an exact term. FTS5's native `snippet()` cost scales with the prefixed token's *matched-term cardinality*, not row count — a synthetic worst case (a numbered vocabulary where one 4-char prefix matched ~1,111 of 3,000 terms) took ~4s per search before this was found. Above `FTS_PREFIX_CARDINALITY_CAP = 250` (`apps/daemon/src/services/sessions.ts`), a search skips native `snippet()` and highlights the raw row text in application code instead (via `redactedHighlight`, so the secret-leak fix applies uniformly). **250 is empirical, not derived**: measured directly against the real `~/.claude`/`~/.codex` corpus's actual term cardinality and `snippet()` cost per common English 3-character prefix (`con`→489 terms/188ms was the one real-world case that exceeded the 150ms budget; every measured case ≤244 terms stayed under ~75ms). Real-text cost is **not monotonic in cardinality alone** (`con` cost 4-6x more than `get` at nearly the same cardinality) — a future corpus with different vocabulary characteristics could still occasionally exceed the cap's safety margin; the perf suite's gated per-shape assertions (not this cap alone) are the regression backstop. Phase 2+ should re-measure this cap if the indexed corpus's vocabulary shape changes materially (e.g. adding a new source with very different token distributions). |
 | **S2/S8** PTY | Scripted input **50/50** complete and in order; send-while-busy is queued by Claude's own TUI (not garbled); multi-line arrives as one prompt. `submitDelayMs` 120 ms works, and no idle detection is needed before sending. Browser render, typing, resize and scrollback replay all verified in headless Chrome. **GO.** | `encodePaste`/`sendText` live in `packages/core/src/pty/paste.ts`; Phase 1's `apps/daemon/src/pty/input.ts` wraps that module. **Two Phase 1 setup gotchas:** (1) node-pty 1.1.0's darwin-arm64 prebuild ships `spawn-helper` without the executable bit, and every `pty.spawn()` fails until it is `chmod +x`'d — the daemon package needs a postinstall step. (2) **A child session inherits `CLAUDE_CODE_CHILD_SESSION` and then writes NO transcript.** `PtyManager.spawn()` must delete that marker from the child env and set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, with a test asserting it; otherwise every session the app launches is invisible to its own indexer. |
 | **S9** remote | **Read-only checks only (2026-09-27); live checks a–h not yet run.** Tailscale 1.102.3 running; MagicDNS and HTTPS certificates on; origin `https://hazems-macbook-pro.tailc6e70.ts.net`; login `hazem@wakecap.com`; the tailnet is shared (161 devices), so `remote.allowedLogin` is the real gate. Decision: go with the plan's defaults, unconfirmed (`plan/spikes/S9.md`). | Phase 6 shipped on those defaults: `isRemoteRequest` header rules (b), the `Tailscale-User-Login` identity check (c — **NO-GO for remote access if `tailscale serve` does not strip a client-sent header**), Web Push (d1/d2), passkey rpID = MagicDNS host (e1/e2), `connectors.slack.redirectUri` (g1), `nudgeViaReminder: false` (g2/g4), the bridge's `appId` reply filter (g3) and the `AllowFunnel` key in `detectFunnel()` (h). Each changes as the S9 decision table says if its check fails. |
+| **S4** AGNC | **GO (unconfirmed); read-only checks only (2026-09-27); live checks a–f not yet run.** The OAuth metadata is standard OAuth 2.1 for MCP: protected-resource metadata, PKCE `S256`, `authorization_code` + `refresh_token`, dynamic client registration, public clients. **Observed:** AGNC answers `initialize` with no token (protocol `2025-03-26`) (`plan/spikes/S4.md`). | Phase 7 shipped the AGNC connector and routes on that decision, off by default (`agnc.enabled: false`). Because `initialize` needs no token, `createAgncConnector` sends `listTools()` after `connect()` before it treats the client as authorised, and an `UnauthorizedError` from a later `callTool` also starts the OAuth flow. The redirect URI `http://127.0.0.1:<port>/oauth/agnc/callback` (b), `agnc_list_sessions { scope: 'mine' }` (c), the response key spellings in `normalize.ts` (c, d) and token refresh (e) are unconfirmed. If a, c or e fails, AGNC goes NO-GO: keep `agnc.enabled` off and ship only the link-out. |
