@@ -2,6 +2,7 @@ import type { Session } from '@orc/core';
 import type { ReactNode } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
 import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
+import { SessionShareActions } from '@/features/share/SessionShareActions.tsx';
 import { formatCost, formatDateTime, formatDuration, formatTokens, shortenPath } from '@/lib/format.ts';
 
 const AVAILABILITY_VARIANT: Record<Session['availability'], BadgeVariant> = {
@@ -39,7 +40,10 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
             ) : null}
           </div>
         </div>
-        {actions}
+        <div className="flex flex-col items-end gap-2">
+          {actions}
+          <SessionShareActions session={session} />
+        </div>
       </div>
       <dl className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-muted-foreground">Started</dt>

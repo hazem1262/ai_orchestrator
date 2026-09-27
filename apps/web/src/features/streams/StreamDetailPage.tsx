@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
 import { GoalEditor } from '@/features/goals/GoalEditor.tsx';
 import { formatPctValue, formatUsd } from '@/features/limits/format.ts';
+import { LinearIssueChip } from '@/features/linear/LinearIssueChip.tsx';
 import { formatActivity, STAGE_LABELS, STAGE_ORDER, sessionHref, stageIndex } from './stages.ts';
 
 const LINK_KINDS: StreamLinkKind[] = ['session', 'pr', 'plan', 'worktree', 'workflow'];
@@ -94,7 +95,10 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
   return (
     <div className="flex flex-col gap-4 p-4">
       <header className="flex flex-col gap-2">
-        <h1 className="text-lg font-semibold">{stream.ticket}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-lg font-semibold">{stream.ticket}</h1>
+          <LinearIssueChip identifier={stream.ticket} />
+        </div>
         {stream.title ? <p className="text-muted-foreground">{stream.title}</p> : null}
         <StageBar stage={stream.stage} />
         <p className="text-sm">

@@ -10,6 +10,7 @@ import { cn } from '@/components/ui/cn.ts';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { formatDuration } from '@/features/live-board/sort.ts';
+import { DailyUpdateButton } from '@/features/share/DailyUpdateButton.tsx';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { InboxItemActions } from './InboxItemActions.tsx';
@@ -106,6 +107,7 @@ export function InboxPage({ now }: { now?: () => number } = {}) {
       <div className="flex items-center gap-4">
         <h1 className="text-lg font-semibold">Inbox</h1>
         <p className="ml-auto text-xs text-muted-foreground">j/k move · e done · s snooze 1h · Enter open</p>
+        <DailyUpdateButton />
       </div>
 
       <Tabs
