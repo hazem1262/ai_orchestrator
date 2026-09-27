@@ -251,6 +251,34 @@ export const CENSUS: Record<string, CensusEntry> = {
   },
   'POST /api/sessions/:source/:id/plan/approve': { guardedBy: null, reason: '{ ok: true }' },
   'POST /api/sessions/:source/:id/plan/reject': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/usage': {
+    guardedBy: null,
+    reason: 'the quota snapshot: token counts, costs, fractions and daemon-derived ISO timestamps',
+  },
+  'GET /api/usage/budgets': {
+    guardedBy: null,
+    reason: 'budget rows (user-set scope ids and limits) with computed spend and period start',
+  },
+  'PUT /api/usage/budgets': { guardedBy: null, reason: 'echoes the budget row the client just sent' },
+  'DELETE /api/usage/budgets/:id': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/usage/concurrency': {
+    guardedBy: null,
+    reason: '{ projectId, owned, max } per configured project',
+  },
+  'GET /api/usage/context/:source/:id': {
+    guardedBy: null,
+    reason:
+      'session pk, transcript model name and token counts, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/usage/official': { guardedBy: null, reason: '204 with no body' },
+  'GET /api/settings': {
+    guardedBy: null,
+    reason: 'the recaps, limits, digest and hooks sections of the user’s own config',
+  },
+  'PUT /api/settings': {
+    guardedBy: null,
+    reason: 'echoes the config sections after schema validation',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -287,8 +315,10 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
+  'apps/daemon/src/http/routes/settings.ts',
   'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/templates.ts',
+  'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
   'apps/daemon/src/http/routes/worktrees.ts',
   'apps/daemon/src/http/static.ts',

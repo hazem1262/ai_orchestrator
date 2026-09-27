@@ -1,9 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { HttpBindings } from '@hono/node-server';
 import { OrcConfig, ProjectConfig } from '@orc/api-contract';
 import { type AgentNode, emptyUsage, type Session, type TimelineEvent } from '@orc/core';
+import { Hono } from 'hono';
 import { afterEach } from 'vitest';
 import type { DaemonContext } from '../src/context.ts';
+import type { OrcApp } from '../src/http/types.ts';
 import type { EventBus } from '../src/live/event-bus.ts';
 import type { ProjectService } from '../src/services/projects.ts';
 import {
@@ -239,4 +242,9 @@ export function makeP5Context(
     headers: { 'x-orc-token': token, 'content-type': 'application/json' },
     dispose: () => base.dispose(),
   };
+}
+
+/** A Hono app without auth/audit middleware, for testing one register*Routes function. */
+export function bareApp(): OrcApp {
+  return new Hono<{ Bindings: HttpBindings }>();
 }

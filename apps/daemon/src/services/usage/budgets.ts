@@ -82,7 +82,11 @@ export function budgetAlertKey(s: BudgetStatus, level: 'warn' | 'over'): string 
   return `budget:${b.scopeType}:${b.scopeId ?? 'all'}:${b.period}:${s.periodStart.slice(0, 10)}:${level}`;
 }
 
-function budgetInboxKey(s: BudgetStatus, level: 'warn' | 'over'): InboxKey {
+export function budgetAlertLevel(s: BudgetStatus, warnPct: number): 'warn' | 'over' | null {
+  return s.pct >= 1 ? 'over' : s.pct >= warnPct ? 'warn' : null;
+}
+
+export function budgetInboxKey(s: BudgetStatus, level: 'warn' | 'over'): InboxKey {
   const b = s.budget;
   let scope: InboxScope = { global: true };
   if (b.scopeType === 'project' && b.scopeId !== null) scope = { project: b.scopeId };
@@ -106,7 +110,7 @@ export function raiseBudgetAlerts(
 ): Set<string> {
   const raised = new Set<string>();
   for (const s of statuses) {
-    const level = s.pct >= 1 ? 'over' : s.pct >= warnPct ? 'warn' : null;
+    const level = budgetAlertLevel(s, warnPct);
     if (level === null) continue;
     const key = budgetAlertKey(s, level);
     raised.add(key);
@@ -123,7 +127,16 @@ export function raiseBudgetAlerts(
         level === 'over'
           ? `Over ${b.period} budget for ${label}: ${usd(s.spentUsd)} of ${usd(b.limitUsd)}`
           : `${Math.round(s.pct * 100)}% of ${b.period} budget for ${label}: ${usd(s.spentUsd)} of ${usd(b.limitUsd)}`,
-      payload: { budgetId: b.id, pct: s.pct, spentUsd: s.spentUsd, limitUsd: b.limitUsd, level },
+      payload: {
+        budgetId: b.id,
+        pct: s.pct,
+        spentUsd: s.spentUsd,
+        limitUsd: b.limitUsd,
+        level,
+        // The inbox identity, so a later process can resolve this item without the in-memory map.
+        scope: inboxKey.scope,
+        facet: inboxKey.facet,
+      },
     });
   }
   for (const key of previous) {

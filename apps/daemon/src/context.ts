@@ -26,6 +26,7 @@ import { createSessionService, type SessionService } from './services/sessions.t
 import type { ShipService } from './services/ship/ship.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts';
+import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
 
@@ -79,6 +80,8 @@ export interface DaemonContext {
   scheduler?: Scheduler;
   /** P5 — the incremental per-message usage and tool ledger; set by `buildContext()`, started by `createDaemon().start()`. */
   ledger?: UsageLedger;
+  /** P5 — quota snapshot, budgets, context fill and quota/budget alerts; set by `buildContext()`, started by `createDaemon().start()`. */
+  usage?: UsageMeter;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
   // prs and streams (T9), analytics and digests (T10), reminders (T14).
 }
@@ -143,12 +146,15 @@ export function buildContext(o: BuildContextOptions): {
   };
   const ledger = createUsageLedger(ctx);
   ctx.ledger = ledger;
+  const usage = createUsageMeter(ctx, { ledger });
+  ctx.usage = usage;
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      usage.stop();
       ledger.stop();
       pty.disposeAll();
       opened.close();

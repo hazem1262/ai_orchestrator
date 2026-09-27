@@ -109,6 +109,7 @@ export async function createDaemon(
       const stopPhase4 = wirePhase4(ctx);
       ctx.scheduler?.start();
       ctx.ledger?.start();
+      ctx.usage?.start();
       const app = createApp({ ctx, token, port: () => boundPort, webDist });
       const server = await new Promise<Server>((resolve) => {
         const s = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, (info: AddressInfo) => {
@@ -129,6 +130,7 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          ctx.usage?.stop();
           ctx.ledger?.stop();
           ctx.scheduler?.stop();
           stopPhase4();

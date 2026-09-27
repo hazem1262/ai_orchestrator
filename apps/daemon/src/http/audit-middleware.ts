@@ -210,6 +210,10 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     path: '/api/worktrees/discover',
     why: 'refreshes the local worktree index; read-only git',
   },
+  { method: 'PUT', path: '/api/usage/budgets', why: 'local budget configuration' },
+  { method: 'DELETE', path: '/api/usage/budgets/:id', why: 'local budget configuration' },
+  { method: 'POST', path: '/api/usage/official', why: 'inbound statusline sample, not an app action' },
+  { method: 'PUT', path: '/api/settings', why: 'local app configuration' },
 ];
 
 export function matchAuditedRoute(
