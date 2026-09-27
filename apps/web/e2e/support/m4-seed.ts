@@ -93,6 +93,7 @@ export default async function globalSetup(): Promise<void> {
       ORC_HOME: orcHome,
       CLAUDE_HOME: claudeHome,
       CODEX_HOME: codexHome,
+      WSTACK_HOME: join(dir, 'wstack'),
       ORC_PORT: String(PORT),
       FAKE_GH_DIR: ghDir,
       E2E_DIR: dir,

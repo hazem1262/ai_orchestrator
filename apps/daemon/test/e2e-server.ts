@@ -15,7 +15,8 @@ const homes = makeTempHomes({ root });
 // A launched PTY inherits the daemon's own environment (`sanitizedChildEnv`), so the temp homes
 // have to be on it: without CLAUDE_HOME the fake `claude` falls back to echo mode, writes no
 // registry entry, and every launch blocks for the full discovery timeout before returning a null
-// sessionId.
+// sessionId. `WSTACK_HOME` rides along so the stream service reads an empty temp workflows dir,
+// never the developer's real ~/.wstack.
 Object.assign(process.env, homes.env);
 const work = process.env.ORC_E2E_WORK ?? join(root, 'work', 'Wakecap');
 mkdirSync(work, { recursive: true });
