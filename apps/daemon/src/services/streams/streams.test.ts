@@ -173,6 +173,28 @@ describe('stream service', () => {
     });
   });
 
+  it('rebuilds the streams once the initial index completes', async () => {
+    const { svc, ctx } = setup();
+    let listed = 0;
+    const list = ctx.sessions.list.bind(ctx.sessions);
+    ctx.sessions.list = (...a: Parameters<typeof list>) => {
+      listed += 1;
+      return list(...a);
+    };
+    svc.start();
+    try {
+      await vi.waitFor(() => expect(listed).toBeGreaterThan(0));
+      const before = listed;
+      await new Promise((r) => setTimeout(r, 20));
+      expect(listed).toBe(before);
+      ctx.bus.emit({ type: 'index.initialComplete' });
+      await vi.waitFor(() => expect(listed).toBeGreaterThan(before));
+      expect(svc.list({}).map((s) => s.ticket)).toContain('SAF-1787');
+    } finally {
+      svc.stop();
+    }
+  });
+
   it('skips projects without workStreams', async () => {
     const { svc, ctx } = setup();
     ctx.updateConfig?.((c) => ({

@@ -362,6 +362,16 @@ export function createStreamService(
         ctx.bus.on('pr.changed', () => {
           lastRefresh = 0;
         }),
+        // The start-up refresh runs before the first index scan has filled the session table:
+        // rebuild once that scan is done, after any refresh already in flight.
+        ctx.bus.on('index.initialComplete', () => {
+          lastRefresh = 0;
+          const pending = running ?? Promise.resolve([]);
+          pending
+            .catch(() => [])
+            .then(() => refresh())
+            .catch(onError);
+        }),
       );
     },
     stop() {

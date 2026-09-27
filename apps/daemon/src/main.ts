@@ -129,6 +129,7 @@ export async function createDaemon(
         .scanAll()
         .then(async (stats) => {
           ctx.log.info(stats, 'initial index complete');
+          ctx.bus.emit({ type: 'index.initialComplete' });
           if (watch) await indexer.watch();
         })
         .catch((err: unknown) => ctx.log.error({ err }, 'initial index failed'));
