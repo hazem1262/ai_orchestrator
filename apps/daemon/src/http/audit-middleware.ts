@@ -16,6 +16,8 @@ export interface AuditedRoute {
    * before the service recorded that action (bad body, unknown path, ownership check).
    */
   recordedBy?: 'service';
+  /** Body keys left out of the params this middleware records (user text sent elsewhere). */
+  omitParams?: string[];
 }
 
 const SRC = '(claude|codex|agnc)';
@@ -378,6 +380,37 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: sessionTarget,
     recordedBy: 'service',
   },
+  // Phase 7 AGNC. The handlers record each entry through `audited()` with the real actor; the
+  // middleware records only a request that fails before they do. The prompt text is never logged.
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/agnc\/connect$/,
+    action: 'agnc.connect',
+    target: () => 'agnc',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/agnc\/disconnect$/,
+    action: 'agnc.disconnect',
+    target: () => 'agnc',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/agnc\/sessions\/([^/]+)\/prompt$/,
+    action: 'agnc.prompt',
+    target: (m) => `agnc:${dec(m[1])}`,
+    recordedBy: 'service',
+    omitParams: ['prompt'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/agnc\/handoff$/,
+    action: 'agnc.create',
+    target: (_m, b) => (str(b.source) && str(b.id) ? `${str(b.source)}:${str(b.id)}` : null),
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,
@@ -537,6 +570,7 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     if (res.status === 409 && code === 'confirmation_required') return;
 
     const { confirm: _confirm, ...rest } = body;
+    for (const k of hit.route.omitParams ?? []) delete rest[k];
     const result = res.status < 400 ? 'ok' : res.status === 403 ? 'denied' : 'error';
     const outcome: Record<string, unknown> = {};
     if (result === 'ok' && obj) {

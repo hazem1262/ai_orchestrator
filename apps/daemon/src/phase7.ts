@@ -178,5 +178,6 @@ function createAgncWiring(ctx: DaemonContext, o: NonNullable<Phase7Options['agnc
     log: ctx.log,
     state: () => provider.state(),
     pendingUrl: () => provider.pendingAuthorizationUrl(),
+    clear: () => provider.clear(),
   });
 }

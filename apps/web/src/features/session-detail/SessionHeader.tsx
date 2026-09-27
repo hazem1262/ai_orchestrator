@@ -1,6 +1,7 @@
 import type { Session } from '@orc/core';
 import type { ReactNode } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
+import { HandoffToAgncButton } from '@/features/agnc/HandoffToAgncButton.tsx';
 import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
 import { ReplyComposer } from '@/features/mobile/ReplyComposer.tsx';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
@@ -48,6 +49,7 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
         <div className="flex flex-col items-end gap-2">
           {actions}
           <SessionShareActions session={session} />
+          <HandoffToAgncButton session={session} />
         </div>
       </div>
       {isMobile ? <ReplyComposer session={session} /> : null}

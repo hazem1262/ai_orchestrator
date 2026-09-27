@@ -31,6 +31,7 @@ export function isLoopback(addr: string | undefined): boolean {
 export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
   '/api/connectors/linear/callback',
   '/api/connectors/slack/callback',
+  '/oauth/agnc/callback',
 ]);
 
 export interface AccessOptions {
@@ -40,9 +41,9 @@ export interface AccessOptions {
 }
 
 /**
- * The `/api/*` host, Origin and install-token checks, for local requests only. A request that
- * `remoteGuard` classified as remote was already authenticated there with its device token; the
- * install token never works for it.
+ * The `/api/*` and `/oauth/*` host, Origin and install-token checks, for local requests only. A
+ * request that `remoteGuard` classified as remote was already authenticated there with its device
+ * token; the install token never works for it.
  */
 export function apiAccessMiddleware(o: AccessOptions): MiddlewareHandler<OrcEnv> {
   return async (c, next) => {

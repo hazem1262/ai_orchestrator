@@ -15,6 +15,8 @@ export const REMOTE_RULES: ReadonlyArray<{ method: string; pattern: RegExp; poli
   { method: 'GET', pattern: /^\/api\/connectors\/(linear|slack)\/callback$/, policy: 'public' },
   { method: 'POST', pattern: /^\/api\/remote\/pair$/, policy: 'public' },
   { method: 'GET', pattern: /^\/api\/health$/, policy: 'public' },
+  // The AGNC OAuth redirect goes to 127.0.0.1 only; a remote device never finishes it.
+  { method: 'GET', pattern: /^\/oauth\//, policy: 'deny' },
   { method: 'GET', pattern: /^\/api\/remote\/(devices|pairing)/, policy: 'deny' },
   { method: 'GET', pattern: /^\/api\/connectors/, policy: 'deny' },
   { method: 'GET', pattern: /^\/api\/sessions\/[^/]+\/[^/]+\/(export|raw)$/, policy: 'deny' },

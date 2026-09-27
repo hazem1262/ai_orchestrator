@@ -7,6 +7,7 @@ import { auditMiddleware } from './audit-middleware.ts';
 import { apiAccessMiddleware, bootstrapHandler } from './auth.ts';
 import { redactedApiError } from './redact-out.ts';
 import { type RemoteGuardDeps, remoteGuard } from './remote-guard.ts';
+import { registerAgncOAuthRoute, registerAgncRoutes } from './routes/agnc.ts';
 import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
@@ -80,7 +81,8 @@ export interface AppOptions {
  * `createPhase6` sets their services on `ctx`, the handlers read them per request and answer
  * `503 unavailable` while they are unset, and `AppOptions.phase6` only supplies the guard deps.
  * The phase 7 automation routes read `ctx.automations` and `ctx.suggestions` (set by
- * `createPhase7`) per request and answer `409 not_enabled` while they are unset.
+ * `createPhase7`) per request and answer `409 not_enabled` while they are unset. The AGNC routes
+ * also answer `409 not_enabled` while `agnc.enabled` is off.
  */
 export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerHealthRoutes(app);
@@ -118,6 +120,9 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerAutomationRoutes(app, ctx);
   registerCompareRoutes(app, ctx);
   registerSupervisorRoutes(app, ctx);
+  registerAgncRoutes(app, ctx);
+  // Outside `/api`: the AGNC OAuth redirect target, public for GET only (see `PUBLIC_API_PATHS`).
+  registerAgncOAuthRoute(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));
@@ -160,6 +165,8 @@ export function createApp(o: AppOptions): OrcApp {
   // and sets `c.var.remote`. The local host/Origin/install-token checks below skip remote ones.
   app.use('*', remoteGuard(o.remote ?? o.phase6?.guardDeps ?? null));
   app.use('/api/*', apiAccessMiddleware(o));
+  // The same host, Origin and token checks for the OAuth redirect targets outside `/api`.
+  app.use('/oauth/*', apiAccessMiddleware(o));
   app.use('/api/*', auditMiddleware(o.ctx));
 
   app.get('/bootstrap.js', bootstrapHandler(o));

@@ -7,7 +7,9 @@ export interface AgncApi {
   agncConnect(): Promise<{ authorizationUrl: string | null }>;
   agncMessages(id: string): Promise<AgncMessage[]>;
   agncEvents(id: string, cursor?: string): Promise<AgncEventPage>;
-  agncPrompt(id: string, body: { prompt: string; model?: string }): Promise<{ ok: true }>;
+  /** Without `confirm: true` the daemon answers `409 confirmation_required` and sends nothing. */
+  agncPrompt(id: string, body: { prompt: string; model?: string; confirm?: boolean }): Promise<{ ok: true }>;
+  agncDisconnect(): Promise<{ ok: true }>;
   agncHandoff(body: {
     source: 'claude' | 'codex';
     id: string;
@@ -15,6 +17,7 @@ export interface AgncApi {
     repoName?: string;
     baseBranch?: string;
     model?: string;
+    confirm?: boolean;
   }): Promise<AgncSession>;
 }
 
@@ -29,7 +32,8 @@ export function agncClient(call: ApiCall): AgncApi {
     agncMessages: (id) => call(z.array(AgncMessage), 'GET', `${s(id)}/messages`),
     agncEvents: (id, cursor) =>
       call(AgncEventPage, 'GET', `${s(id)}/events${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
-    agncPrompt: (id, body) => call(Ok, 'POST', `${s(id)}/prompt`, { ...body, confirm: true }),
-    agncHandoff: (body) => call(AgncSession, 'POST', '/api/agnc/handoff', { ...body, confirm: true }),
+    agncPrompt: (id, body) => call(Ok, 'POST', `${s(id)}/prompt`, body),
+    agncHandoff: (body) => call(AgncSession, 'POST', '/api/agnc/handoff', body),
+    agncDisconnect: () => call(Ok, 'POST', '/api/connectors/agnc/disconnect', { confirm: true }),
   };
 }

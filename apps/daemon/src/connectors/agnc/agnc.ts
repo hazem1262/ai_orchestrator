@@ -26,6 +26,8 @@ export interface AgncConnector {
     model?: string;
   }): Promise<AgncSession>;
   disconnect(): Promise<void>;
+  /** Forgets the client registration and tokens, so the next connect starts a fresh OAuth flow. */
+  signOut?(): Promise<void>;
 }
 
 export interface AgncClientPair {
@@ -55,6 +57,8 @@ export function createAgncConnector(deps: {
   state?: () => string;
   /** The authorisation URL the provider captured during the failed request. */
   pendingUrl?: () => string | null;
+  /** Deletes the stored client registration and tokens (the keyring provider's `clear`). */
+  clear?: () => Promise<void>;
 }): AgncConnector {
   let live: AgncClientPair | null = null;
   let pendingAuth: AgncClientPair | null = null;
@@ -97,6 +101,13 @@ export function createAgncConnector(deps: {
       connecting = null;
     });
     return connecting;
+  }
+
+  async function closeAll(): Promise<void> {
+    const pairs = [live, pendingAuth];
+    live = null;
+    pendingAuth = null;
+    for (const p of pairs) await closeQuietly(p);
   }
 
   async function call(name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -201,11 +212,11 @@ export function createAgncConnector(deps: {
       return created;
     },
 
-    async disconnect() {
-      const pairs = [live, pendingAuth];
-      live = null;
-      pendingAuth = null;
-      for (const p of pairs) await closeQuietly(p);
+    disconnect: closeAll,
+
+    async signOut() {
+      await closeAll();
+      await deps.clear?.();
     },
   };
 }

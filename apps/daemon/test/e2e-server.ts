@@ -38,6 +38,8 @@ saveConfig(
     resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE },
     // No PR poller against the real `gh`: it would pull the developer's own PRs into the inbox.
     github: { enabled: false },
+    // AGNC runs only on the in-memory fake (`offlinePhase7`); off unless a run asks for it.
+    agnc: { enabled: process.env.ORC_E2E_AGNC === '1' },
     // `work` comes first: it is the directory the launch dialog offers by default.
     projects: [{ ...wakecap, pathPrefixes: [work, '/Users/test/Wakecap'] }],
   }),

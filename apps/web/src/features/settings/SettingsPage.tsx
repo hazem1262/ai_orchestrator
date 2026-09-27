@@ -1,4 +1,5 @@
 import { Separator } from '@/components/ui/separator.tsx';
+import { AgncConnectCard } from '@/features/agnc/AgncConnectCard.tsx';
 import { RemotePanel } from '@/features/remote/RemotePanel.tsx';
 import { SecretsHygienePanel } from '@/features/safety/SecretsHygienePanel.tsx';
 import { SupervisorSettings } from '@/features/supervisor/SupervisorSettings.tsx';
@@ -35,6 +36,7 @@ export function SettingsPage() {
             Connectors
           </h2>
           <ConnectorsPanel />
+          <AgncConnectCard />
         </section>
         <Separator />
         <section aria-labelledby="settings-remote" className="flex flex-col gap-2">

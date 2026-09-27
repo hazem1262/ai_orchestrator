@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useSession } from '@/api/queries/sessions.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { AgncSessionPanel } from '@/features/agnc/AgncSessionPanel.tsx';
 import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
 import { ExportButton } from './ExportButton.tsx';
 import { SafetyBadges } from './SafetyBadges.tsx';
@@ -72,8 +73,20 @@ export function SessionDetailPage({ source, id, tab, agentId, file, onNavigate }
           </div>
         }
       />
-      <SessionWorkPanel session={session} />
-      <SessionDetailTabs session={session} tab={tab} agentId={agentId} file={file} onNavigate={onNavigate} />
+      {session.source === 'agnc' ? (
+        <AgncSessionPanel session={session} />
+      ) : (
+        <>
+          <SessionWorkPanel session={session} />
+          <SessionDetailTabs
+            session={session}
+            tab={tab}
+            agentId={agentId}
+            file={file}
+            onNavigate={onNavigate}
+          />
+        </>
+      )}
     </div>
   );
 }

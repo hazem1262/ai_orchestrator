@@ -644,6 +644,43 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'the decision with the agent question and the answer, walked by redactedJson on the way out',
   },
+  'GET /api/connectors/agnc/status': {
+    guardedBy: null,
+    reason: 'enabled flag, status enum, the configured AGNC URL and a session count',
+  },
+  'POST /api/connectors/agnc/connect': {
+    guardedBy: null,
+    reason: '{ authorizationUrl } — the AGNC authorize URL the browser opens; no token',
+  },
+  'POST /api/connectors/agnc/disconnect': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary is a constant string',
+  },
+  'GET /api/agnc/sessions/:id/messages': {
+    guardedBy: null,
+    reason: 'remote AGNC message text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/agnc/sessions/:id/events': {
+    guardedBy: null,
+    reason: 'remote AGNC event text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/agnc/sessions/:id/prompt': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation carries the redacted prompt through the onError redaction',
+  },
+  'POST /api/agnc/handoff': {
+    guardedBy: null,
+    reason: 'the created AGNC session (title, repo, branch, URLs), walked by redactedJson on the way out',
+  },
+  'ALL /oauth/*': {
+    guardedBy: null,
+    reason: 'the host/Origin/token middleware for the OAuth redirect targets; apiError only',
+  },
+  'GET /oauth/agnc/callback': {
+    guardedBy: null,
+    reason:
+      'a constant HTML page; the only variable text is the redacted provider error or failure message, never the code, state or a token',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -662,6 +699,7 @@ export const CENSUS: Record<string, CensusEntry> = {
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/agnc.ts',
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
@@ -739,10 +777,10 @@ export const EXPORT_KINDS: Record<string, 'shape' | 'primitive' | 'data'> = {
 };
 
 /**
- * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, bootstrap
- * and the static bundle. (`ALL /api/*` appears on both
+ * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, the
+ * `/oauth/*` access middleware, bootstrap and the static bundle. (`ALL /api/*` appears on both
  * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
  * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
  * has been routed around the single registration path, and fails the test below.
  */
-export const CREATE_APP_LOCAL = ['ALL /*', 'GET /bootstrap.js', 'GET /*'];
+export const CREATE_APP_LOCAL = ['ALL /*', 'ALL /oauth/*', 'GET /bootstrap.js', 'GET /*'];

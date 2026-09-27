@@ -193,6 +193,7 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     agncEvents: unexpected('agncEvents'),
     agncPrompt: unexpected('agncPrompt'),
     agncHandoff: unexpected('agncHandoff'),
+    agncDisconnect: unexpected('agncDisconnect'),
   };
   return { ...base, ...overrides };
 }
