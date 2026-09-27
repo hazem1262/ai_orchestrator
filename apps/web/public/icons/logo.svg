@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Orchestrator">
+  <rect width="512" height="512" rx="96" fill="#0b0f19" />
+  <circle cx="256" cy="150" r="46" fill="#38bdf8" />
+  <circle cx="146" cy="340" r="46" fill="#a78bfa" />
+  <circle cx="366" cy="340" r="46" fill="#34d399" />
+  <path d="M256 196 L166 300 M256 196 L346 300 M180 356 h152" stroke="#e2e8f0" stroke-width="18" stroke-linecap="round" fill="none" />
+</svg>
