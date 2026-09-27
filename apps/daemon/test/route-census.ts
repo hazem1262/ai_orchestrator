@@ -31,6 +31,11 @@ export interface CensusEntry {
 }
 
 export const CENSUS: Record<string, CensusEntry> = {
+  'ALL /*': {
+    guardedBy: null,
+    reason:
+      'the remote guard middleware: classifies local vs remote and answers remote rejections with constant apiError bodies',
+  },
   'ALL /api/*': { guardedBy: null, reason: 'the auth middleware and the 404 catch-all; apiError only' },
   'GET /api/health': { guardedBy: null, reason: 'version, uptime and counts' },
   'GET /bootstrap.js': {
@@ -498,6 +503,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/recaps.ts',
+  'apps/daemon/src/http/routes/remote.ts',
   'apps/daemon/src/http/routes/reminders.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
@@ -519,8 +525,7 @@ export const REGISTRAR_FILES = [
  * allowed only because its message and details are compile-time constants.
  */
 export const RAW_API_ERROR_FILES: Record<string, string> = {
-  'apps/daemon/src/http/app.ts':
-    'the host/origin/token middleware, the 404 catch-all and the 500 — all constant strings',
+  'apps/daemon/src/http/app.ts': 'the 404 catch-all and the 500 — both constant strings',
   'apps/daemon/src/http/redact-out.ts': 'redactedApiError itself',
   'packages/api-contract/src/errors.ts': 'the definition',
 };
@@ -549,9 +554,10 @@ export const EXPORT_KINDS: Record<string, 'shape' | 'primitive' | 'data'> = {
 };
 
 /**
- * The only route `createApp` registers outside `registerAllRoutes`. (`ALL /api/*` appears on both
+ * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, bootstrap
+ * and the static bundle. (`ALL /api/*` appears on both
  * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
  * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
  * has been routed around the single registration path, and fails the test below.
  */
-export const CREATE_APP_LOCAL = ['GET /bootstrap.js', 'GET /*'];
+export const CREATE_APP_LOCAL = ['ALL /*', 'GET /bootstrap.js', 'GET /*'];

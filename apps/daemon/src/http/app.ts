@@ -1,11 +1,12 @@
 import { apiError } from '@orc/api-contract';
-import { type Context, Hono } from 'hono';
+import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { DaemonContext } from '../context.ts';
 import { ServiceError } from '../services/errors.ts';
 import { auditMiddleware } from './audit-middleware.ts';
-import { allowedHosts, allowedOrigins, isLoopback, PUBLIC_API_PATHS, tokenMatches } from './auth.ts';
+import { apiAccessMiddleware, bootstrapHandler } from './auth.ts';
 import { redactedApiError } from './redact-out.ts';
+import { type RemoteGuardDeps, remoteGuard } from './remote-guard.ts';
 import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
@@ -47,6 +48,8 @@ export interface AppOptions {
   port: () => number;
   webDist?: string | null;
   env?: NodeJS.ProcessEnv;
+  /** Remote-access guard deps; `null` or unset marks every request as local (P1 tests only). */
+  remote?: RemoteGuardDeps | null;
 }
 
 /**
@@ -103,9 +106,6 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
 
 export function createApp(o: AppOptions): OrcApp {
   const app: OrcApp = new Hono<OrcEnv>();
-  const hostOf = (c: Context) => c.req.header('host') ?? new URL(c.req.url).host;
-  const hostOk = (c: Context) => allowedHosts(o.port(), o.env).includes(hostOf(c));
-
   // Error bodies are a response channel like any other, and until now an unmodelled one: the
   // census could only see what a route returns on success. `services/sessions.ts` throws
   // `cwd_missing` with `` `directory ${s.startCwd} no longer exists` `` and `details: { cwd }`,
@@ -130,30 +130,13 @@ export function createApp(o: AppOptions): OrcApp {
     return c.json(apiError('internal', 'internal error'), 500);
   });
 
-  app.use('/api/*', async (c, next) => {
-    if (!hostOk(c)) return c.json(apiError('forbidden', 'host not allowed'), 403);
-    const origin = c.req.header('origin');
-    if (origin && !allowedOrigins(o.port(), o.env).includes(origin)) {
-      return c.json(apiError('forbidden', 'origin not allowed'), 403);
-    }
-    const isPublic = c.req.method === 'GET' && PUBLIC_API_PATHS.has(c.req.path);
-    if (!isPublic && !tokenMatches(o.token, c.req.header('x-orc-token'))) {
-      return c.json(apiError('unauthorized', 'missing or invalid token'), 401);
-    }
-    await next();
-  });
+  // Runs first and on every path: it decides local vs remote, fully authenticates remote requests
+  // and sets `c.var.remote`. The local host/Origin/install-token checks below skip remote ones.
+  app.use('*', remoteGuard(o.remote ?? null));
+  app.use('/api/*', apiAccessMiddleware(o));
   app.use('/api/*', auditMiddleware(o.ctx));
 
-  app.get('/bootstrap.js', (c) => {
-    const remote = c.env?.incoming?.socket?.remoteAddress;
-    const site = c.req.header('sec-fetch-site');
-    const siteOk = site === undefined || site === 'same-origin' || site === 'none';
-    if (!isLoopback(remote) || !hostOk(c) || !siteOk) return c.text('forbidden', 403);
-    return c.body(`window.__ORC_TOKEN__ = ${JSON.stringify(o.token)};\n`, 200, {
-      'content-type': 'text/javascript; charset=utf-8',
-      'cache-control': 'no-store',
-    });
-  });
+  app.get('/bootstrap.js', bootstrapHandler(o));
 
   registerAllRoutes(app, o.ctx);
 
