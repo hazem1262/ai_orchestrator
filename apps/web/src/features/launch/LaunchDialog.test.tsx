@@ -137,6 +137,35 @@ describe('LaunchDialog', () => {
     await vi.waitFor(() => expect(openTerminal).toHaveBeenCalledWith('pty-4', 'second opinion on the plan'));
   });
 
+  it('sends the compare variants and opens the compare page', async () => {
+    sessionsLaunch.mockResolvedValue({ compareGroupId: 'g-7' });
+    const compareEstimate = vi.fn(async (_p: string | null, n: number) => ({
+      variants: n,
+      multiplier: n,
+      avgSessionCostUsd: 1,
+      estimatedUsd: n,
+      sample: 3,
+      burnRateUsdPerHour: 0,
+      budget: { ok: true, pct: 0.1, limitUsd: null },
+    }));
+    const { router } = renderWithProviders(<LaunchDialog />, { api: { ...api(), compareEstimate } });
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Claude Opus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Codex' }));
+    expect(await screen.findByText(/Runs 2 agents · 2× the cost/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Launch' }));
+    await vi.waitFor(() =>
+      expect(sessionsLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          compare: [{ source: 'claude', model: 'claude-opus-5' }, { source: 'codex' }],
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe('/compare/g-7'));
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(useLaunchStore.getState().open).toBe(false);
+  });
+
   it('shows server errors and stays open', async () => {
     sessionsLaunch.mockRejectedValue(
       new ApiRequestError(429, 'concurrency_limit', 'too many', {

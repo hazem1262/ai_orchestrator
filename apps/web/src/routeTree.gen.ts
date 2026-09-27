@@ -19,6 +19,7 @@ import { Route as LiveRouteImport } from './routes/live'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WorktreesRouteImport } from './routes/worktrees'
+import { Route as CompareGroupIdRouteImport } from './routes/compare.$groupId'
 import { Route as StreamsIndexRouteImport } from './routes/streams/index'
 import { Route as StreamsTicketRouteImport } from './routes/streams/$ticket'
 import { Route as ReviewSourceIdRouteImport } from './routes/review.$source.$id'
@@ -74,6 +75,11 @@ const WorktreesRoute = WorktreesRouteImport.update({
   path: '/worktrees',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CompareGroupIdRoute = CompareGroupIdRouteImport.update({
+  id: '/compare/$groupId',
+  path: '/compare/$groupId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StreamsIndexRoute = StreamsIndexRouteImport.update({
   id: '/streams/',
   path: '/streams/',
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -157,6 +166,7 @@ export interface FileRouteTypes {
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams/'
     | '/review/$source/$id'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams'
     | '/review/$source/$id'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams/'
     | '/review/$source/$id'
@@ -206,6 +218,7 @@ export interface RootRouteChildren {
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRoute
   WorktreesRoute: typeof WorktreesRoute
+  CompareGroupIdRoute: typeof CompareGroupIdRoute
   StreamsTicketRoute: typeof StreamsTicketRoute
   StreamsIndexRoute: typeof StreamsIndexRoute
   ReviewSourceIdRoute: typeof ReviewSourceIdRoute
@@ -284,6 +297,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorktreesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/compare/$groupId': {
+      id: '/compare/$groupId'
+      path: '/compare/$groupId'
+      fullPath: '/compare/$groupId'
+      preLoaderRoute: typeof CompareGroupIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/streams/': {
       id: '/streams/'
       path: '/streams'
@@ -326,6 +346,7 @@ const rootRouteChildren: RootRouteChildren = {
   PairRoute: PairRoute,
   SettingsRoute: SettingsRoute,
   WorktreesRoute: WorktreesRoute,
+  CompareGroupIdRoute: CompareGroupIdRoute,
   StreamsTicketRoute: StreamsTicketRoute,
   StreamsIndexRoute: StreamsIndexRoute,
   ReviewSourceIdRoute: ReviewSourceIdRoute,
