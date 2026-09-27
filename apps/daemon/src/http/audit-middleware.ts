@@ -198,6 +198,12 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: sessionTarget,
     recordedBy: 'service',
   },
+  {
+    method: 'POST',
+    pattern: /^\/api\/hooks\/install$/,
+    action: 'hook.install',
+    target: () => 'claude-settings',
+  },
 ];
 
 /** Write routes that are local UI/config state, not actions on sessions or external systems. Every entry needs a reason. */

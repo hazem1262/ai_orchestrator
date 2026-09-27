@@ -67,6 +67,18 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: '{ ok: true }; the hook body is reduced to three fields and never echoed back',
   },
+  'GET /api/hooks/install': {
+    guardedBy: null,
+    reason: 'local paths, the hook command and the settings snippet; no transcript data',
+  },
+  'POST /api/hooks/install': {
+    guardedBy: null,
+    reason: 'the settings and backup paths; the 409 summary carries the same status fields',
+  },
+  'GET /api/hooks/statusline': {
+    guardedBy: null,
+    reason: 'the statusline command and its settings snippet; no user or transcript data',
+  },
   'GET /api/inbox': { guardedBy: 'redactInboxItem', reason: '' },
   'POST /api/inbox/:id/:action{done|snooze|reopen}': { guardedBy: 'redactInboxItem', reason: '' },
   'GET /api/templates': {

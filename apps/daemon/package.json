@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "orc-statusline": "./dist/orc-statusline.js"
+  },
   "scripts": {
     "dev": "ORC_DEV=1 tsx watch src/main.ts",
-    "build": "tsup src/main.ts --format esm --platform node --target node22 --out-dir dist && rm -rf dist/migrations && cp -R src/db/migrations dist/migrations",
+    "build": "tsup --entry.main src/main.ts --entry.orc-statusline src/bin/orc-statusline.ts --format esm --platform node --target node22 --out-dir dist && rm -rf dist/migrations && cp -R src/db/migrations dist/migrations",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate",

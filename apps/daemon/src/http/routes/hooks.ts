@@ -1,7 +1,14 @@
-import { HookIngestBody } from '@orc/api-contract';
+import { HookIngestBody, HookInstallBody } from '@orc/api-contract';
 import { HOOK_BODY_LIMIT_BYTES, mapHookPayload, pickHookFields } from '@orc/core';
 import { bodyLimit } from 'hono/body-limit';
 import type { DaemonContext } from '../../context.ts';
+import {
+  hookInstallStatus,
+  installHooks,
+  statuslineCommand,
+  statuslineSnippet,
+} from '../../services/hooks/install.ts';
+import { confirmationRequired, readBody, sendError } from '../p5-util.ts';
 import { redactedApiError } from '../redact-out.ts';
 import type { OrcApp } from '../types.ts';
 
@@ -53,5 +60,32 @@ export function registerHookRoutes(app: OrcApp, ctx: DaemonContext): void {
       });
       return c.json({ ok: true as const, accepted: signal !== null });
     },
+  );
+
+  // The consented installer: GET only reads, and POST writes `~/.claude/settings.json` (after a
+  // backup) only with `confirm: true`. Audited as `hook.install` by the audit middleware.
+  app.get('/api/hooks/install', (c) => c.json(hookInstallStatus(ctx)));
+  app.post('/api/hooks/install', async (c) => {
+    const b = await readBody(c, HookInstallBody);
+    if (!b.ok) return b.res;
+    if (b.data.confirm !== true) {
+      const st = hookInstallStatus(ctx);
+      return confirmationRequired(c, {
+        settingsPath: st.settingsPath,
+        backupDir: st.backupDir,
+        snippet: st.snippet,
+      });
+    }
+    try {
+      const res = installHooks(ctx);
+      ctx.log.info({ settingsPath: res.settingsPath, backupPath: res.backupPath }, 'claude hooks installed');
+      return c.json({ installed: true as const, ...res });
+    } catch (err) {
+      return sendError(c, err);
+    }
+  });
+  // Shown only: the app never writes `statusLine` into Claude's settings.
+  app.get('/api/hooks/statusline', (c) =>
+    c.json({ command: statuslineCommand(), snippet: statuslineSnippet() }),
   );
 }
