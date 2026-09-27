@@ -186,6 +186,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             Analytics
           </Link>
+          <Link
+            to="/automations"
+            className="rounded px-2 py-1 hover:bg-muted"
+            activeProps={{ className: 'bg-muted font-medium' }}
+          >
+            Automations
+          </Link>
         </nav>
         <Workspace>{children}</Workspace>
       </div>

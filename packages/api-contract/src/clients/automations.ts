@@ -14,20 +14,21 @@ export interface AutomationsApi {
   automationsList(): Promise<AutomationWithStats[]>;
   automationsGet(id: string): Promise<AutomationWithStats>;
   automationsSave(a: AutomationInput): Promise<Automation>;
-  automationsDelete(id: string): Promise<{ ok: true }>;
+  /** `confirm` defaults to true; send false first to get the daemon's `409 confirmation_required` summary. */
+  automationsDelete(id: string, confirm?: boolean): Promise<{ ok: true }>;
   automationsSetEnabled(id: string, enabled: boolean): Promise<Automation>;
   automationsRun(id: string): Promise<AutomationRunDetail>;
   automationsRuns(id: string): Promise<AutomationRunDetail[]>;
   automationsRunGet(runId: string): Promise<AutomationRunDetail>;
   automationsRunLog(runId: string): Promise<{ lines: string[] }>;
-  automationsApprove(runId: string): Promise<AutomationRunDetail>;
+  automationsApprove(runId: string, confirm?: boolean): Promise<AutomationRunDetail>;
   automationsReject(runId: string): Promise<AutomationRunDetail>;
   automationsRerun(runId: string): Promise<AutomationRunDetail | { deduped: true }>;
   automationsSettingsGet(): Promise<AutomationSettings>;
   automationsSettings(patch: AutomationSettingsPatch): Promise<AutomationSettings>;
   suggestionsList(state?: Suggestion['state']): Promise<Suggestion[]>;
   suggestionsRefresh(): Promise<{ added: number }>;
-  suggestionsAccept(id: string): Promise<{ ptyId: string; sessionPk: string | null }>;
+  suggestionsAccept(id: string, confirm?: boolean): Promise<{ ptyId: string; sessionPk: string | null }>;
   suggestionsDismiss(id: string): Promise<Suggestion>;
 }
 
@@ -45,14 +46,14 @@ export function automationsClient(call: ApiCall): AutomationsApi {
     automationsList: () => call(z.array(AutomationWithStats), 'GET', '/api/automations'),
     automationsGet: (id) => call(AutomationWithStats, 'GET', a(id)),
     automationsSave: (body) => call(Automation, 'POST', '/api/automations', body),
-    automationsDelete: (id) => call(Ok, 'DELETE', a(id), { confirm: true }),
+    automationsDelete: (id, confirm = true) => call(Ok, 'DELETE', a(id), { confirm }),
     automationsSetEnabled: (id, enabled) => call(Automation, 'POST', `${a(id)}/enabled`, { enabled }),
     automationsRun: (id) => call(AutomationRunDetail, 'POST', `${a(id)}/run`, {}),
     automationsRuns: (id) => call(z.array(AutomationRunDetail), 'GET', `${a(id)}/runs`),
     automationsRunGet: (runId) => call(AutomationRunDetail, 'GET', r(runId)),
     automationsRunLog: (runId) => call(RunLog, 'GET', `${r(runId)}/log`),
-    automationsApprove: (runId) =>
-      call(AutomationRunDetail, 'POST', `${r(runId)}/approve`, { confirm: true }),
+    automationsApprove: (runId, confirm = true) =>
+      call(AutomationRunDetail, 'POST', `${r(runId)}/approve`, { confirm }),
     automationsReject: (runId) => call(AutomationRunDetail, 'POST', `${r(runId)}/reject`, {}),
     automationsRerun: (runId) => call(RerunResult, 'POST', `${r(runId)}/rerun`, {}),
     automationsSettingsGet: () => call(AutomationSettings, 'GET', '/api/automations/settings'),
@@ -60,7 +61,7 @@ export function automationsClient(call: ApiCall): AutomationsApi {
     suggestionsList: (state) =>
       call(z.array(Suggestion), 'GET', `/api/automations/suggestions${state ? `?state=${state}` : ''}`),
     suggestionsRefresh: () => call(Added, 'POST', '/api/automations/suggestions/refresh', {}),
-    suggestionsAccept: (id) => call(Accepted, 'POST', `${s(id)}/accept`, { confirm: true }),
+    suggestionsAccept: (id, confirm = true) => call(Accepted, 'POST', `${s(id)}/accept`, { confirm }),
     suggestionsDismiss: (id) => call(Suggestion, 'POST', `${s(id)}/dismiss`, {}),
   };
 }

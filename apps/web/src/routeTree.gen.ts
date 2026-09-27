@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AuditRouteImport } from './routes/audit'
+import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
@@ -36,6 +37,11 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
 const AuditRoute = AuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutomationsRoute = AutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
@@ -187,6 +199,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
   AuditRoute: typeof AuditRoute
+  AutomationsRoute: typeof AutomationsRoute
   HistoryRoute: typeof HistoryRoute
   InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/automations': {
+      id: '/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof AutomationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -299,6 +319,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
   AuditRoute: AuditRoute,
+  AutomationsRoute: AutomationsRoute,
   HistoryRoute: HistoryRoute,
   InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
