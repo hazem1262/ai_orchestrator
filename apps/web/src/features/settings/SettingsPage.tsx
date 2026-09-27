@@ -2,6 +2,7 @@ import { Separator } from '@/components/ui/separator.tsx';
 import { SecretsHygienePanel } from '@/features/safety/SecretsHygienePanel.tsx';
 import { ArchiveSettings } from './ArchiveSettings.tsx';
 import { BridgeSettings } from './BridgeSettings.tsx';
+import { ConnectorsPanel } from './ConnectorsPanel.tsx';
 import { LimitsSettings } from './LimitsSettings.tsx';
 import { NotificationSettings } from './NotificationSettings.tsx';
 import { ProjectSettings } from './ProjectSettings.tsx';
@@ -24,6 +25,13 @@ export function SettingsPage() {
         <BridgeSettings />
         <Separator />
         <SecretsHygienePanel />
+        <Separator />
+        <section aria-labelledby="settings-connectors" className="flex flex-col gap-2">
+          <h2 id="settings-connectors" className="text-base font-semibold">
+            Connectors
+          </h2>
+          <ConnectorsPanel />
+        </section>
       </div>
     </div>
   );
