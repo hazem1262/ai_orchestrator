@@ -743,6 +743,7 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
       'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
       'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
+      'apps/daemon/src/services/remote/session-actions.ts', // parses item.dedupeKey for the session pk; never builds one
       'apps/daemon/src/services/review/plan-approval.ts', // compares rows against a composed key; never writes one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type

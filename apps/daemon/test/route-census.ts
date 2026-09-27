@@ -507,6 +507,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/reminders.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
+  'apps/daemon/src/http/routes/session-actions.ts',
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/settings.ts',
