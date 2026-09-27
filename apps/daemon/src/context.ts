@@ -11,6 +11,8 @@ import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
 import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
+import { type AnalyticsService, createAnalyticsService } from './services/analytics/analytics.ts';
+import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
@@ -88,8 +90,12 @@ export interface DaemonContext {
   prs?: PrSource;
   /** P5 — ticket-keyed work streams; set by `buildContext()`, started by `createDaemon().start()`. */
   streams?: StreamService;
+  /** P5 — cost, tool, timing, outcome and wstack aggregations over the ledger; set by `buildContext()`. */
+  analytics?: AnalyticsService;
+  /** P5 — the weekly markdown digest and its scheduled job; set by `buildContext()`, started by `createDaemon().start()`. */
+  digests?: DigestService;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
-  // analytics and digests (T10), reminders (T14).
+  // reminders (T14).
 }
 
 export interface BuildContextOptions {
@@ -158,12 +164,17 @@ export function buildContext(o: BuildContextOptions): {
   ctx.prs = prs;
   const streams = createStreamService(ctx, { prs, meter: usage });
   ctx.streams = streams;
+  const analytics = createAnalyticsService(ctx, { ledger, prs });
+  ctx.analytics = analytics;
+  const digests = createDigestService(ctx, { analytics, prs, meter: usage, scheduler });
+  ctx.digests = digests;
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      digests.stop();
       streams.stop();
       usage.stop();
       ledger.stop();

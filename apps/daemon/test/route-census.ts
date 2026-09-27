@@ -301,6 +301,45 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'echoes the manual exclusion row (ticket, kind, ref) the client just sent',
   },
+  'GET /api/analytics/cost': {
+    guardedBy: null,
+    reason:
+      'cost rows keyed by day, project, model, source or transcript-derived ticket, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/top': {
+    guardedBy: null,
+    reason:
+      'top sessions (session names, tickets) and tickets by cost, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/tools': {
+    guardedBy: null,
+    reason:
+      'tool, MCP server and skill names from transcripts with counts, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/timing': {
+    guardedBy: null,
+    reason: 'model and tool milliseconds and per-bucket cache hit rates; numbers and dates only',
+  },
+  'GET /api/analytics/outcomes': {
+    guardedBy: null,
+    reason:
+      'outcome, friction and goal-category counts from Claude facets, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/wstack': {
+    guardedBy: null,
+    reason:
+      'wstack skill names, outcome counts and durations, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/analytics/digest': {
+    guardedBy: null,
+    reason:
+      'the latest digest markdown (PR titles, session names), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/analytics/digest': {
+    guardedBy: null,
+    reason:
+      'the generated digest markdown (PR titles, session names), walked by redactedJson (core redactDeep) on the way out',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -319,6 +358,7 @@ export const CENSUS: Record<string, CensusEntry> = {
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/export.ts',

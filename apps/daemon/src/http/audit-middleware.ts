@@ -217,6 +217,11 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
   { method: 'POST', path: '/api/streams/refresh', why: 'recomputes local stream metadata' },
   { method: 'POST', path: '/api/streams/:ticket/link', why: 'local stream metadata' },
   { method: 'POST', path: '/api/streams/:ticket/unlink', why: 'local stream metadata' },
+  {
+    method: 'POST',
+    path: '/api/analytics/digest',
+    why: 'renders a local markdown digest; nothing is sent anywhere',
+  },
 ];
 
 export function matchAuditedRoute(

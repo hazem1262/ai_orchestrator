@@ -7,6 +7,7 @@ import { ServiceError } from '../services/errors.ts';
 import { auditMiddleware } from './audit-middleware.ts';
 import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.ts';
 import { redactedApiError } from './redact-out.ts';
+import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
 import { registerExportRoutes } from './routes/export.ts';
@@ -76,6 +77,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerUsageRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerStreamRoutes(app, ctx);
+  registerAnalyticsRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));
