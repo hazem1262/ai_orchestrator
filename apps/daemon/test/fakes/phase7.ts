@@ -600,8 +600,8 @@ export function createMemoryScheduler(): Scheduler & {
 
 /**
  * Phase 7 overrides for every `createDaemon` in tests and the e2e fixture daemon: a headless runner
- * that writes one assistant line to the run log and never spawns `claude`, and no `git diff` for
- * TODO suggestions.
+ * that writes one assistant line to the run log and never spawns `claude`, no `git diff` for
+ * TODO suggestions, and a supervisor classifier that always escalates without spawning `claude`.
  */
 export function offlinePhase7(): Phase7Options {
   return {
@@ -626,5 +626,11 @@ export function offlinePhase7(): Phase7Options {
       };
     },
     addedLines: async () => '',
+    classifier: async (i) => ({
+      output: { decision: 'escalate', answer: null, confidence: 0, reason: 'offline classifier' },
+      costUsd: 0,
+      model: i.model,
+      durationMs: 1,
+    }),
   };
 }

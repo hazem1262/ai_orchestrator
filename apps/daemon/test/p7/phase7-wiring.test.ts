@@ -118,4 +118,32 @@ describe('createPhase7', () => {
     t.setConfig({ suggestions: true });
     expect(start).toHaveBeenCalledTimes(2);
   });
+
+  it('starts the supervisor listener only while supervisor.enabled is on, and stops it cleanly', () => {
+    const t = setup();
+    const p7 = createPhase7(t.ctx, offlinePhase7());
+    expect(t.ctx.supervisor).toBe(p7.supervisor);
+    const halt = vi.fn();
+    const start = vi.spyOn(p7.supervisor, 'start').mockReturnValue(halt);
+    let cfg = t.ctx.config();
+    t.ctx.config = () => cfg;
+    const setSupervisor = (enabled: boolean) => {
+      cfg = OrcConfig.parse({ ...cfg, supervisor: { ...cfg.supervisor, enabled } });
+      t.ctx.bus.emit({ type: 'config.changed' });
+    };
+    p7.start();
+    expect(start).not.toHaveBeenCalled();
+    setSupervisor(true);
+    expect(start).toHaveBeenCalledTimes(1);
+    setSupervisor(true);
+    expect(start).toHaveBeenCalledTimes(1);
+    setSupervisor(false);
+    expect(halt).toHaveBeenCalledTimes(1);
+    setSupervisor(true);
+    p7.stop();
+    expect(halt).toHaveBeenCalledTimes(2);
+    setSupervisor(false);
+    setSupervisor(true);
+    expect(start).toHaveBeenCalledTimes(2);
+  });
 });

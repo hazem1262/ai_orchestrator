@@ -49,6 +49,7 @@ import { createSessionService, type SessionService } from './services/sessions.t
 import type { ShareService } from './services/share/share.ts';
 import type { ShipService } from './services/ship/ship.ts';
 import { createStreamService, type StreamService } from './services/streams/streams.ts';
+import type { SupervisorImpl } from './services/supervisor/supervisor.ts';
 import type { TemplateRegistry } from './services/templates.ts';
 import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts';
 import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
@@ -154,6 +155,8 @@ export interface DaemonContext {
   suggestions?: SuggestionService;
   /** P7 — compare mode across agents. */
   compare?: CompareService;
+  /** P7 — the supervisor that answers routine questions from owned sessions (a superset of contracts §11 `Supervisor`); set by `createPhase7`. */
+  supervisor?: SupervisorImpl;
   /** P7 — optional AGNC sessions. */
   agnc?: AgncConnector;
 }
