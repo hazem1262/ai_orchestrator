@@ -25,6 +25,7 @@ import { createScheduler, type Scheduler } from './services/scheduler/scheduler.
 import { createSessionService, type SessionService } from './services/sessions.ts';
 import type { ShipService } from './services/ship/ship.ts';
 import type { TemplateRegistry } from './services/templates.ts';
+import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
 
@@ -76,8 +77,10 @@ export interface DaemonContext {
   plans?: PlanApprovalService;
   /** P5 — the persisted cron and one-shot scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
   scheduler?: Scheduler;
+  /** P5 — the incremental per-message usage and tool ledger; set by `buildContext()`, started by `createDaemon().start()`. */
+  ledger?: UsageLedger;
   // P5 — later tasks add their own optional fields here, in the task that creates the type:
-  // ledger (T5), prs and streams (T9), analytics and digests (T10), reminders (T14).
+  // prs and streams (T9), analytics and digests (T10), reminders (T14).
 }
 
 export interface BuildContextOptions {
@@ -138,12 +141,15 @@ export function buildContext(o: BuildContextOptions): {
     denyList: createDenyList({ config, projects }),
     scheduler,
   };
+  const ledger = createUsageLedger(ctx);
+  ctx.ledger = ledger;
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      ledger.stop();
       pty.disposeAll();
       opened.close();
     },
