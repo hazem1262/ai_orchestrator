@@ -209,3 +209,48 @@ describe('createLiveReducer', () => {
     expect(r.snapshot().contextFill).toBe(1);
   });
 });
+
+describe('createLiveReducer configured context windows', () => {
+  const usageRecord = (model: string, used: { input?: number; cacheRead?: number; cacheWrite?: number }) => ({
+    type: 'assistant',
+    uuid: 'a',
+    parentUuid: null,
+    sessionId: 's',
+    timestamp: '2026-09-01T00:00:00.000Z',
+    message: {
+      id: 'm',
+      model,
+      content: [],
+      usage: {
+        input_tokens: used.input ?? 0,
+        cache_read_input_tokens: used.cacheRead ?? 0,
+        cache_creation_input_tokens: used.cacheWrite ?? 0,
+      },
+    },
+  });
+
+  it('uses the configured per-model context window', () => {
+    const r = createLiveReducer({
+      windows: { table: { 'claude-opus-5': 1_000_000 }, defaultWindow: 200_000 },
+    });
+    r.apply(usageRecord('claude-opus-5', { cacheRead: 250_000 }));
+    expect(r.snapshot().contextFill).toBeCloseTo(0.25, 6);
+  });
+
+  it('uses the configured default window for a model missing from the table', () => {
+    const r = createLiveReducer({
+      windows: { table: { 'claude-opus-5': 1_000_000 }, defaultWindow: 400_000 },
+    });
+    r.apply(usageRecord('claude-unknown-9', { input: 100_000 }));
+    expect(r.snapshot().contextFill).toBeCloseTo(0.25, 6);
+  });
+
+  it('agrees with core contextFill when usage outgrows a sub-1M configured window', () => {
+    const r = createLiveReducer({
+      windows: { table: { 'claude-haiku-4-5': 200_000 }, defaultWindow: 200_000 },
+    });
+    r.apply(usageRecord('claude-haiku-4-5', { input: 100_000, cacheRead: 150_000, cacheWrite: 50_000 }));
+    // quota.ts contextFill promotes a too-small window to 1M: 300k / 1M, not clamped to 1.
+    expect(r.snapshot().contextFill).toBeCloseTo(0.3, 6);
+  });
+});

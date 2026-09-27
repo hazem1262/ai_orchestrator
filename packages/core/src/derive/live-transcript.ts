@@ -1,6 +1,7 @@
 import { classifyClaudeRecord, contentText } from '../claude/records.ts';
 import { redact } from '../redact/redact.ts';
 import type { Stage, TestResult } from '../types/index.ts';
+import { contextFill } from './quota.ts';
 import { categorizeTool, inferStage, type ToolCategory } from './stage.ts';
 import { isTestCommand, parseTestOutput } from './tests.ts';
 
@@ -84,9 +85,20 @@ interface Pending {
  * the largest usage the session has reported (`contextWindowForUsage`) and reconstructs the reducer
  * when that inference widens; callers that construct a reducer directly get the 200k default and
  * should expect `contextFill` to saturate for a long session.
+ *
+ * `opts.windows` (the configured `limits.contextWindows` table and `limits.defaultContextWindow`)
+ * switches to the meter's rule: each record is scaled the way core `contextFill` (quota.ts) scales
+ * it — per-model window, `[1m]` suffix, and widening a too-small window to 1M. Two differences,
+ * both only ever making the window wider: the widest window a session has already needed is kept
+ * (a later, smaller turn is not re-scaled against a narrower window), and `opts.contextWindow`,
+ * when given alongside, is a floor (the LiveTracker's above-1M fallback). `windows` is read on
+ * every record, so a caller can hand in getters over live config.
  */
-export function createLiveReducer(opts: { contextWindow?: number } = {}): LiveReducer {
+export function createLiveReducer(
+  opts: { contextWindow?: number; windows?: { table: Record<string, number>; defaultWindow: number } } = {},
+): LiveReducer {
   const contextWindow = opts.contextWindow ?? 200_000;
+  let peakWindow = opts.contextWindow ?? 0;
   const s = emptyTranscriptLive();
   let categories: ToolCategory[] = [];
   const changed = new Set<string>();
@@ -139,7 +151,24 @@ export function createLiveReducer(opts: { contextWindow?: number } = {}): LiveRe
             // Clamped as a last-resort floor only. `used > contextWindow` is not a value to round
             // off, it is evidence the window is wrong — which is why the LiveTracker sizes the
             // window from observed usage so this clamp never fires in the daemon.
-            s.contextFill = Math.min(1, used / contextWindow);
+            if (opts.windows) {
+              const fill = contextFill(
+                {
+                  input: num(u.input_tokens),
+                  cacheRead: num(u.cache_read_input_tokens),
+                  cacheWrite: num(u.cache_creation_input_tokens),
+                },
+                msg.model ?? null,
+                opts.windows.table,
+                opts.windows.defaultWindow,
+              );
+              if (fill) {
+                peakWindow = Math.max(peakWindow, fill.windowTokens);
+                s.contextFill = Math.min(1, used / peakWindow);
+              }
+            } else {
+              s.contextFill = Math.min(1, used / contextWindow);
+            }
           }
           const content = msg?.content;
           const blocks: unknown[] = Array.isArray(content) ? content : [];
