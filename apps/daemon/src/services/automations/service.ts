@@ -16,6 +16,7 @@ import { ServiceError } from '../errors.ts';
 import { defaultBranch, diffStat } from '../git/git-info.ts';
 import { assertOwnedCapacity, spawnClaudeSession } from '../launch/spawn.ts';
 import {
+  APPROVAL_PROMPT,
   automationClaudeArgs,
   buildAutomationPrompt,
   checkAutomationGuards,
@@ -44,6 +45,9 @@ export interface AutomationServiceImpl extends AutomationService {
   remove(id: string): void;
   setEnabled(id: string, enabled: boolean): Automation;
   start(id: string, fire: TriggerFire): Promise<AutomationRunDetail | null>;
+  approve(runId: string): Promise<AutomationRunDetail>;
+  reject(runId: string): AutomationRunDetail;
+  rerun(runId: string): Promise<AutomationRunDetail | null>;
   runs(id: string): AutomationRunDetail[];
   run(runId: string): AutomationRunDetail | null;
   waitFor(runId: string): Promise<AutomationRunDetail>;
@@ -465,6 +469,110 @@ export function createAutomationService(deps: AutomationDeps): AutomationService
     return saved;
   }
 
+  function mustGetRun(runId: string): AutomationRunDetail {
+    const run = repo.getRun(ctx.db, runId);
+    if (!run) throw new ServiceError('not_found', 404, `automation run ${runId} not found`);
+    return run;
+  }
+
+  function mustAwait(run: AutomationRunDetail): string {
+    if (run.status !== 'awaiting_approval' || !run.sessionPk) {
+      throw new ServiceError(
+        'invalid_state',
+        409,
+        `run ${run.id} is not awaiting plan approval (status ${run.status})`,
+      );
+    }
+    return run.sessionPk;
+  }
+
+  function resolvePlanItem(runId: string): void {
+    required(ctx.inbox, 'inbox').resolve({
+      kind: 'plan_approval',
+      scope: { domain: 'automation-run', id: runId },
+    });
+  }
+
+  async function approve(runId: string): Promise<AutomationRunDetail> {
+    const run = mustGetRun(runId);
+    const pk = mustAwait(run);
+    const a = mustGet(run.automationId);
+    resolvePlanItem(run.id);
+    auditUser('automation.approve', `automation-run:${run.id}`, { automationId: a.id, sessionPk: pk });
+
+    let rendered: string;
+    try {
+      rendered = required(ctx.templates, 'templates').render(a.action.templateId, run.vars);
+    } catch (e) {
+      return finishEarly(a, run, 'failed', `Template error: ${(e as Error).message}`);
+    }
+    const g = guard(a, rendered);
+    if (!g.ok) return finishEarly(a, run, g.status, g.reason);
+    const planVerdict = ctx.denyList.check(run.summary ?? '', a.action.projectId);
+    if (planVerdict.denied) {
+      return finishEarly(
+        a,
+        run,
+        'denied',
+        `The plan matches the deny-list: ${planVerdict.reason ?? 'matched'}`,
+      );
+    }
+
+    update(run.id, { status: 'running' });
+    active.add(run.id);
+    try {
+      const res = await runner({
+        command: ctx.config().resumeProfile.claudeCommand,
+        cwd: run.worktreePath ?? repoPath(a),
+        prompt: APPROVAL_PROMPT,
+        model: a.action.model,
+        permissionMode: 'acceptEdits',
+        resumeSessionId: splitPk(pk).id,
+        maxBudgetUsd: g.remainingUsd,
+        timeoutMs: a.action.timeoutMin * 60_000,
+        logFile: logPath(run.id),
+      });
+      return await finalize(a, run.id, { ...res, costUsd: (run.costUsd ?? 0) + (res.costUsd ?? 0) });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const failed = update(run.id, {
+        status: 'failed',
+        endedAt: nowIso(),
+        error: msg,
+        summary: `Failed: ${msg}`,
+      });
+      notify(a, failed);
+      audit(a, failed, 'error', msg, { phase: 'implement' });
+      return failed;
+    } finally {
+      active.delete(run.id);
+      drain();
+    }
+  }
+
+  function reject(runId: string): AutomationRunDetail {
+    const run = mustGetRun(runId);
+    mustAwait(run);
+    resolvePlanItem(run.id);
+    auditUser('automation.reject', `automation-run:${run.id}`, { automationId: run.automationId });
+    return update(run.id, {
+      status: 'failed',
+      endedAt: nowIso(),
+      summary: 'Plan rejected by user',
+      error: null,
+    });
+  }
+
+  async function rerun(runId: string): Promise<AutomationRunDetail | null> {
+    const run = mustGetRun(runId);
+    return start(run.automationId, {
+      key: `rerun:${randomUUID()}`,
+      source: 'rerun',
+      vars: run.vars,
+      rerunOf: run.id,
+    });
+  }
+
   const api: AutomationServiceImpl = {
     list: () => repo.listAutomations(ctx.db),
     get: (id) => repo.getAutomation(ctx.db, id),
@@ -486,6 +594,9 @@ export function createAutomationService(deps: AutomationDeps): AutomationService
       return save({ ...a, enabled });
     },
     start,
+    approve,
+    reject,
+    rerun,
     async runNow(id) {
       const r = await start(id, { key: `manual:${randomUUID()}`, source: 'manual', vars: {} });
       if (!r) throw new ServiceError('invalid_state', 409, 'manual run was not created');
