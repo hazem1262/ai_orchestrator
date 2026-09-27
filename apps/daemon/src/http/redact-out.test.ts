@@ -741,6 +741,7 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
       'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
+      'apps/daemon/src/notify/format.ts', // reads item.dedupeKey as the web push tag; never builds one
       'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
       'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
       'apps/daemon/src/services/remote/session-actions.ts', // parses item.dedupeKey for the session pk; never builds one
