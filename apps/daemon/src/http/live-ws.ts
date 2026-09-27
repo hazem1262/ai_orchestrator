@@ -23,6 +23,7 @@ export const LIVE_EVENT_TYPES = [
   'checkpoint.created',
   'automation.runUpdated',
   'compare.updated',
+  'supervisor.decided',
 ] as const;
 type LiveType = (typeof LIVE_EVENT_TYPES)[number];
 export type WireEvent = Extract<BusEvent, { type: LiveType }> | { type: 'hello'; serverTime: string };

@@ -1,13 +1,14 @@
 import type { z } from 'zod';
 import { type AutomationsApi, automationsClient } from './automations.ts';
 import { type CompareApi, compareClient } from './compare.ts';
+import { type SupervisorApi, supervisorClient } from './supervisor.ts';
 
 /** Same shape as the inner `call` of createApiClient (P1): validates the response with `schema`, throws ApiRequestError. */
 export type ApiCall = <T>(schema: z.ZodType<T>, method: string, path: string, body?: unknown) => Promise<T>;
 
 /** Grows in Tasks 11 (CompareApi), 14 (SupervisorApi) and 20 (AgncApi). */
-export type Phase7Api = AutomationsApi & CompareApi;
+export type Phase7Api = AutomationsApi & CompareApi & SupervisorApi;
 
 export function phase7Client(call: ApiCall): Phase7Api {
-  return { ...automationsClient(call), ...compareClient(call) };
+  return { ...automationsClient(call), ...compareClient(call), ...supervisorClient(call) };
 }

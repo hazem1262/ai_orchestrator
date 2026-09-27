@@ -393,3 +393,56 @@ export const compareGroups = sqliteTable(
   },
   (t) => [index('compare_groups_created').on(t.createdAt)],
 );
+
+// ── Phase 7: supervisor ──────────────────────────────────────────────
+export const supervisorRules = sqliteTable(
+  'supervisor_rules',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id'),
+    kind: text('kind').notNull(),
+    pattern: text('pattern').notNull(),
+    intent: text('intent'),
+    answer: text('answer'),
+    source: text('source').notNull().default('user'),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+    note: text('note'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [index('supervisor_rules_kind').on(t.kind, t.enabled)],
+);
+
+export const supervisorDecisions = sqliteTable(
+  'supervisor_decisions',
+  {
+    id: text('id').primaryKey(),
+    sessionPk: text('session_pk').notNull(),
+    projectId: text('project_id'),
+    question: text('question').notNull(),
+    decision: text('decision').notNull(),
+    answer: text('answer'),
+    confidence: real('confidence').notNull().default(0),
+    reason: text('reason').notNull(),
+    intent: text('intent'),
+    sent: integer('sent', { mode: 'boolean' }).notNull().default(false),
+    costUsd: real('cost_usd'),
+    model: text('model'),
+    feedback: text('feedback'),
+    ts: text('ts').notNull(),
+  },
+  (t) => [
+    index('supervisor_decisions_session').on(t.sessionPk, t.ts),
+    index('supervisor_decisions_ts').on(t.ts),
+  ],
+);
+
+export const supervisorTargets = sqliteTable(
+  'supervisor_targets',
+  {
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.targetType, t.targetId] })],
+);

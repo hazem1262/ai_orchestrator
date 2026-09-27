@@ -281,6 +281,25 @@ describe('live WS hub', () => {
           ],
         },
       },
+      'supervisor.decided': {
+        type: 'supervisor.decided',
+        decision: {
+          id: 'd1',
+          sessionPk: 'claude:x',
+          projectId: null,
+          question: SECRET,
+          decision: 'answer',
+          answer: SECRET,
+          confidence: 0.9,
+          reason: SECRET,
+          intent: 'continue',
+          sent: true,
+          costUsd: 0.001,
+          model: 'claude-haiku-4-5',
+          feedback: null,
+          ts: '2026-09-17T00:00:00.000Z',
+        },
+      },
     };
     // Internal events, interleaved: a leak would show up in the type sequence asserted below.
     ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:x', from: null, to: 'busy' });

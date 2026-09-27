@@ -177,6 +177,16 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     compareGet: unexpected('compareGet'),
     comparePickWinner: unexpected('comparePickWinner'),
     compareArchiveLosers: unexpected('compareArchiveLosers'),
+    supervisorStatus: unexpected('supervisorStatus'),
+    supervisorSettings: unexpected('supervisorSettings'),
+    supervisorTargets: unexpected('supervisorTargets'),
+    supervisorSetTarget: unexpected('supervisorSetTarget'),
+    supervisorRules: unexpected('supervisorRules'),
+    supervisorAddRule: unexpected('supervisorAddRule'),
+    supervisorDeleteRule: unexpected('supervisorDeleteRule'),
+    supervisorDecisions: unexpected('supervisorDecisions'),
+    supervisorMarkWrong: unexpected('supervisorMarkWrong'),
+    supervisorEvaluate: unexpected('supervisorEvaluate'),
   };
   return { ...base, ...overrides };
 }

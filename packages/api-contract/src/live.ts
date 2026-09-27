@@ -9,6 +9,7 @@ import type {
 } from '@orc/core';
 import type { AutomationRunDetail } from './routes/automations.ts';
 import type { CompareGroup } from './routes/compare.ts';
+import type { SupervisorDecisionView } from './routes/supervisor.ts';
 
 /** contracts §6 — WS /ws live events (the socket itself ships in Phase 2). */
 export type LiveEvent =
@@ -25,4 +26,5 @@ export type LiveEvent =
   | { type: 'pr.updated'; status: PrStatus }
   | { type: 'checkpoint.created'; checkpoint: CheckpointRecord }
   | { type: 'automation.runUpdated'; run: AutomationRunDetail }
-  | { type: 'compare.updated'; group: CompareGroup };
+  | { type: 'compare.updated'; group: CompareGroup }
+  | { type: 'supervisor.decided'; decision: SupervisorDecisionView };

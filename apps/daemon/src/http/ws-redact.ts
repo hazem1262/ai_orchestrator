@@ -35,6 +35,9 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
     // The prompt, ticket, repo and worktree paths, and variant errors are user or agent text.
     case 'compare.updated':
       return { type: 'compare.updated', group: redactValue(e.group) as typeof e.group };
+    // `question`, `answer` and `reason` are agent output and the text the supervisor typed.
+    case 'supervisor.decided':
+      return { type: 'supervisor.decided', decision: redactValue(e.decision) as typeof e.decision };
     // Ids, counters and a timestamp only.
     case 'session.removed':
     case 'pty.exited':

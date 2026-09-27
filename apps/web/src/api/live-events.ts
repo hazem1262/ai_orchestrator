@@ -28,7 +28,7 @@ export function applyLiveEvent(qc: QueryClient, e: WireEvent): void {
 
 /**
  * Phase 7: an automation run changed, so the list's stats and that automation's run history refetch;
- * a compare group changed, so its view refetches.
+ * a compare group changed, so its view refetches; the supervisor decided, so its log and status refetch.
  */
 function applyP7LiveEvent(qc: QueryClient, e: WireEvent): void {
   switch (e.type) {
@@ -38,6 +38,10 @@ function applyP7LiveEvent(qc: QueryClient, e: WireEvent): void {
       return;
     case 'compare.updated':
       void qc.invalidateQueries({ queryKey: ['compare', e.group.id] });
+      return;
+    case 'supervisor.decided':
+      void qc.invalidateQueries({ queryKey: ['supervisor-decisions'] });
+      void qc.invalidateQueries({ queryKey: ['supervisor-status'] });
       return;
   }
 }
