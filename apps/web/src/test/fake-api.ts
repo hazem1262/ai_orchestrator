@@ -1,4 +1,11 @@
-import type { ApiClient, P2Methods, P3Methods, P5ClientMethods, Phase4Client } from '@orc/api-contract';
+import type {
+  ApiClient,
+  P2Methods,
+  P3Methods,
+  P5ClientMethods,
+  P6Methods,
+  Phase4Client,
+} from '@orc/api-contract';
 import { vi } from 'vitest';
 
 const unexpected = (name: string) =>
@@ -6,7 +13,7 @@ const unexpected = (name: string) =>
     throw new Error(`unexpected api call: ${name}`);
   });
 
-export type FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods;
+export type FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods & P6Methods;
 
 export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   const base: FakeApi = {
@@ -120,6 +127,33 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     hooksInstallStatus: unexpected('hooksInstallStatus'),
     hooksInstall: unexpected('hooksInstall'),
     hooksStatusline: unexpected('hooksStatusline'),
+    connectorsList: unexpected('connectorsList'),
+    connectorsSetToken: unexpected('connectorsSetToken'),
+    connectorsSetApp: unexpected('connectorsSetApp'),
+    connectorsAuthorize: unexpected('connectorsAuthorize'),
+    connectorsDisconnect: unexpected('connectorsDisconnect'),
+    linearIssue: unexpected('linearIssue'),
+    linearComment: unexpected('linearComment'),
+    linearFollowUp: unexpected('linearFollowUp'),
+    slackPost: unexpected('slackPost'),
+    sessionsReply: unexpected('sessionsReply'),
+    inboxApprove: unexpected('inboxApprove'),
+    remoteStatus: unexpected('remoteStatus'),
+    remoteSetConfig: unexpected('remoteSetConfig'),
+    remoteCreatePairing: unexpected('remoteCreatePairing'),
+    remotePair: unexpected('remotePair'),
+    remoteDevices: unexpected('remoteDevices'),
+    remoteRevokeDevice: unexpected('remoteRevokeDevice'),
+    awayGet: unexpected('awayGet'),
+    awaySet: unexpected('awaySet'),
+    webauthnRegisterOptions: unexpected('webauthnRegisterOptions'),
+    webauthnRegisterVerify: unexpected('webauthnRegisterVerify'),
+    webauthnStepUpOptions: unexpected('webauthnStepUpOptions'),
+    webauthnStepUpVerify: unexpected('webauthnStepUpVerify'),
+    pushPublicKey: unexpected('pushPublicKey'),
+    pushSubscribe: unexpected('pushSubscribe'),
+    pushUnsubscribe: unexpected('pushUnsubscribe'),
+    pushTest: unexpected('pushTest'),
   };
   return { ...base, ...overrides };
 }

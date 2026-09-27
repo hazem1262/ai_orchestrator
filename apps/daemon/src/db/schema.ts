@@ -306,3 +306,4 @@ export const prCache = sqliteTable(
 );
 
 export * from './schema-p5.ts';
+export * from './schema-p6.ts';

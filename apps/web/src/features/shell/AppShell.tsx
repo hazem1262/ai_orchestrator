@@ -11,6 +11,8 @@ import { InboxCount } from '@/features/inbox/InboxCount.tsx';
 import { useInboxTitle } from '@/features/inbox/useInboxTitle.ts';
 import { LaunchDialog } from '@/features/launch/LaunchDialog.tsx';
 import { QuotaBars } from '@/features/limits/QuotaBars.tsx';
+import { MobileNav } from '@/features/mobile/MobileNav.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { CommandPalette } from '@/features/palette/CommandPalette.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { usePaletteStore } from '@/stores/palette.ts';
@@ -80,6 +82,30 @@ export function AppShell({ children }: { children: ReactNode }) {
   const openInboxCount = useOpenInboxCount(projectId);
   const showLaunch = useLaunchStore((s) => s.show);
   useInboxTitle(openInboxCount);
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <div className="flex h-dvh flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3">
+          <Link to="/inbox" className="font-semibold">
+            Orchestrator
+          </Link>
+          <InboxCount count={openInboxCount} />
+          <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
+            New session
+          </Button>
+        </header>
+        <main className="min-h-0 flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">
+          {children}
+        </main>
+        <MobileNav />
+        <LaunchDialog />
+        <HotkeysListener />
+        <GlobalHotkeys />
+        <CommandPalette />
+      </div>
+    );
+  }
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-4">

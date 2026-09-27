@@ -6,6 +6,7 @@ import WebSocket from 'ws';
 import { createDaemon, type Daemon } from '../src/main.ts';
 import { createTestContext } from './helpers.ts';
 import { FAKE_CLAUDE, makeTempHomes, type TempHomes, writeClaudeSession } from './homes.ts';
+import { offlinePhase6 } from './p6-connector-fakes.ts';
 
 let homes: TempHomes;
 let daemon: Daemon;
@@ -29,6 +30,7 @@ async function boot(): Promise<number> {
     log: pino({ level: 'silent' }),
     launchExternal: async () => undefined,
     webDist: null,
+    phase6: offlinePhase6(),
   });
   const running = await daemon.start({ port: 0, watch: false });
   server = running;

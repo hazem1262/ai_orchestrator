@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { DaemonContext } from '../context.ts';
 import type { BusEvent } from '../live/event-bus.ts';
 import { tokenMatches } from './auth.ts';
+import type { RemoteInfo } from './p6-util.ts';
 import { parseUpgradeTarget } from './upgrade-target.ts';
 import { toWireEvent } from './ws-redact.ts';
 
@@ -25,7 +26,11 @@ type LiveType = (typeof LIVE_EVENT_TYPES)[number];
 export type WireEvent = Extract<BusEvent, { type: LiveType }> | { type: 'hello'; serverTime: string };
 
 export interface LiveWsHub {
-  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void;
+  /**
+   * `remote` is the identity `checkWsUpgrade` already verified (device token and `remote.origin`);
+   * when it is set, the install-token and loopback-Origin checks are skipped.
+   */
+  handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, remote?: RemoteInfo | null): void;
   clientCount(): number;
   close(): Promise<void>;
 }
@@ -110,7 +115,7 @@ export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): Liv
   const unsubs = LIVE_EVENT_TYPES.map((t) => ctx.bus.on(t, (e) => broadcast(e)));
 
   return {
-    handleUpgrade(req, socket, head) {
+    handleUpgrade(req, socket, head, remote = null) {
       // The raw pre-upgrade socket is an EventEmitter too, and can emit 'error' (a client that
       // resets before the handshake finishes) with nothing else listening.
       socket.on('error', (err) => ctx.log.warn({ err }, 'live upgrade socket error'));
@@ -121,16 +126,18 @@ export function createLiveWsHub(ctx: DaemonContext, opts: LiveWsHubOptions): Liv
         socket.destroy();
         return;
       }
-      const headerToken = req.headers['x-orc-token'];
-      const token = (typeof headerToken === 'string' ? headerToken : null) ?? target.query.get('token');
-      if (!tokenMatches(opts.token, token)) {
-        reject(socket, 401, 'Unauthorized');
-        return;
-      }
-      const origin = req.headers.origin;
-      if (!origin || !opts.origins().includes(origin)) {
-        reject(socket, 403, 'Forbidden');
-        return;
+      if (remote === null) {
+        const headerToken = req.headers['x-orc-token'];
+        const token = (typeof headerToken === 'string' ? headerToken : null) ?? target.query.get('token');
+        if (!tokenMatches(opts.token, token)) {
+          reject(socket, 401, 'Unauthorized');
+          return;
+        }
+        const origin = req.headers.origin;
+        if (!origin || !opts.origins().includes(origin)) {
+          reject(socket, 403, 'Forbidden');
+          return;
+        }
       }
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
     },

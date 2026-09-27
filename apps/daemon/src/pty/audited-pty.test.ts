@@ -89,6 +89,21 @@ describe('withPtyInputAudit', () => {
       result: 'ok',
     });
   });
+
+  it('attributes sendText to the actor in actorScope and falls back to the default actor', async () => {
+    // Dynamic import (P6 Task 3): keeps the rest of this file running while actor-scope.ts is missing.
+    const { actorScope } = await import('../services/audit/actor-scope.ts');
+    const f = fakes();
+    const p = withPtyInputAudit(f.pty, f.audit);
+    await actorScope.run({ actor: 'remote', actorDetail: 'Phone (me@example.com)' }, () =>
+      p.sendText('p1', 'yes'),
+    );
+    await p.sendText('p1', 'local');
+    expect(f.recorded.map((e) => [e.actor, e.actorDetail])).toEqual([
+      ['remote', 'Phone (me@example.com)'],
+      ['user', null],
+    ]);
+  });
 });
 
 describe('stripControl', () => {

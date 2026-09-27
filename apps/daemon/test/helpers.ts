@@ -6,6 +6,7 @@ import { saveConfig } from '../src/config.ts';
 import { buildContext, type DaemonContext } from '../src/context.ts';
 import { createIndexer, type Indexer } from '../src/indexer/indexer.ts';
 import type { ExternalLauncher } from '../src/services/external.ts';
+import { createMemorySecretStore } from '../src/services/secrets/secret-store.ts';
 import { FAKE_CLAUDE, makeTempHomes, type TempHomes } from './homes.ts';
 
 export * from './homes.ts';
@@ -58,6 +59,8 @@ export function createTestContext(
   });
   return {
     ...built.ctx,
+    // In-memory secrets so no test context can reach the real macOS Keychain; `overrides` may replace it.
+    secrets: createMemorySecretStore(),
     ...overrides,
     homes,
     raw: built.raw,

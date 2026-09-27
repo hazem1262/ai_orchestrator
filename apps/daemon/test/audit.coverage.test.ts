@@ -23,10 +23,11 @@ describe('audit coverage (M3 exit: every app action appears in the audit log)', 
     }
   });
 
-  it('uses <area>.<verb> action names', () => {
+  it('uses <area>.<verb> or <area>.<object>.<verb> action names', () => {
     for (const r of AUDITED_ROUTES) {
       const name = typeof r.action === 'string' ? r.action : r.action({});
-      expect(name).toMatch(/^[a-z]+\.[a-z]+$/);
+      // contracts §4 names `linear.issue.create`, so one object segment is allowed.
+      expect(name).toMatch(/^[a-z]+(\.[a-z]+)?\.[a-z]+$/);
     }
   });
 });

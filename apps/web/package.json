@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsr generate && vite build",
     "routes:gen": "tsr generate",
-    "typecheck": "tsr generate && tsc -p tsconfig.json",
+    "typecheck": "tsr generate && tsc -p tsconfig.json && tsc -p tsconfig.sw.json",
     "e2e": "playwright test",
     "e2e:m4": "pnpm --filter @orc/daemon build && pnpm build && playwright test -c playwright.m4.config.ts"
   },
@@ -15,6 +15,7 @@
     "@git-diff-view/react": "^0.1.7",
     "@orc/api-contract": "workspace:*",
     "@orc/core": "workspace:*",
+    "@simplewebauthn/browser": "^14.0.0",
     "@tanstack/react-query": "^5.103.1",
     "@tanstack/react-router": "^1.170.38",
     "@tanstack/react-table": "^9.2.4",
@@ -27,6 +28,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-resizable-panels": "^4.13.0",
+    "workbox-precaching": "^7.4.1",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
@@ -43,6 +45,9 @@
     "@vitejs/plugin-react": "^6.1.1",
     "jsdom": "^30.1.0",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-build": "^7.4.1",
+    "workbox-window": "^7.4.1"
   }
 }

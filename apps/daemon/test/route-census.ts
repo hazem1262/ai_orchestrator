@@ -31,6 +31,11 @@ export interface CensusEntry {
 }
 
 export const CENSUS: Record<string, CensusEntry> = {
+  'ALL /*': {
+    guardedBy: null,
+    reason:
+      'the remote guard middleware: classifies local vs remote and answers remote rejections with constant apiError bodies',
+  },
   'ALL /api/*': { guardedBy: null, reason: 'the auth middleware and the 404 catch-all; apiError only' },
   'GET /api/health': { guardedBy: null, reason: 'version, uptime and counts' },
   'GET /bootstrap.js': {
@@ -418,6 +423,93 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'the cancelled reminder, walked by redactedJson (core redactDeep) on the way out',
   },
+  'GET /api/connectors': {
+    guardedBy: null,
+    reason: 'connector status rows: ids, health, auth kind and the account label; never a token',
+  },
+  'POST /api/connectors/:id/token': {
+    guardedBy: null,
+    reason: 'the connector status row after the token is verified; the token itself is never echoed',
+  },
+  'POST /api/connectors/:id/app': {
+    guardedBy: null,
+    reason: '{ ok: true }; the client secret is never echoed',
+  },
+  'GET /api/connectors/:id/authorize': {
+    guardedBy: null,
+    reason: 'the provider authorize URL (client id, redirect URI, one-time state); no secret',
+  },
+  'GET /api/connectors/:id/callback': {
+    guardedBy: null,
+    reason:
+      'public HTML page for the OAuth redirect; provider and exchange error text goes through core redact and is HTML-escaped',
+  },
+  'DELETE /api/connectors/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary is a constant sentence with the connector id',
+  },
+  'GET /api/linear/issues/:identifier': {
+    guardedBy: null,
+    reason:
+      'the Linear issue (identifier, title, state, assignee, url, labels) from the user workspace; never a token',
+  },
+  'POST /api/linear/issues/:identifier/comment': {
+    guardedBy: null,
+    reason:
+      '{ ok: true }; the 409 confirmation preview is composed through core redact before it is returned',
+  },
+  'POST /api/linear/follow-up': {
+    guardedBy: null,
+    reason: 'the created Linear issue; the 409 preview of title and description goes through core redact',
+  },
+  'POST /api/slack/post': {
+    guardedBy: null,
+    reason: '{ ts }; the 409 confirmation preview is composed through core redact before it is returned',
+  },
+  'POST /api/sessions/:source/:id/reply': {
+    guardedBy: null,
+    reason: '{ ok: true }; the reply text is written to the PTY and never echoed back',
+  },
+  'POST /api/inbox/:id/approve': { guardedBy: 'redactInboxItem', reason: '' },
+  'GET /api/remote/status': {
+    guardedBy: null,
+    reason:
+      'remote settings the user typed (enabled, origin, allowedLogin), device id and timestamps; no transcript data',
+  },
+  'POST /api/remote/config': { guardedBy: null, reason: 'the same remote status as GET /api/remote/status' },
+  'POST /api/remote/pairing': {
+    guardedBy: null,
+    reason: 'the one-time pairing code for the user to type on the phone, its expiry and the pair URL',
+  },
+  'POST /api/remote/pair': {
+    guardedBy: null,
+    reason: 'deliberately returns the new device token to the device that redeemed the pairing code',
+  },
+  'GET /api/remote/devices': {
+    guardedBy: null,
+    reason:
+      'paired devices: user-chosen names, Tailscale login, timestamps and passkey ids; no transcript data',
+  },
+  'DELETE /api/remote/devices/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary names the device the user paired',
+  },
+  'POST /api/webauthn/register/options': {
+    guardedBy: null,
+    reason: 'WebAuthn creation options: RP id, challenge, device id and existing credential ids',
+  },
+  'POST /api/webauthn/register/verify': { guardedBy: null, reason: '{ credentialId }' },
+  'POST /api/webauthn/stepup/options': {
+    guardedBy: null,
+    reason: 'WebAuthn request options: RP id, challenge and allowed credential ids',
+  },
+  'POST /api/webauthn/stepup/verify': { guardedBy: null, reason: '{ validUntil }' },
+  'GET /api/push/vapid-public-key': { guardedBy: null, reason: 'the VAPID public key' },
+  'POST /api/push/subscriptions': { guardedBy: null, reason: '{ ok: true }' },
+  'DELETE /api/push/subscriptions': { guardedBy: null, reason: '{ ok: true }' },
+  'POST /api/push/test': { guardedBy: null, reason: '{ sent: number }' },
+  'GET /api/remote/away': { guardedBy: null, reason: 'the away state: flags, mode, reason and idle seconds' },
+  'POST /api/remote/away': { guardedBy: null, reason: 'the same away state as GET /api/remote/away' },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -439,6 +531,8 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/away.ts',
+  'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',
   'apps/daemon/src/http/routes/goals.ts',
@@ -453,18 +547,23 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/plan.ts',
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
+  'apps/daemon/src/http/routes/push.ts',
   'apps/daemon/src/http/routes/recaps.ts',
+  'apps/daemon/src/http/routes/remote.ts',
   'apps/daemon/src/http/routes/reminders.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
+  'apps/daemon/src/http/routes/session-actions.ts',
   'apps/daemon/src/http/routes/session-detail.ts',
   'apps/daemon/src/http/routes/sessions.ts',
   'apps/daemon/src/http/routes/settings.ts',
+  'apps/daemon/src/http/routes/share.ts',
   'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/streams.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
+  'apps/daemon/src/http/routes/webauthn.ts',
   'apps/daemon/src/http/routes/worktrees.ts',
   'apps/daemon/src/http/static.ts',
 ];
@@ -474,8 +573,7 @@ export const REGISTRAR_FILES = [
  * allowed only because its message and details are compile-time constants.
  */
 export const RAW_API_ERROR_FILES: Record<string, string> = {
-  'apps/daemon/src/http/app.ts':
-    'the host/origin/token middleware, the 404 catch-all and the 500 — all constant strings',
+  'apps/daemon/src/http/app.ts': 'the 404 catch-all and the 500 — both constant strings',
   'apps/daemon/src/http/redact-out.ts': 'redactedApiError itself',
   'packages/api-contract/src/errors.ts': 'the definition',
 };
@@ -504,9 +602,10 @@ export const EXPORT_KINDS: Record<string, 'shape' | 'primitive' | 'data'> = {
 };
 
 /**
- * The only route `createApp` registers outside `registerAllRoutes`. (`ALL /api/*` appears on both
+ * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, bootstrap
+ * and the static bundle. (`ALL /api/*` appears on both
  * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
  * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
  * has been routed around the single registration path, and fails the test below.
  */
-export const CREATE_APP_LOCAL = ['GET /bootstrap.js', 'GET /*'];
+export const CREATE_APP_LOCAL = ['ALL /*', 'GET /bootstrap.js', 'GET /*'];

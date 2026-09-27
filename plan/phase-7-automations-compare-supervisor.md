@@ -12,6 +12,87 @@
 
 **Spec:** `docs/02-features.md` (F20, F21, F23, F11 AGNC row, F12), `docs/03-architecture-and-stack.md` (flows 4, 7, 10, 11; "Later": Tauri, MCP server; Security & privacy), `docs/04-data-sources.md` §C (AGNC), `docs/05-roadmap.md` (M7, spike S4, Risks), `docs/06-landscape-and-inspiration.md` (Jules suggested tasks, Codex attempts, agent-deck conductor), `plan/00-contracts.md` (§3, §5, §6, §7, §11).
 
+## Starting state (what Phase 7 builds on)
+
+**Branch:** cut `phase/7-automations-compare-supervisor` from `main` after the Phase 6 merge
+(`phase/6-linear-slack-remote`). Phases 0 to 6 are done and merged.
+
+**Read first:** [`00-contracts.md`](00-contracts.md) — Phase 6's contract additions are merged into
+§1, §3, §4, §5, §6, §9, §11, §12, §13 and §14 — this file,
+[`phase-6-evidence.md`](phase-6-evidence.md), [`spikes/S9.md`](spikes/S9.md), and the operator
+setup in [`../docs/setup-remote-and-connectors.md`](../docs/setup-remote-and-connectors.md).
+
+**Baseline** (measured 2026-09-27 on `phase/6-linear-slack-remote` at `6d4a101`):
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `pnpm run lint` | clean — 1 info (biome asks for `biome migrate` on its own config) |
+| Typecheck | `pnpm run typecheck` | clean |
+| Unit tests | `pnpm run test` | `Test Files 232 passed (232)`, `Tests 1885 passed (1885)` |
+| Fixtures | `pnpm run check:fixtures` | clean |
+| E2E | `pnpm --filter @orc/web e2e` | not re-run at the Phase 6 exit; `apps/web/e2e/mobile.spec.ts` was added in `82b9f30` |
+
+Test count over time: 289 at the Phase 1 exit → 1116 at Phase 2 → 1339 at Phase 3 → 1509 at Phase 4
+→ 1714 at Phase 5 → 1885 at Phase 6.
+
+**Phase 6 wiring to know about:**
+- `createPhase6(ctx, o)` (`apps/daemon/src/phase6.ts`) builds every Phase 6 service, sets
+  `ctx.secrets`, `ctx.linear`, `ctx.slack`, `ctx.share`, `ctx.sessionActions`, `ctx.away` and
+  `ctx.remoteAccess`, and registers the `webpush` and `slack_dm` notify channels. `createDaemon().start()`
+  calls it after `startPhase2`, then `phase6.start()`; `close()` calls `phase6.stop()`. There is no
+  `register` hook: Phase 6 routes are in `registerAllRoutes` and read their services per request.
+- **The Linear and Slack pollers already run.** `createLinearAssignedPoller({ ctx, linear, now? })`
+  and `createSlackMentionPoller({ ctx, slack, now? })` return `{ tick, start, stop }`, are started
+  by `phase6.start()`, keep their cursors in `connector_tokens_meta.cursor_json`, and emit
+  `linear.issueChanged` and `slack.mention` (redacted text). Task 7 must subscribe to these bus
+  events and skip its own pollers; the shipped signatures differ from the ones sketched in Task 7.
+- `LinearIssue` is defined in `@orc/api-contract` (`routes/connectors.ts`) and re-exported as a type
+  from `apps/daemon/src/connectors/linear/linear.ts`.
+- **Remote requests:** every request goes through `remoteGuard` first. Any new API route gets the
+  defaults in `remotePolicy()` (remote `GET` needs a paired device, remote writes answer
+  `403 remote_forbidden`) unless it is added to `REMOTE_RULES` in `apps/daemon/src/http/remote-guard.ts`.
+  Use `whoOf(c)` for the audit actor and `requireLoopback(c)` for Mac-only writes
+  (`http/p6-util.ts`).
+- `pty.input` audit entries read `actorScope` (`services/audit/actor-scope.ts`); run supervisor or
+  automation input inside `actorScope.run({ actor, actorDetail }, fn)` to attribute it.
+- **Web:** below 768 px, `AppShell` renders `MobileNav` (bottom tab bar) instead of the left nav and
+  hides the terminal dock. A new nav entry must be added to both. Settings has "Connectors" and
+  "Remote" sections. The API client gets its token from `resolveToken()` (`api/token.ts`).
+- **Test isolation:** every test that calls `createDaemon` passes `phase6: offlinePhase6()`
+  (`apps/daemon/test/p6-connector-fakes.ts`), so no test touches the Keychain, Linear, Slack, a push
+  service, `ioreg` or `tailscale`.
+
+**Carried items** — known gaps Phase 7 inherits rather than causes:
+- `apps/daemon/src/services/sessions.test.ts:237` and
+  `apps/web/src/features/settings/settings.test.tsx` fail now and then under parallel load and pass
+  alone. Both passed in the Phase 6 exit run.
+- `apps/web/src/features/worktrees/WorktreesPage.test.tsx` › "archives an external worktree only
+  after both confirmations" is flaky.
+- `apps/web/e2e/live-inbox.spec.ts:37` sees an inbox item leaked from `history.spec.ts` (shared
+  e2e daemon state).
+- Settings panels other than Remote overflow the viewport at phone width.
+- The service-worker build warns that `inlineDynamicImports` is deprecated.
+- Linear connects by personal API key only: Phase 6 Task 21 (Linear OAuth with refresh tokens) was
+  skipped, and `GET /api/connectors/linear/authorize` answers `404`.
+- There is no real-Keychain (`ORC_TEST_KEYCHAIN=1`) test.
+- Carried from Phase 5: the web build warns about chunks over 500 kB; `analytics.top()` is N+1;
+  `e2e:m4` takes about 18 s; recaps are off by default; `safety.secretScanPaths` expands `~` against
+  the real home directory.
+
+**Phase 6 exit criteria not confirmed** — recorded in [`phase-6-evidence.md`](phase-6-evidence.md);
+every item is manual and not yet run:
+- Spike S9 live checks a–h: `tailscale serve` reachability and headers, phone pairing on iPhone
+  and Android, a real passkey, real Web Push, the reply path, the Slack redirect URL, the Slack
+  self-DM notification and reactions, and the `AllowFunnel` key.
+- The `Tailscale-User-Login` header-stripping check (S9 c). If `tailscale serve` passes a
+  client-sent header through, remote access is NO-GO and Tasks 12–19 need rework.
+- The real macOS Keychain, and real Linear and Slack connections (connect, comment, follow-up,
+  daily update, DM bridge).
+- A waiting session answered from the phone (PWA) and from the Slack DM thread.
+
+**Phase 5 items still unconfirmed:** see the Starting state of
+[`phase-6-linear-slack-remote.md`](phase-6-linear-slack-remote.md#starting-state-what-phase-6-builds-on).
+
 ## Global Constraints
 - Node `>=22.12 <23`; pnpm `10.18.3`; TypeScript `~6.0.3` strict with `noUncheckedIndexedAccess` and `verbatimModuleSyntax`; Biome 2 (`noNonNullAssertion` and `noExplicitAny` are errors); Vitest 5.
 - The daemon binds to `127.0.0.1` only. Every `/api/*` request needs `x-orc-token`. The only new unauthenticated path is `GET /oauth/agnc/callback`, which must validate the OAuth `state`.

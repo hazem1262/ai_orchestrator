@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "WebWorker"],
+    "types": [],
+    "moduleResolution": "bundler",
+    "noEmit": true
+  },
+  "include": ["src/sw.ts", "src/pwa/push-payload.ts"]
+}

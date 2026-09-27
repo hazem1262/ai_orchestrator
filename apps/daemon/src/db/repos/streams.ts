@@ -1,5 +1,5 @@
 import type { PrRef, StreamLink, StreamLinkKind, StreamStage, WorkStream } from '@orc/core';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { OrcDb } from '../client.ts';
 import { streamLinks, streams } from '../schema.ts';
 
@@ -39,7 +39,9 @@ export function upsertStream(db: OrcDb, s: WorkStream, nowIso: string): void {
     lastActivityAt: s.lastActivityAt,
     updatedAt: nowIso,
   };
-  const { ticket: _t, ...set } = values;
+  const { ticket: _t, title: _title, ...rest } = values;
+  // A rebuild that derives no title keeps the stored one (set by the stream-title enricher).
+  const set = { ...rest, title: sql`coalesce(excluded.title, ${streams.title})` };
   db.insert(streams).values(values).onConflictDoUpdate({ target: streams.ticket, set }).run();
 }
 

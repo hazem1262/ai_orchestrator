@@ -1,5 +1,4 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import type { HttpBindings } from '@hono/node-server';
 import {
   AgentNodeSchema,
   InboxItemSchema,
@@ -35,6 +34,7 @@ import {
   redactValue,
   SECRET_KEY_PATTERNS,
 } from './redact-out.ts';
+import type { OrcEnv } from './types.ts';
 
 /**
  * The exhaustive guard for the daemon's single redaction boundary.
@@ -500,7 +500,7 @@ describe('the boundary census', () => {
     // the live daemon with the whole suite green, because the census calls `createApp` without
     // it. Asserting the two agree means a route can only reach the daemon through
     // `registerAllRoutes`, which is the function this file calls directly.
-    const viaSinglePath = new Hono<{ Bindings: HttpBindings }>();
+    const viaSinglePath = new Hono<OrcEnv>();
     registerAllRoutes(viaSinglePath, stub);
     expect(routesOf(viaSinglePath)).toEqual(served.filter((r) => !CREATE_APP_LOCAL.includes(r)));
   });
@@ -741,8 +741,10 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
       'apps/daemon/src/inbox/rules/status-rules.ts', // compares rows against a composed key; never writes one
+      'apps/daemon/src/notify/format.ts', // reads item.dedupeKey as the web push tag; never builds one
       'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
       'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
+      'apps/daemon/src/services/remote/session-actions.ts', // parses item.dedupeKey for the session pk; never builds one
       'apps/daemon/src/services/review/plan-approval.ts', // compares rows against a composed key; never writes one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema
       'packages/core/src/types/inbox.ts', // the type

@@ -96,6 +96,44 @@ export type LimitsConfig = z.infer<typeof LimitsConfig>;
 export type DigestConfig = z.infer<typeof DigestConfig>;
 export type HooksConfig = z.infer<typeof HooksConfig>;
 
+export const RemoteConfig = z.object({
+  enabled: z.boolean().default(false),
+  origin: z.string().nullable().default(null), // e.g. "https://mac.tail1234.ts.net" (no trailing slash)
+  allowedLogin: z.string().nullable().default(null), // Tailscale-User-Login that may use the app remotely
+  stepUpTtlSec: z.number().int().positive().default(300),
+  pairingTtlSec: z.number().int().positive().default(300),
+});
+export const AwayConfig = z.object({
+  auto: z.boolean().default(true),
+  idleMinutes: z.number().int().positive().default(10),
+  channels: z.array(z.enum(['webpush', 'slack_dm'])).default(['webpush', 'slack_dm']),
+});
+export const ConnectorsConfig = z.object({
+  linear: z
+    .object({
+      enabled: z.boolean().default(true),
+      defaultTeamKey: z.string().nullable().default(null),
+      pollSeconds: z.number().int().min(30).default(120),
+      redirectUri: z.string().default('http://127.0.0.1:4317/api/connectors/linear/callback'),
+    })
+    .prefault({}),
+  slack: z
+    .object({
+      enabled: z.boolean().default(true),
+      redirectUri: z.string().default('http://127.0.0.1:4317/api/connectors/slack/callback'),
+      dailyChannel: z.string().nullable().default(null),
+      pollSeconds: z.number().int().min(30).default(60),
+      dmBridge: z.boolean().default(true),
+      bridgePollSeconds: z.number().int().min(5).default(15),
+      // Spike S9 (plan/spikes/S9.md): the self-DM is assumed to notify; flip to true if check g2 fails and g4 passes.
+      nudgeViaReminder: z.boolean().default(false),
+    })
+    .prefault({}),
+});
+export type RemoteConfig = z.infer<typeof RemoteConfig>;
+export type AwayConfig = z.infer<typeof AwayConfig>;
+export type ConnectorsConfig = z.infer<typeof ConnectorsConfig>;
+
 export const OrcConfig = z
   .object({
     port: z.number().int().default(4317),
@@ -114,6 +152,9 @@ export const OrcConfig = z
     limits: LimitsConfig.prefault({}),
     digest: DigestConfig.prefault({}),
     hooks: HooksConfig.prefault({}),
+    remote: RemoteConfig.prefault({}),
+    away: AwayConfig.prefault({}),
+    connectors: ConnectorsConfig.prefault({}),
     notifications: z
       .record(
         z.string(),

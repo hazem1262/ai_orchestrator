@@ -5,7 +5,9 @@ import { type WebSocket, WebSocketServer } from 'ws';
 import type { DaemonContext } from '../context.ts';
 import { tokenMatches } from './auth.ts';
 import { LIVE_WS_PATH, type LiveWsHub } from './live-ws.ts';
+import type { RemoteGuardDeps } from './remote-guard.ts';
 import { parseUpgradeTarget } from './upgrade-target.ts';
+import { checkWsUpgrade } from './ws-remote.ts';
 
 export interface PtySocketOptions {
   ctx: DaemonContext;
@@ -16,6 +18,8 @@ export interface PtySocketOptions {
    * dispatched from here; the hub applies the same token, Origin and 1 MiB frame guards itself.
    */
   liveHub?: LiveWsHub;
+  /** Remote-access guard deps; `null` or unset treats every upgrade as local. */
+  remote?: RemoteGuardDeps | null;
 }
 
 function reject(socket: Duplex, status: number, text: string): void {
@@ -30,11 +34,19 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
   wss.on('error', (err) => o.ctx.log.warn({ err }, 'pty websocket server error'));
 
   const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    // Remote upgrades are fully authenticated here (device token, `remote.origin`, route policy:
+    // `/pty/*` is always denied). Local ones get `remote: null` and the install-token checks below.
+    const verdict = checkWsUpgrade(req, o.remote ?? null);
+    if (!verdict.ok) {
+      socket.on('error', (err) => o.ctx.log.warn({ err }, 'remote upgrade socket error'));
+      reject(socket, verdict.status, verdict.status === 401 ? 'Unauthorized' : 'Forbidden');
+      return;
+    }
     // Never `new URL(...)` inline here: a target Node's parser accepts and WHATWG rejects would
     // throw synchronously inside this listener and kill the daemon, before any auth ran.
     const target = parseUpgradeTarget(req.url);
     if (target?.path === LIVE_WS_PATH && o.liveHub) {
-      o.liveHub.handleUpgrade(req, socket, head);
+      o.liveHub.handleUpgrade(req, socket, head, verdict.remote);
       return;
     }
     // The raw pre-upgrade socket is also an EventEmitter that can emit 'error' (e.g. the client
@@ -51,6 +63,11 @@ export function attachPtyWebSocket(server: Server, o: PtySocketOptions): { close
     const ptyId = /^\/pty\/([^/]+)$/.test(target.path) ? target.segments[1] : undefined;
     if (!ptyId) {
       socket.destroy();
+      return;
+    }
+    if (verdict.remote !== null) {
+      // Unreachable: the remote route policy denies every `/pty/*` upgrade above.
+      reject(socket, 403, 'Forbidden');
       return;
     }
     const headerToken = req.headers['x-orc-token'];

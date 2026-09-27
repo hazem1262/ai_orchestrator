@@ -4,13 +4,23 @@ import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
 import type { GithubConnector } from './connectors/github/github.ts';
+import type { LinearConnector } from './connectors/linear/linear.ts';
+import type { SlackConnector } from './connectors/slack/slack.ts';
 import { type OrcDb, openDb } from './db/client.ts';
 import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
 import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
+import type { VapidKeys } from './notify/vapid.ts';
+import type { WebPushChannel } from './notify/webpush.ts';
 import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
+import type { AwayService } from './remote/away.ts';
+import type { DeviceService } from './remote/devices.ts';
+import type { PairingService } from './remote/pairing.ts';
+import type { StepUpStore } from './remote/step-up.ts';
+import type { FunnelWatch } from './remote/tailscale.ts';
+import type { WebAuthnService } from './remote/webauthn.ts';
 import { type AnalyticsService, createAnalyticsService } from './services/analytics/analytics.ts';
 import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
@@ -25,11 +35,14 @@ import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import { createRecapService, defaultRecapEngines, type RecapService } from './services/recap/recap.ts';
 import { createReminderService, type ReminderService } from './services/reminders/reminders.ts';
+import type { SessionActions } from './services/remote/session-actions.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
 import { createScheduler, type Scheduler } from './services/scheduler/scheduler.ts';
+import type { SecretStore } from './services/secrets/secret-store.ts';
 import { createSessionService, type SessionService } from './services/sessions.ts';
+import type { ShareService } from './services/share/share.ts';
 import type { ShipService } from './services/ship/ship.ts';
 import { createStreamService, type StreamService } from './services/streams/streams.ts';
 import type { TemplateRegistry } from './services/templates.ts';
@@ -37,6 +50,17 @@ import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts'
 import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
+
+/** P6 — the remote-access services the remote, WebAuthn and push routes read per request. */
+export interface RemoteAccess {
+  devices: DeviceService;
+  pairing: PairingService;
+  stepUp: StepUpStore;
+  funnel: FunnelWatch;
+  webauthn: WebAuthnService;
+  vapid: VapidKeys;
+  webpush: WebPushChannel;
+}
 
 /** contracts §11 — Phase 1 fields. Later phases add optional services. */
 export interface DaemonContext {
@@ -106,6 +130,20 @@ export interface DaemonContext {
   reminders?: ReminderService;
   /** P5 — handoffs (structured evidence plus an LLM summary), markdown export and resume-fresh; set by `buildContext()`. */
   handoffs?: HandoffService;
+  /** P6 — Linear/Slack tokens and OAuth client secrets in the macOS Keychain. */
+  secrets?: SecretStore;
+  /** P6 — redact → confirm → audit posts to Linear and Slack. */
+  share?: ShareService;
+  /** P6 — reply and approve for owned sessions from the PWA or the Slack DM bridge. */
+  sessionActions?: SessionActions;
+  /** P6 — away mode (manual toggle and macOS idle) that routes notifications to the phone. */
+  away?: AwayService;
+  /** P6 — Linear, acting as the user. */
+  linear?: LinearConnector;
+  /** P6 — Slack, acting as the user through a user token. */
+  slack?: SlackConnector;
+  /** P6 — paired devices, pairing codes, step-up grants, the Funnel watch, passkeys and web push; set by `createPhase6`. */
+  remoteAccess?: RemoteAccess;
 }
 
 export interface BuildContextOptions {

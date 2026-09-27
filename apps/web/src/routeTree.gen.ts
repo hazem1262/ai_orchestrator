@@ -15,6 +15,7 @@ import { Route as AuditRouteImport } from './routes/audit'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
+import { Route as PairRouteImport } from './routes/pair'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WorktreesRouteImport } from './routes/worktrees'
 import { Route as StreamsIndexRouteImport } from './routes/streams/index'
@@ -50,6 +51,11 @@ const InboxRoute = InboxRouteImport.update({
 const LiveRoute = LiveRouteImport.update({
   id: '/live',
   path: '/live',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PairRoute = PairRouteImport.update({
+  id: '/pair',
+  path: '/pair',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
+  '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
   '/streams/$ticket': typeof StreamsTicketRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
+  '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
   '/streams/$ticket': typeof StreamsTicketRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
+  '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
   '/streams/$ticket': typeof StreamsTicketRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/inbox'
     | '/live'
+    | '/pair'
     | '/settings'
     | '/worktrees'
     | '/streams/$ticket'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/inbox'
     | '/live'
+    | '/pair'
     | '/settings'
     | '/worktrees'
     | '/streams/$ticket'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/inbox'
     | '/live'
+    | '/pair'
     | '/settings'
     | '/worktrees'
     | '/streams/$ticket'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   HistoryRoute: typeof HistoryRoute
   InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
+  PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRoute
   WorktreesRoute: typeof WorktreesRoute
   StreamsTicketRoute: typeof StreamsTicketRoute
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/live'
       fullPath: '/live'
       preLoaderRoute: typeof LiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pair': {
+      id: '/pair'
+      path: '/pair'
+      fullPath: '/pair'
+      preLoaderRoute: typeof PairRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -282,6 +302,7 @@ const rootRouteChildren: RootRouteChildren = {
   HistoryRoute: HistoryRoute,
   InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
+  PairRoute: PairRoute,
   SettingsRoute: SettingsRoute,
   WorktreesRoute: WorktreesRoute,
   StreamsTicketRoute: StreamsTicketRoute,

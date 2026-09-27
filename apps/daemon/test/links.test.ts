@@ -1,16 +1,16 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { HttpBindings } from '@hono/node-server';
 import { OrcConfig } from '@orc/api-contract';
 import { Hono } from 'hono';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { registerLinksRoutes } from '../src/http/routes/links.ts';
+import type { OrcEnv } from '../src/http/types.ts';
 import { createPlanFinderFromContext, findRepoRoot } from '../src/services/links/plans.ts';
 import { createP3Harness, type P3Harness } from './p3-harness.ts';
 
 let t: P3Harness;
-let app: Hono<{ Bindings: HttpBindings }>;
+let app: Hono<OrcEnv>;
 let home: string;
 let planRoot: string;
 let repo: string;
@@ -30,7 +30,7 @@ beforeAll(async () => {
     '# Weekends\nTicket: SAF-1787\n',
   );
   const cfg = OrcConfig.parse({ links: { planRoots: [planRoot], linearWorkspace: 'acme' } });
-  app = new Hono<{ Bindings: HttpBindings }>();
+  app = new Hono<OrcEnv>();
   registerLinksRoutes(app, { ...t.ctx, config: () => cfg }, { home });
 });
 afterAll(async () => {

@@ -1,4 +1,5 @@
 import { type AuditActor, redact } from '@orc/core';
+import { actorScope } from '../services/audit/actor-scope.ts';
 import { type AuditService, audited } from '../services/audit/audit.ts';
 import type { PtyManager } from './pty-manager.ts';
 
@@ -93,11 +94,12 @@ export function withPtyInputAudit(
       b.timer.unref?.();
     },
     sendText(id, text) {
+      const who = actorScope.getStore() ?? { actor, actorDetail: null };
       return audited(
         audit,
         {
-          actor,
-          actorDetail: null,
+          actor: who.actor,
+          actorDetail: who.actorDetail,
           action: 'pty.input',
           target: targetOf(id),
           params: { via: 'paste', ptyId: id, bytes: text.length, text: redact(text).slice(0, PREVIEW) },

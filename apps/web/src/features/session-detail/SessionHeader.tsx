@@ -2,6 +2,9 @@ import type { Session } from '@orc/core';
 import type { ReactNode } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
 import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
+import { ReplyComposer } from '@/features/mobile/ReplyComposer.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
+import { SessionShareActions } from '@/features/share/SessionShareActions.tsx';
 import { formatCost, formatDateTime, formatDuration, formatTokens, shortenPath } from '@/lib/format.ts';
 
 const AVAILABILITY_VARIANT: Record<Session['availability'], BadgeVariant> = {
@@ -17,9 +20,10 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
   const duration = Date.parse(session.lastActivityAt) - Date.parse(session.startedAt);
   const u = session.usage;
   const tokens = u.input + u.output + u.cacheRead + u.cacheWrite;
+  const isMobile = useIsMobile();
   return (
     <header className="flex flex-col gap-3 border-b pb-3">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 md:flex-nowrap">
         <div className="min-w-0">
           <h1 className="truncate text-xl font-semibold" title={title}>
             {title}
@@ -39,9 +43,13 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
             ) : null}
           </div>
         </div>
-        {actions}
+        <div className="flex flex-col items-end gap-2">
+          {actions}
+          <SessionShareActions session={session} />
+        </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-1 text-sm">
+      {isMobile ? <ReplyComposer session={session} /> : null}
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm md:grid-cols-[auto_1fr_auto_1fr]">
         <dt className="text-muted-foreground">Started</dt>
         <dd>{formatDateTime(session.startedAt)}</dd>
         <dt className="text-muted-foreground">Last activity</dt>
@@ -51,7 +59,7 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
         <dt className="text-muted-foreground">Models</dt>
         <dd>{session.models.join(', ') || '—'}</dd>
         <dt className="text-muted-foreground">Directory</dt>
-        <dd title={session.startCwd} className="font-mono text-xs">
+        <dd title={session.startCwd} className="break-all font-mono text-xs md:break-normal">
           {shortenPath(session.startCwd)}{' '}
           {drift.length > 0 ? (
             <span title={drift.join('\n')} className="text-warning">
