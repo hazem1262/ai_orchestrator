@@ -9,6 +9,7 @@ import { createLivenessChecker } from './live/liveness.ts';
 import { createRegistryWatcher } from './live/registry-watcher.ts';
 import { createMacosChannel } from './notify/macos.ts';
 import { createNotifier, type NotifyChannelImpl } from './notify/notifier.ts';
+import { createStdoutNotifyChannel } from './notify/stdout-bridge.ts';
 import { createArchiveService } from './services/archive/archive.ts';
 import { createLaunchService } from './services/launch.ts';
 import { sessionPk } from './services/sessions.ts';
@@ -28,17 +29,25 @@ export interface Phase2Options {
   archiveIntervalMs?: number;
 }
 
+function defaultNotifyChannel(ctx: DaemonContext): NotifyChannelImpl {
+  return process.env.ORC_NOTIFY_BRIDGE === 'stdout'
+    ? createStdoutNotifyChannel()
+    : createMacosChannel({ log: ctx.log });
+}
+
 /**
  * Creates and starts every phase 2 service and sets it on `ctx`. The routes themselves are
  * registered by `registerAllRoutes` in `http/app.ts` — the one registration path the route census
  * sees — and read these services off `ctx` per request.
  *
  * `ORC_NOTIFY=off` registers no notification channel; the tests and the e2e run set it.
+ * `ORC_NOTIFY_BRIDGE=stdout` replaces the node-notifier banner with `ORC_NOTIFY ` stdout lines,
+ * which the Tauri shell turns into native notifications.
  */
 export async function startPhase2(ctx: DaemonContext, opts: Phase2Options): Promise<Phase2Handle> {
   const notifier = createNotifier({ config: ctx.config, log: ctx.log });
   const channels =
-    opts.notifyChannels ?? (process.env.ORC_NOTIFY === 'off' ? [] : [createMacosChannel({ log: ctx.log })]);
+    opts.notifyChannels ?? (process.env.ORC_NOTIFY === 'off' ? [] : [defaultNotifyChannel(ctx)]);
   for (const ch of channels) notifier.register(ch);
   ctx.notifier = notifier;
 

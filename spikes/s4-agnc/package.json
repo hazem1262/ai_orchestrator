@@ -1,0 +1,11 @@
+{
+  "name": "spike-s4-agnc",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
+  }
+}

@@ -92,7 +92,8 @@ export const CENSUS: Record<string, CensusEntry> = {
   },
   'POST /api/sessions/launch': {
     guardedBy: null,
-    reason: '{ ptyId, sessionId }: the daemon-minted pty id and the discovered session id',
+    reason:
+      '{ ptyId, sessionId }: the daemon-minted pty id and the discovered session id, or { compareGroupId } for a compare body',
   },
   'POST /api/sessions/:source/:id/kill': { guardedBy: null, reason: '{ killed: "pty" | "pid" }' },
   'POST /api/sessions/:source/:id/open-in': { guardedBy: null, reason: '{ ok: true }' },
@@ -510,6 +511,176 @@ export const CENSUS: Record<string, CensusEntry> = {
   'POST /api/push/test': { guardedBy: null, reason: '{ sent: number }' },
   'GET /api/remote/away': { guardedBy: null, reason: 'the away state: flags, mode, reason and idle seconds' },
   'POST /api/remote/away': { guardedBy: null, reason: 'the same away state as GET /api/remote/away' },
+  'GET /api/automations': {
+    guardedBy: null,
+    reason:
+      'user-authored automation config (name, trigger, template and project ids) with run counts and cost',
+  },
+  'POST /api/automations': {
+    guardedBy: null,
+    reason: 'the saved automation config the user just sent, round-tripped by the editor',
+  },
+  'GET /api/automations/settings': {
+    guardedBy: null,
+    reason: '{ enabled, maxConcurrent, suggestionsEnabled }',
+  },
+  'PATCH /api/automations/settings': {
+    guardedBy: null,
+    reason: 'the same automation settings as GET /api/automations/settings',
+  },
+  'GET /api/automations/suggestions': {
+    guardedBy: null,
+    reason:
+      'suggestions with Linear titles and TODO lines, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/automations/suggestions/refresh': { guardedBy: null, reason: '{ added: number }' },
+  'POST /api/automations/suggestions/:id/accept': {
+    guardedBy: null,
+    reason: '{ ptyId, sessionPk }; the 409 confirmation summary and suggestion go through redactedApiError',
+  },
+  'POST /api/automations/suggestions/:id/dismiss': {
+    guardedBy: null,
+    reason: 'the dismissed suggestion, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/runs/:runId': {
+    guardedBy: null,
+    reason: 'the run with its Claude summary, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/runs/:runId/log': {
+    guardedBy: null,
+    reason:
+      'run log lines: assistant text through core redact in formatStreamLine, then the body through redactedJson',
+  },
+  'POST /api/automations/runs/:runId/approve': {
+    guardedBy: null,
+    reason: 'the run, walked by redactedJson; the 409 confirmation plan goes through redactedApiError',
+  },
+  'POST /api/automations/runs/:runId/reject': {
+    guardedBy: null,
+    reason: 'the rejected run, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/automations/runs/:runId/rerun': {
+    guardedBy: null,
+    reason: 'the new run, walked by redactedJson, or { deduped: true }',
+  },
+  'GET /api/automations/:id': {
+    guardedBy: null,
+    reason: 'one automation config with its run counts and cost, round-tripped by the editor',
+  },
+  'DELETE /api/automations/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary names the automation the user created',
+  },
+  'POST /api/automations/:id/enabled': {
+    guardedBy: null,
+    reason: 'the automation config with the new enabled flag',
+  },
+  'POST /api/automations/:id/run': {
+    guardedBy: null,
+    reason: 'the queued run, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/automations/:id/runs': {
+    guardedBy: null,
+    reason: 'the runs with their Claude summaries, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/compare': {
+    guardedBy: null,
+    reason: 'the new compare group (prompt, labels, worktree paths), walked by redactedJson on the way out',
+  },
+  'GET /api/compare/estimate': {
+    guardedBy: null,
+    reason: 'numbers only: variant count, median cost, estimate, burn rate and budget',
+  },
+  'GET /api/compare/:groupId': {
+    guardedBy: null,
+    reason: 'the group with each variant’s recap, tests and diff stat, walked by redactedJson on the way out',
+  },
+  'POST /api/compare/:groupId/winner': {
+    guardedBy: null,
+    reason: 'the decided group and the review URL, walked by redactedJson on the way out',
+  },
+  'POST /api/compare/:groupId/archive-losers': {
+    guardedBy: null,
+    reason:
+      'the group and per-worktree results, walked by redactedJson; the 409 confirmation summary goes through redactedApiError',
+  },
+  'GET /api/supervisor/status': {
+    guardedBy: null,
+    reason: 'supervisor settings and counts: enabled, quiet hours, caps, answered/escalated and cost',
+  },
+  'PATCH /api/supervisor/settings': {
+    guardedBy: null,
+    reason: 'the same supervisor status as GET /api/supervisor/status',
+  },
+  'GET /api/supervisor/targets': {
+    guardedBy: null,
+    reason: 'project ids and session keys with an enabled flag',
+  },
+  'PUT /api/supervisor/targets': { guardedBy: null, reason: 'the target the user just sent' },
+  'GET /api/supervisor/rules': {
+    guardedBy: null,
+    reason:
+      'rules with patterns built from questions and canned answers, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/rules': {
+    guardedBy: null,
+    reason: 'the saved rule, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'DELETE /api/supervisor/rules/:id': {
+    guardedBy: null,
+    reason:
+      '{ ok: true }; the 409 confirmation summary names the pattern and goes through the onError redaction',
+  },
+  'GET /api/supervisor/decisions': {
+    guardedBy: null,
+    reason:
+      'decisions with the agent question, the answer and the reason, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/decisions/:id/wrong': {
+    guardedBy: null,
+    reason: 'the deny rule built from the question, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/evaluate/:source/:id': {
+    guardedBy: null,
+    reason: 'the decision with the agent question and the answer, walked by redactedJson on the way out',
+  },
+  'GET /api/connectors/agnc/status': {
+    guardedBy: null,
+    reason: 'enabled flag, status enum, the configured AGNC URL and a session count',
+  },
+  'POST /api/connectors/agnc/connect': {
+    guardedBy: null,
+    reason: '{ authorizationUrl } — the AGNC authorize URL the browser opens; no token',
+  },
+  'POST /api/connectors/agnc/disconnect': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary is a constant string',
+  },
+  'GET /api/agnc/sessions/:id/messages': {
+    guardedBy: null,
+    reason: 'remote AGNC message text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/agnc/sessions/:id/events': {
+    guardedBy: null,
+    reason: 'remote AGNC event text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/agnc/sessions/:id/prompt': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation carries the redacted prompt through the onError redaction',
+  },
+  'POST /api/agnc/handoff': {
+    guardedBy: null,
+    reason: 'the created AGNC session (title, repo, branch, URLs), walked by redactedJson on the way out',
+  },
+  'ALL /oauth/*': {
+    guardedBy: null,
+    reason: 'the host/Origin/token middleware for the OAuth redirect targets; apiError only',
+  },
+  'GET /oauth/agnc/callback': {
+    guardedBy: null,
+    reason:
+      'a constant HTML page; the only variable text is the redacted provider error or failure message, never the code, state or a token',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -528,9 +699,12 @@ export const CENSUS: Record<string, CensusEntry> = {
  */
 export const REGISTRAR_FILES = [
   'apps/daemon/src/http/app.ts',
+  'apps/daemon/src/http/routes/agnc.ts',
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/automations.ts',
+  'apps/daemon/src/http/routes/compare.ts',
   'apps/daemon/src/http/routes/away.ts',
   'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',
@@ -560,6 +734,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/share.ts',
   'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/streams.ts',
+  'apps/daemon/src/http/routes/supervisor.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
@@ -602,10 +777,10 @@ export const EXPORT_KINDS: Record<string, 'shape' | 'primitive' | 'data'> = {
 };
 
 /**
- * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, bootstrap
- * and the static bundle. (`ALL /api/*` appears on both
+ * The only routes `createApp` registers outside `registerAllRoutes`: the remote guard, the
+ * `/oauth/*` access middleware, bootstrap and the static bundle. (`ALL /api/*` appears on both
  * sides and dedupes to one key: the auth middleware in `createApp`, the 404 catch-all in
  * `registerAllRoutes`.) Anything else that shows up in `createApp` but not in `registerAllRoutes`
  * has been routed around the single registration path, and fails the test below.
  */
-export const CREATE_APP_LOCAL = ['ALL /*', 'GET /bootstrap.js', 'GET /*'];
+export const CREATE_APP_LOCAL = ['ALL /*', 'ALL /oauth/*', 'GET /bootstrap.js', 'GET /*'];

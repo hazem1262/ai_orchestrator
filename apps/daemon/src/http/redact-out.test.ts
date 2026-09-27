@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import {
   AgentNodeSchema,
   InboxItemSchema,
-  LaunchResponse,
+  LaunchCompareResponse,
+  LaunchSessionResponse,
   ProjectSchema,
   PtyInfoSchema,
   SavedViewSchema,
@@ -339,11 +340,20 @@ const CASES: BoundaryCase[] = [
     // `KillResponse` is `{ killed: 'pty' | 'pid' }` and open-in answers `{ ok: true }`. Their
     // error bodies go through `redactedApiError`.
     name: 'LaunchResponse (served unredacted)',
-    schema: LaunchResponse,
+    schema: LaunchSessionResponse,
     run: (r) => r,
     structural: {
       ptyId: 'app-generated PTY id; the client opens /pty/:ptyId with it',
       sessionId: IDS_AND_CLOCKS.sessionId,
+    },
+  },
+  {
+    // The other member of the `LaunchResponse` union: a `compare` body answers with the group id.
+    name: 'LaunchResponse for a compare body (served unredacted)',
+    schema: LaunchCompareResponse,
+    run: (r) => r,
+    structural: {
+      compareGroupId: 'app-generated compare group id (a UUID); the client routes to /compare/:id with it',
     },
   },
 ];
@@ -737,6 +747,7 @@ describe('dedupeKey is composed, never copied', () => {
     for (const root of roots) walk(root);
     expect(hits.sort()).toEqual([
       'apps/daemon/src/db/repos/inbox.ts', // reads and writes the column
+      'apps/daemon/src/db/repos/suggestions.ts', // automation_suggestions.dedupe_key — its own column, not the inbox key
       'apps/daemon/src/db/schema.ts', // declares the column and its unique index
       'apps/daemon/src/inbox/dedupe-key.ts', // THE composer — the only place a key is built
       'apps/daemon/src/inbox/engine.ts', // writes the composed key onto the row it inserts
@@ -744,6 +755,7 @@ describe('dedupeKey is composed, never copied', () => {
       'apps/daemon/src/notify/format.ts', // reads item.dedupeKey as the web push tag; never builds one
       'apps/daemon/src/notify/macos.ts', // reads item.dedupeKey as the banner group; never builds one
       'apps/daemon/src/notify/notifier.ts', // reads item.dedupeKey as the debounce map key; never builds one
+      'apps/daemon/src/services/automations/suggestions.ts', // builds automation_suggestions.dedupe_key (linear:/todo:) — its own column, not the inbox key
       'apps/daemon/src/services/remote/session-actions.ts', // parses item.dedupeKey for the session pk; never builds one
       'apps/daemon/src/services/review/plan-approval.ts', // compares rows against a composed key; never writes one
       'packages/api-contract/src/routes/inbox.ts', // the wire schema

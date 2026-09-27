@@ -1,4 +1,10 @@
-import { ApiRequestError, type LaunchRequestInput, type TemplateDto } from '@orc/api-contract';
+import {
+  ApiRequestError,
+  type CompareVariantInput,
+  type LaunchRequestInput,
+  type TemplateDto,
+} from '@orc/api-contract';
+import { useNavigate } from '@tanstack/react-router';
 import { type FormEvent, useId, useState } from 'react';
 import { scopeProject } from '@/api/queries/inbox.ts';
 import { useLaunch } from '@/api/queries/launch.ts';
@@ -8,6 +14,7 @@ import { useWorktrees } from '@/api/queries/worktrees.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { CompareLaunchSection } from '@/features/compare/CompareLaunchSection.tsx';
 import { type LaunchDraft, LaunchPhase4Fields } from '@/features/launch/LaunchPhase4Fields.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { useProjectStore } from '@/stores/project.ts';
@@ -68,6 +75,8 @@ function LaunchForm({
   const [prompt, setPrompt] = useState(preset?.prompt ?? '');
   const [planApproval, setPlanApproval] = useState(preset?.planApproval ?? false);
   const [worktree, setWorktree] = useState<LaunchDraft['worktree']>(preset?.worktree);
+  const [compare, setCompare] = useState<CompareVariantInput[]>(preset?.compare ?? []);
+  const navigate = useNavigate();
   const worktrees = useWorktrees({ state: 'active' });
   const templates = useTemplates(projectId || undefined).data ?? [];
   const launch = useLaunch();
@@ -102,10 +111,16 @@ function LaunchForm({
       ...(model ? { model } : {}),
       ...(source === 'claude' && planApproval ? { planApproval: true } : {}),
       ...(worktree ? { worktree } : {}),
+      ...(compare.length >= 2 ? { compare } : {}),
     };
     try {
       const res = await launch.mutateAsync(req);
-      openTerminal(res.ptyId, template?.label ?? (prompt.slice(0, 40) || 'New session'));
+      if ('compareGroupId' in res) {
+        onClose();
+        void navigate({ to: '/compare/$groupId', params: { groupId: res.compareGroupId } });
+        return;
+      }
+      if ('ptyId' in res) openTerminal(res.ptyId, template?.label ?? (prompt.slice(0, 40) || 'New session'));
       onClose();
     } catch {
       // The failure is rendered from `launch.error`, and the dialog stays open.
@@ -113,12 +128,12 @@ function LaunchForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-8">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-8">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-xl overflow-auto rounded-lg border bg-background p-4 shadow-xl"
+        className="max-h-full w-full max-w-xl overflow-auto rounded-lg border bg-background p-4 shadow-xl"
       >
         <h2 id={titleId} className="mb-3 text-lg font-semibold">
           New session
@@ -243,6 +258,13 @@ function LaunchForm({
             repos={(worktrees.data ?? []).filter((w) => w.isMain).map((w) => w.path)}
           />
 
+          <details className="rounded-md border p-2" open={(preset?.compare?.length ?? 0) > 0}>
+            <summary className="cursor-pointer text-sm">
+              Compare across agents{compare.length >= 2 ? ` (${compare.length})` : ''}
+            </summary>
+            <CompareLaunchSection projectId={projectId || null} value={compare} onChange={setCompare} />
+          </details>
+
           {launch.error ? (
             <p role="alert" className="text-sm text-destructive">
               {describeLaunchError(launch.error)}
@@ -250,7 +272,7 @@ function LaunchForm({
           ) : null}
 
           {worktree ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm wrap-anywhere text-muted-foreground">
               {`Launching creates a worktree from ${worktree.base || 'main'} in ${worktree.repo || '(no repository)'} and starts the session there.`}
             </p>
           ) : null}

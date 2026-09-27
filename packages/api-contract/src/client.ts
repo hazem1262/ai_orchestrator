@@ -5,6 +5,7 @@ import { createP3Methods, type P3Methods } from './client-p3.ts';
 import { type P5ClientMethods, p5ClientMethods } from './client-p5.ts';
 import { type P6Methods, p6Methods } from './client-p6.ts';
 import { createPhase4Methods, type Phase4Client } from './client-phase4.ts';
+import { type Phase7Api, phase7Client } from './clients/phase7.ts';
 import { ProjectConfig } from './config.ts';
 import { AgentNodeSchema, ProjectSchema, SessionSchema } from './domain.ts';
 import { ApiError } from './errors.ts';
@@ -41,13 +42,15 @@ export class ApiRequestError extends Error {
   }
 }
 
+export type { ApiCall } from './clients/phase7.ts';
+
 export interface ApiClientOptions {
   baseUrl: string;
   token: string;
   fetch?: typeof fetch;
 }
 
-export interface ApiClient {
+export interface ApiClient extends Phase7Api {
   healthGet(): Promise<HealthResponse>;
   projectsList(): Promise<Project[]>;
   projectsGet(id: string): Promise<ProjectConfig>;
@@ -115,7 +118,7 @@ export function createApiClient(
   const seg = (source: Source, id: string) =>
     `/api/sessions/${encodeURIComponent(source)}/${encodeURIComponent(id)}`;
 
-  const methods: ApiClient = {
+  const methods: Omit<ApiClient, keyof Phase7Api> = {
     healthGet: () => call(HealthResponseSchema, 'GET', '/api/health'),
     projectsList: () => call(z.array(ProjectSchema), 'GET', '/api/projects'),
     projectsGet: (id) => call(ProjectConfig, 'GET', `/api/projects/${encodeURIComponent(id)}`),
@@ -142,6 +145,7 @@ export function createApiClient(
   };
   const caller = makeCaller({ baseUrl: o.baseUrl, token: o.token, fetchImpl: doFetch });
   return {
+    ...phase7Client(call),
     ...methods,
     ...p2Methods(caller),
     ...p6Methods(caller),

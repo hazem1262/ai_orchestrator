@@ -29,6 +29,15 @@ export function toWireEvent(e: LiveEvent): LiveEvent {
       return { type: 'pr.updated', status: redactValue(e.status) as typeof e.status };
     case 'checkpoint.created':
       return { type: 'checkpoint.created', checkpoint: redactValue(e.checkpoint) as typeof e.checkpoint };
+    // `summary`, `error` and `vars` carry agent output and trigger text.
+    case 'automation.runUpdated':
+      return { type: 'automation.runUpdated', run: redactValue(e.run) as typeof e.run };
+    // The prompt, ticket, repo and worktree paths, and variant errors are user or agent text.
+    case 'compare.updated':
+      return { type: 'compare.updated', group: redactValue(e.group) as typeof e.group };
+    // `question`, `answer` and `reason` are agent output and the text the supervisor typed.
+    case 'supervisor.decided':
+      return { type: 'supervisor.decided', decision: redactValue(e.decision) as typeof e.decision };
     // Ids, counters and a timestamp only.
     case 'session.removed':
     case 'pty.exited':

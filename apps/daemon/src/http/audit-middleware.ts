@@ -16,6 +16,8 @@ export interface AuditedRoute {
    * before the service recorded that action (bad body, unknown path, ownership check).
    */
   recordedBy?: 'service';
+  /** Body keys left out of the params this middleware records (user text sent elsewhere). */
+  omitParams?: string[];
 }
 
 const SRC = '(claude|codex|agnc)';
@@ -244,6 +246,171 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: (_m, b) => str(b.channel),
     recordedBy: 'service',
   },
+  // Phase 7 automations. `AutomationService` and the settings handler record each entry with the
+  // real actor and parameters; the middleware records only a request that fails before they do.
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations$/,
+    action: 'settings.update',
+    target: (_m, b) => (str(b.id) ? `automation:${str(b.id)}` : null),
+    recordedBy: 'service',
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/automations\/settings$/,
+    action: 'settings.update',
+    target: () => 'config:automations',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/suggestions\/([^/]+)\/accept$/,
+    action: 'session.launch',
+    target: (m) => `suggestion:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/approve$/,
+    action: 'automation.approve',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/reject$/,
+    action: 'automation.reject',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/runs\/([^/]+)\/rerun$/,
+    action: 'automation.run',
+    target: (m) => `automation-run:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/automations\/([^/]+)$/,
+    action: 'settings.update',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/([^/]+)\/enabled$/,
+    action: 'settings.update',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/automations\/([^/]+)\/run$/,
+    action: 'automation.run',
+    target: (m) => `automation:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  // Phase 7 compare mode. `CompareService` records each entry with the variants, index or
+  // per-worktree results; the middleware records only a request that fails before it does.
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare$/,
+    action: 'compare.launch',
+    target: () => null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare\/([^/]+)\/winner$/,
+    action: 'compare.pick',
+    target: (m) => `compare:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare\/([^/]+)\/archive-losers$/,
+    action: 'compare.archive',
+    target: (m) => `compare:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  // Phase 7 supervisor. The settings handler and `Supervisor` record each entry with the real
+  // actor and parameters; the middleware records only a request that fails before they do.
+  // `evaluate` records `supervisor.answer` or `supervisor.escalate` itself (nothing on a dry run).
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/supervisor\/settings$/,
+    action: 'settings.update',
+    target: () => 'config:supervisor',
+    recordedBy: 'service',
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/supervisor\/targets$/,
+    action: 'settings.update',
+    target: (_m, b) =>
+      str(b.targetType) && str(b.targetId) ? `supervisor:${str(b.targetType)}:${str(b.targetId)}` : null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/supervisor\/rules$/,
+    action: 'supervisor.rule',
+    target: () => null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/supervisor\/rules\/([^/]+)$/,
+    action: 'supervisor.rule',
+    target: (m) => `supervisor-rule:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/supervisor\/decisions\/([^/]+)\/wrong$/,
+    action: 'supervisor.feedback',
+    target: (m) => `supervisor-decision:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/api/supervisor/evaluate/${SRC}/([^/]+)$`),
+    action: 'supervisor.evaluate',
+    target: sessionTarget,
+    recordedBy: 'service',
+  },
+  // Phase 7 AGNC. The handlers record each entry through `audited()` with the real actor; the
+  // middleware records only a request that fails before they do. The prompt text is never logged.
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/agnc\/connect$/,
+    action: 'agnc.connect',
+    target: () => 'agnc',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/agnc\/disconnect$/,
+    action: 'agnc.disconnect',
+    target: () => 'agnc',
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/agnc\/sessions\/([^/]+)\/prompt$/,
+    action: 'agnc.prompt',
+    target: (m) => `agnc:${dec(m[1])}`,
+    recordedBy: 'service',
+    omitParams: ['prompt'],
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/agnc\/handoff$/,
+    action: 'agnc.create',
+    target: (_m, b) => (str(b.source) && str(b.id) ? `${str(b.source)}:${str(b.id)}` : null),
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,
@@ -334,6 +501,12 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
   { method: 'POST', path: '/api/push/subscriptions', why: 'device-local notification preference' },
   { method: 'DELETE', path: '/api/push/subscriptions', why: 'device-local notification preference' },
   { method: 'POST', path: '/api/push/test', why: 'sends a test notification to the user’s own devices only' },
+  {
+    method: 'POST',
+    path: '/api/automations/suggestions/refresh',
+    why: 'read-only collection from Linear and git into the local suggestions table',
+  },
+  { method: 'POST', path: '/api/automations/suggestions/:id/dismiss', why: 'local state only, nothing runs' },
 ];
 
 export function matchAuditedRoute(
@@ -397,10 +570,11 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     if (res.status === 409 && code === 'confirmation_required') return;
 
     const { confirm: _confirm, ...rest } = body;
+    for (const k of hit.route.omitParams ?? []) delete rest[k];
     const result = res.status < 400 ? 'ok' : res.status === 403 ? 'denied' : 'error';
     const outcome: Record<string, unknown> = {};
     if (result === 'ok' && obj) {
-      for (const k of ['ptyId', 'sessionId', 'launched']) if (k in obj) outcome[k] = obj[k];
+      for (const k of ['ptyId', 'sessionId', 'launched', 'compareGroupId']) if (k in obj) outcome[k] = obj[k];
     }
     const message = err ? (str(err.message) ?? '') : '';
     audit.record({

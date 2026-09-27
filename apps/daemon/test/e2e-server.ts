@@ -4,6 +4,7 @@ import { OrcConfig } from '@orc/api-contract';
 import { saveConfig } from '../src/config.ts';
 import { createDaemon } from '../src/main.ts';
 import { projectConfigFor } from '../src/services/projects.ts';
+import { offlinePhase7 } from './fakes/phase7.ts';
 import { e2eRoot, FAKE_CLAUDE, makeTempHomes, writeClaudeSession } from './homes.ts';
 import { offlinePhase6 } from './p6-connector-fakes.ts';
 
@@ -37,6 +38,8 @@ saveConfig(
     resumeProfile: { claudeCommand: FAKE_CLAUDE, codexCommand: FAKE_CLAUDE },
     // No PR poller against the real `gh`: it would pull the developer's own PRs into the inbox.
     github: { enabled: false },
+    // AGNC runs only on the in-memory fake (`offlinePhase7`); off unless a run asks for it.
+    agnc: { enabled: process.env.ORC_E2E_AGNC === '1' },
     // `work` comes first: it is the directory the launch dialog offers by default.
     projects: [{ ...wakecap, pathPrefixes: [work, '/Users/test/Wakecap'] }],
   }),
@@ -54,6 +57,7 @@ const daemon = await createDaemon({
   paths: homes.paths,
   launchExternal: async () => undefined,
   phase6: offlinePhase6(),
+  phase7: offlinePhase7(),
 });
 const running = await daemon.start({ port, watch: false });
 console.log(`e2e daemon ready on http://127.0.0.1:${running.port}`);

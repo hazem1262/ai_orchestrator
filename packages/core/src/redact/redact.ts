@@ -37,8 +37,10 @@ export const REDACTION_PATTERNS: ReadonlyArray<RedactionPattern> = [
     kind: 'secret',
     // Negative lookbehind (rather than `\b`) so `PREFIX_TOKEN=`, `GITHUB_TOKEN=`, etc. are
     // caught too — `\b` cannot match between `_` and a following word character.
+    // An unquoted value ends at whitespace, `&`, `;`, a closing bracket or a quote, so the text
+    // around an assignment (`(token=abc)`, `{"env":"API_KEY=abc"}`) keeps its punctuation.
     source:
-      '(?<![A-Za-z0-9_])([A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key)\\s*[=:]\\s*)("[^"]*"|\'[^\']*\'|[^\\s&;]+)',
+      '(?<![A-Za-z0-9_])([A-Za-z0-9_.-]*(?:password|passwd|pwd|secret|token|api[_-]?key)\\s*[=:]\\s*)("[^"]*"|\'[^\']*\'|[^\\s&;)\\]}\'"]+)',
     flags: 'gi',
     replace: (_m, prefix) => `${prefix}${tag('secret')}`,
   },

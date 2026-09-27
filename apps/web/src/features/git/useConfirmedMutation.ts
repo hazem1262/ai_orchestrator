@@ -68,6 +68,8 @@ export function useConfirmedMutation<V, R>(
     error,
     data,
     run: (vars: V) => exec(vars, false),
+    /** Sends `confirm: true` straight away, for callers that already asked the user themselves. */
+    runConfirmed: (vars: V) => exec(vars, true),
     confirm: async (patch?: Partial<V>) => {
       if (!pending) return;
       const vars = patch ? ({ ...pending.vars, ...patch } as V) : pending.vars;

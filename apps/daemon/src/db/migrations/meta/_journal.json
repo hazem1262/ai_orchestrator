@@ -71,6 +71,27 @@
       "when": 1790520329143,
       "tag": "0009_phase6",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790529198620,
+      "tag": "0010_phase7_automations",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790533609662,
+      "tag": "0011_phase7_compare",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790535115513,
+      "tag": "0012_phase7_supervisor",
+      "breakpoints": true
     }
   ]
 }

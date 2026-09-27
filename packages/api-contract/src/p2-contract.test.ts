@@ -5,7 +5,14 @@ import { OrcConfig } from './config.ts';
 import { ArchiveRestoreBody, ArchiveRestoreResponse, ArchiveStatus } from './routes/archive.ts';
 import { HookIngestBody } from './routes/hooks.ts';
 import { InboxActionBody, InboxItemSchema, InboxListQuery } from './routes/inbox.ts';
-import { ConfirmBody, KillResponse, LaunchRequest, LaunchResponse, OpenInBody } from './routes/launch.ts';
+import {
+  ConfirmBody,
+  KillResponse,
+  LaunchRequest,
+  LaunchResponse,
+  LaunchSessionResponse,
+  OpenInBody,
+} from './routes/launch.ts';
 import { LiveListResponse } from './routes/live.ts';
 import { NotificationPrefs } from './routes/notifications.ts';
 import { TemplateSchema } from './routes/templates.ts';
@@ -65,7 +72,8 @@ describe('LaunchResponse / ConfirmBody / KillResponse / OpenInBody', () => {
   it('round-trips LaunchResponse with a null sessionId', () => {
     const v = { ptyId: 'p1', sessionId: null };
     expect(LaunchResponse.parse(v)).toEqual(v);
-    expect(LaunchResponse.parse(v).sessionId).toBeNull();
+    expect(LaunchSessionResponse.parse(v).sessionId).toBeNull();
+    expect(LaunchResponse.parse({ compareGroupId: 'g1' })).toEqual({ compareGroupId: 'g1' });
   });
 
   it('rejects unknown keys on ConfirmBody', () => {

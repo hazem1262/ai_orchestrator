@@ -377,10 +377,11 @@ describe('connector routes on the real app', () => {
     return { ctx, app, secrets, call };
   }
 
-  it('makes exactly the two OAuth callbacks public', () => {
+  it('makes exactly the three OAuth callbacks public', () => {
     expect([...PUBLIC_API_PATHS].sort()).toEqual([
       '/api/connectors/linear/callback',
       '/api/connectors/slack/callback',
+      '/oauth/agnc/callback',
     ]);
   });
 

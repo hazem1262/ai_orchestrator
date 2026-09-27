@@ -1,11 +1,14 @@
 import type { Session } from '@orc/core';
 import type { ReactNode } from 'react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
+import { HandoffToAgncButton } from '@/features/agnc/HandoffToAgncButton.tsx';
 import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
 import { ReplyComposer } from '@/features/mobile/ReplyComposer.tsx';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { SessionShareActions } from '@/features/share/SessionShareActions.tsx';
+import { SupervisorToggle } from '@/features/supervisor/SupervisorToggle.tsx';
 import { formatCost, formatDateTime, formatDuration, formatTokens, shortenPath } from '@/lib/format.ts';
+import { isRemoteSession } from '@/lib/source.ts';
 
 const AVAILABILITY_VARIANT: Record<Session['availability'], BadgeVariant> = {
   resumable: 'success',
@@ -21,6 +24,7 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
   const u = session.usage;
   const tokens = u.input + u.output + u.cacheRead + u.cacheWrite;
   const isMobile = useIsMobile();
+  const remote = isRemoteSession(session);
   return (
     <header className="flex flex-col gap-3 border-b pb-3">
       <div className="flex flex-wrap items-start justify-between gap-4 md:flex-nowrap">
@@ -38,6 +42,7 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
                 {session.live.ownership === 'owned' ? 'open in app' : session.live.status}
               </Badge>
             ) : null}
+            <SupervisorToggle session={session} />
             {session.availability === 'archived' ? (
               <RestoreButton source={session.source} id={session.id} />
             ) : null}
@@ -45,10 +50,11 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
         </div>
         <div className="flex flex-col items-end gap-2">
           {actions}
-          <SessionShareActions session={session} />
+          {remote ? null : <SessionShareActions session={session} />}
+          <HandoffToAgncButton session={session} />
         </div>
       </div>
-      {isMobile ? <ReplyComposer session={session} /> : null}
+      {isMobile && !remote ? <ReplyComposer session={session} /> : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm md:grid-cols-[auto_1fr_auto_1fr]">
         <dt className="text-muted-foreground">Started</dt>
         <dd>{formatDateTime(session.startedAt)}</dd>

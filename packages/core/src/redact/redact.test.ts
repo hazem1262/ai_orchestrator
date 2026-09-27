@@ -33,6 +33,16 @@ describe('redact', () => {
     expect(redact(input)).toBe(expected);
   });
 
+  it.each([
+    ['waiting for input (token=abc123)', 'waiting for input (token=«redacted:secret»)'],
+    ['[password=hunter2] done', '[password=«redacted:secret»] done'],
+    ['{"env":"API_KEY=abc123def"}', '{"env":"API_KEY=«redacted:secret»"}'],
+    ['{token: abc123def}', '{token: «redacted:secret»}'],
+    ["cmd='GITHUB_TOKEN=abc123def456' run", "cmd='GITHUB_TOKEN=«redacted:secret»' run"],
+  ])('keeps the punctuation after an unquoted secret value: %s', (input, expected) => {
+    expect(redact(input)).toBe(expected);
+  });
+
   it.each(['total_token_usage: 500', '"input_tokens":1200', 'tokenCount: 5'])(
     'does not redact %s (not an actual credential assignment)',
     (input) => {

@@ -2,9 +2,8 @@ import { z } from 'zod';
 
 /**
  * contracts §11 — exact shape, owned by P2. `worktree` and `compare` are modelled here now
- * (schema-valid) even though the P2 route (Task 13) must reject their presence with
- * `501 not_implemented` until P4 (`worktree`) and P7 (`compare`) implement them. `planApproval`
- * is likewise accepted but has no effect until P4 wires it through.
+ * (schema-valid). P4 implements `worktree`; since P7 a `compare` body is delegated to compare
+ * mode (`409 not_enabled` when it is not wired). `planApproval` has no effect until P4 wires it.
  */
 export const LaunchRequest = z.strictObject({
   source: z.enum(['claude', 'codex']),
@@ -31,7 +30,10 @@ export const LaunchRequest = z.strictObject({
 export type LaunchRequest = z.output<typeof LaunchRequest>;
 export type LaunchRequestInput = z.input<typeof LaunchRequest>;
 
-export const LaunchResponse = z.object({ ptyId: z.string(), sessionId: z.string().nullable() });
+export const LaunchSessionResponse = z.object({ ptyId: z.string(), sessionId: z.string().nullable() });
+/** P7: a body with `compare` is delegated to compare mode and answers `201` with the group id. */
+export const LaunchCompareResponse = z.object({ compareGroupId: z.string() });
+export const LaunchResponse = z.union([LaunchSessionResponse, LaunchCompareResponse]);
 export type LaunchResponse = z.output<typeof LaunchResponse>;
 
 /** Shared confirm body for destructive P2 actions (contracts §6 "Confirmation"). */

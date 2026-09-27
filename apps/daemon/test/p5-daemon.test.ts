@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { pino } from 'pino';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDaemon } from '../src/main.ts';
+import { offlinePhase7 } from './fakes/phase7.ts';
 import { createTestContext, makeTempHomes, type TempHomes } from './helpers.ts';
 import { offlinePhase6 } from './p6-connector-fakes.ts';
 
@@ -42,6 +43,7 @@ describe('phase 5 daemon wiring', () => {
       launchExternal: async () => undefined,
       webDist: null,
       phase6: offlinePhase6(),
+      phase7: offlinePhase7(),
     });
     const d = await daemon.start({ port: 0, watch: false });
     try {

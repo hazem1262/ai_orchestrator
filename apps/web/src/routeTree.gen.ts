@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AuditRouteImport } from './routes/audit'
+import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as LiveRouteImport } from './routes/live'
 import { Route as PairRouteImport } from './routes/pair'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as WorktreesRouteImport } from './routes/worktrees'
+import { Route as CompareGroupIdRouteImport } from './routes/compare.$groupId'
 import { Route as StreamsIndexRouteImport } from './routes/streams/index'
 import { Route as StreamsTicketRouteImport } from './routes/streams/$ticket'
 import { Route as ReviewSourceIdRouteImport } from './routes/review.$source.$id'
@@ -36,6 +38,11 @@ const AnalyticsRoute = AnalyticsRouteImport.update({
 const AuditRoute = AuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutomationsRoute = AutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HistoryRoute = HistoryRouteImport.update({
@@ -68,6 +75,11 @@ const WorktreesRoute = WorktreesRouteImport.update({
   path: '/worktrees',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CompareGroupIdRoute = CompareGroupIdRouteImport.update({
+  id: '/compare/$groupId',
+  path: '/compare/$groupId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StreamsIndexRoute = StreamsIndexRouteImport.update({
   id: '/streams/',
   path: '/streams/',
@@ -93,12 +105,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -108,12 +122,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -124,12 +140,14 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analytics': typeof AnalyticsRoute
   '/audit': typeof AuditRoute
+  '/automations': typeof AutomationsRoute
   '/history': typeof HistoryRoute
   '/inbox': typeof InboxRoute
   '/live': typeof LiveRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRoute
   '/worktrees': typeof WorktreesRoute
+  '/compare/$groupId': typeof CompareGroupIdRoute
   '/streams/$ticket': typeof StreamsTicketRoute
   '/streams/': typeof StreamsIndexRoute
   '/review/$source/$id': typeof ReviewSourceIdRoute
@@ -141,12 +159,14 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams/'
     | '/review/$source/$id'
@@ -156,12 +176,14 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams'
     | '/review/$source/$id'
@@ -171,12 +193,14 @@ export interface FileRouteTypes {
     | '/'
     | '/analytics'
     | '/audit'
+    | '/automations'
     | '/history'
     | '/inbox'
     | '/live'
     | '/pair'
     | '/settings'
     | '/worktrees'
+    | '/compare/$groupId'
     | '/streams/$ticket'
     | '/streams/'
     | '/review/$source/$id'
@@ -187,12 +211,14 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyticsRoute: typeof AnalyticsRoute
   AuditRoute: typeof AuditRoute
+  AutomationsRoute: typeof AutomationsRoute
   HistoryRoute: typeof HistoryRoute
   InboxRoute: typeof InboxRoute
   LiveRoute: typeof LiveRoute
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRoute
   WorktreesRoute: typeof WorktreesRoute
+  CompareGroupIdRoute: typeof CompareGroupIdRoute
   StreamsTicketRoute: typeof StreamsTicketRoute
   StreamsIndexRoute: typeof StreamsIndexRoute
   ReviewSourceIdRoute: typeof ReviewSourceIdRoute
@@ -220,6 +246,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/automations': {
+      id: '/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof AutomationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/history': {
@@ -264,6 +297,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorktreesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/compare/$groupId': {
+      id: '/compare/$groupId'
+      path: '/compare/$groupId'
+      fullPath: '/compare/$groupId'
+      preLoaderRoute: typeof CompareGroupIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/streams/': {
       id: '/streams/'
       path: '/streams'
@@ -299,12 +339,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyticsRoute: AnalyticsRoute,
   AuditRoute: AuditRoute,
+  AutomationsRoute: AutomationsRoute,
   HistoryRoute: HistoryRoute,
   InboxRoute: InboxRoute,
   LiveRoute: LiveRoute,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRoute,
   WorktreesRoute: WorktreesRoute,
+  CompareGroupIdRoute: CompareGroupIdRoute,
   StreamsTicketRoute: StreamsTicketRoute,
   StreamsIndexRoute: StreamsIndexRoute,
   ReviewSourceIdRoute: ReviewSourceIdRoute,

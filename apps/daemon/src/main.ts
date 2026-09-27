@@ -16,6 +16,7 @@ import { prEventRule } from './inbox/rules/pr-event.ts';
 import { createIndexer, type Indexer } from './indexer/indexer.ts';
 import { startPhase2 } from './phase2.ts';
 import { createPhase6, type Phase6Options } from './phase6.ts';
+import { createPhase7, type Phase7Options } from './phase7.ts';
 import { warnIfChildSessionEnv } from './pty/pty-manager.ts';
 import { createCheckpointService } from './services/checkpoint/checkpoint.ts';
 import { registerCheckpointHook } from './services/checkpoint/turn-hook.ts';
@@ -28,6 +29,13 @@ import { registerAutoArchive } from './services/worktree/auto-archive.ts';
 import { createWorktreeService } from './services/worktree/worktree.ts';
 
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url));
+
+/** `ORC_WEB_DIR` (set by the Tauri shell to its bundled web resources) wins over the repo's `apps/web/dist`. */
+function defaultWebDist(): string | null {
+  const fromEnv = process.env.ORC_WEB_DIR;
+  if (fromEnv) return fromEnv;
+  return existsSync(DEFAULT_WEB_DIST) ? DEFAULT_WEB_DIST : null;
+}
 
 const DISCOVER_EVERY_MS = 5 * 60_000;
 
@@ -83,6 +91,8 @@ export async function createDaemon(
     webDist?: string | null;
     /** Phase 6 overrides. Production passes none; tests pass all of them (no Keychain, network or `tailscale`). */
     phase6?: Phase6Options;
+    /** Phase 7 overrides. Production passes none; tests pass a fake headless runner (no real `claude -p`). */
+    phase7?: Phase7Options;
   } = {},
 ): Promise<Daemon> {
   const paths = o.paths ?? resolvePaths();
@@ -103,8 +113,7 @@ export async function createDaemon(
     bus: ctx.bus,
     log: ctx.log,
   });
-  const webDist =
-    o.webDist === undefined ? (existsSync(DEFAULT_WEB_DIST) ? DEFAULT_WEB_DIST : null) : o.webDist;
+  const webDist = o.webDist === undefined ? defaultWebDist() : o.webDist;
 
   return {
     ctx,
@@ -115,6 +124,8 @@ export async function createDaemon(
       const origins = () => allowedOrigins(boundPort);
       const phase2 = await startPhase2(ctx, { token, origins });
       const stopPhase4 = wirePhase4(ctx);
+      // Before `scheduler.start()`: an overdue automation cron job needs its handler registered.
+      const phase7 = createPhase7(ctx, o.phase7 ?? {});
       // The digest, recap and reminder services register their scheduler handlers first, so overdue jobs have a handler when they fire.
       ctx.digests?.start();
       ctx.recaps?.start();
@@ -133,6 +144,7 @@ export async function createDaemon(
         });
       });
       phase6.start();
+      phase7.start();
       const sockets = attachPtyWebSocket(server, {
         ctx,
         token,
@@ -153,6 +165,7 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          phase7.stop();
           phase6.stop();
           ctx.goals?.stop();
           ctx.recaps?.stop();
