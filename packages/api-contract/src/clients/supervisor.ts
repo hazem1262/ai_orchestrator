@@ -17,7 +17,7 @@ export interface SupervisorApi {
   supervisorSetTarget(t: SupervisorTarget): Promise<SupervisorTarget>;
   supervisorRules(): Promise<SupervisorRule[]>;
   supervisorAddRule(r: SupervisorRuleInput): Promise<SupervisorRule>;
-  supervisorDeleteRule(id: string): Promise<{ ok: true }>;
+  supervisorDeleteRule(id: string, confirm?: boolean): Promise<{ ok: true }>;
   supervisorDecisions(q?: { sessionPk?: string; limit?: number }): Promise<SupervisorDecisionView[]>;
   supervisorMarkWrong(decisionId: string): Promise<SupervisorRule>;
   supervisorEvaluate(source: string, id: string): Promise<SupervisorDecisionView>;
@@ -34,8 +34,8 @@ export function supervisorClient(call: ApiCall): SupervisorApi {
     supervisorSetTarget: (t) => call(SupervisorTarget, 'PUT', `${base}/targets`, t),
     supervisorRules: () => call(z.array(SupervisorRule), 'GET', `${base}/rules`),
     supervisorAddRule: (r) => call(SupervisorRule, 'POST', `${base}/rules`, r),
-    supervisorDeleteRule: (id) =>
-      call(Ok, 'DELETE', `${base}/rules/${encodeURIComponent(id)}`, { confirm: true }),
+    supervisorDeleteRule: (id, confirm = true) =>
+      call(Ok, 'DELETE', `${base}/rules/${encodeURIComponent(id)}`, { confirm }),
     supervisorDecisions: (q = {}) =>
       call(z.array(SupervisorDecisionView), 'GET', `${base}/decisions${toQueryString(q)}`),
     supervisorMarkWrong: (id) =>

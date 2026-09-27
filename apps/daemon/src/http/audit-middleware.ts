@@ -332,6 +332,52 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: (m) => `compare:${dec(m[1])}`,
     recordedBy: 'service',
   },
+  // Phase 7 supervisor. The settings handler and `Supervisor` record each entry with the real
+  // actor and parameters; the middleware records only a request that fails before they do.
+  // `evaluate` records `supervisor.answer` or `supervisor.escalate` itself (nothing on a dry run).
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/supervisor\/settings$/,
+    action: 'settings.update',
+    target: () => 'config:supervisor',
+    recordedBy: 'service',
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/supervisor\/targets$/,
+    action: 'settings.update',
+    target: (_m, b) =>
+      str(b.targetType) && str(b.targetId) ? `supervisor:${str(b.targetType)}:${str(b.targetId)}` : null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/supervisor\/rules$/,
+    action: 'supervisor.rule',
+    target: () => null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/supervisor\/rules\/([^/]+)$/,
+    action: 'supervisor.rule',
+    target: (m) => `supervisor-rule:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/supervisor\/decisions\/([^/]+)\/wrong$/,
+    action: 'supervisor.feedback',
+    target: (m) => `supervisor-decision:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/api/supervisor/evaluate/${SRC}/([^/]+)$`),
+    action: 'supervisor.evaluate',
+    target: sessionTarget,
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,

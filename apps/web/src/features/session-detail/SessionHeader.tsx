@@ -5,6 +5,7 @@ import { RestoreButton } from '@/features/archive/RestoreButton.tsx';
 import { ReplyComposer } from '@/features/mobile/ReplyComposer.tsx';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { SessionShareActions } from '@/features/share/SessionShareActions.tsx';
+import { SupervisorToggle } from '@/features/supervisor/SupervisorToggle.tsx';
 import { formatCost, formatDateTime, formatDuration, formatTokens, shortenPath } from '@/lib/format.ts';
 
 const AVAILABILITY_VARIANT: Record<Session['availability'], BadgeVariant> = {
@@ -38,6 +39,7 @@ export function SessionHeader({ session, actions }: { session: Session; actions?
                 {session.live.ownership === 'owned' ? 'open in app' : session.live.status}
               </Badge>
             ) : null}
+            <SupervisorToggle session={session} />
             {session.availability === 'archived' ? (
               <RestoreButton source={session.source} id={session.id} />
             ) : null}

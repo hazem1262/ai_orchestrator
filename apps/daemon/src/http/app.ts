@@ -41,6 +41,7 @@ import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerShareRoutes } from './routes/share.ts';
 import { shipRoutes } from './routes/ship.ts';
 import { registerStreamRoutes } from './routes/streams.ts';
+import { registerSupervisorRoutes } from './routes/supervisor.ts';
 import { registerTemplateRoutes } from './routes/templates.ts';
 import { registerUsageRoutes } from './routes/usage.ts';
 import { registerViewRoutes } from './routes/views.ts';
@@ -116,6 +117,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerAwayRoutes(app, ctx);
   registerAutomationRoutes(app, ctx);
   registerCompareRoutes(app, ctx);
+  registerSupervisorRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));

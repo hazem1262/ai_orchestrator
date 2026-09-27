@@ -604,6 +604,46 @@ export const CENSUS: Record<string, CensusEntry> = {
     reason:
       'the group and per-worktree results, walked by redactedJson; the 409 confirmation summary goes through redactedApiError',
   },
+  'GET /api/supervisor/status': {
+    guardedBy: null,
+    reason: 'supervisor settings and counts: enabled, quiet hours, caps, answered/escalated and cost',
+  },
+  'PATCH /api/supervisor/settings': {
+    guardedBy: null,
+    reason: 'the same supervisor status as GET /api/supervisor/status',
+  },
+  'GET /api/supervisor/targets': {
+    guardedBy: null,
+    reason: 'project ids and session keys with an enabled flag',
+  },
+  'PUT /api/supervisor/targets': { guardedBy: null, reason: 'the target the user just sent' },
+  'GET /api/supervisor/rules': {
+    guardedBy: null,
+    reason:
+      'rules with patterns built from questions and canned answers, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/rules': {
+    guardedBy: null,
+    reason: 'the saved rule, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'DELETE /api/supervisor/rules/:id': {
+    guardedBy: null,
+    reason:
+      '{ ok: true }; the 409 confirmation summary names the pattern and goes through the onError redaction',
+  },
+  'GET /api/supervisor/decisions': {
+    guardedBy: null,
+    reason:
+      'decisions with the agent question, the answer and the reason, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/decisions/:id/wrong': {
+    guardedBy: null,
+    reason: 'the deny rule built from the question, walked by redactedJson on the way out',
+  },
+  'POST /api/supervisor/evaluate/:source/:id': {
+    guardedBy: null,
+    reason: 'the decision with the agent question and the answer, walked by redactedJson on the way out',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -656,6 +696,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/share.ts',
   'apps/daemon/src/http/routes/ship.ts',
   'apps/daemon/src/http/routes/streams.ts',
+  'apps/daemon/src/http/routes/supervisor.ts',
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
