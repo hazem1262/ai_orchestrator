@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { AutomationInput, AutomationSettingsPatch, Suggestion } from '@orc/api-contract';
+import {
+  AutomationInput,
+  AutomationRunRequest,
+  AutomationSettingsPatch,
+  Suggestion,
+} from '@orc/api-contract';
+import type { Context } from 'hono';
 import { z } from 'zod';
 import type { DaemonContext } from '../../context.ts';
 import { ServiceError } from '../../services/errors.ts';
@@ -11,6 +17,16 @@ import type { OrcApp } from '../types.ts';
 
 const EnabledBody = z.object({ enabled: z.boolean() });
 const SuggestionQuery = z.object({ state: Suggestion.shape.state.optional() });
+
+async function readOptionalJson(c: Context): Promise<unknown> {
+  const text = await c.req.text();
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ServiceError('validation_failed', 400, 'request body must be JSON');
+  }
+}
 
 /**
  * P7 automations and suggestions. Both services are optional on `ctx` (set by `createPhase7`);
@@ -150,9 +166,11 @@ export function registerAutomationRoutes(app: OrcApp, ctx: DaemonContext): void 
     const a = automationOr404(c.req.param('id'));
     return c.json(svc().setEnabled(a.id, enabled));
   });
+  // The body is optional; unknown var names and non-string values answer 400 `validation_failed`.
   app.post('/api/automations/:id/run', async (c) => {
+    const { vars = {} } = parseWith(AutomationRunRequest, await readOptionalJson(c));
     const a = automationOr404(c.req.param('id'));
-    const r = await svc().start(a.id, { key: `manual:${randomUUID()}`, source: 'manual', vars: {} });
+    const r = await svc().start(a.id, { key: `manual:${randomUUID()}`, source: 'manual', vars });
     if (!r) throw new ServiceError('invalid_state', 409, 'manual run was not created');
     return redactedJson(c, r, 202);
   });

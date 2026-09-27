@@ -1,4 +1,4 @@
-import type { AutomationWithStats } from '@orc/api-contract';
+import type { AutomationRunRequest, AutomationWithStats } from '@orc/api-contract';
 import { useState } from 'react';
 import {
   useAutomationSettings,
@@ -7,6 +7,7 @@ import {
   useRunAutomation,
   useSetAutomationEnabled,
 } from '@/api/queries/automations.ts';
+import { useTemplates } from '@/api/queries/templates.ts';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
@@ -17,6 +18,7 @@ import { useProjectStore } from '@/stores/project.ts';
 import { AutomationEditor } from './AutomationEditor.tsx';
 import { describeTrigger, formatSuccessRate } from './editor-model.ts';
 import { RunHistory } from './RunHistory.tsx';
+import { RunVarsDialog } from './RunVarsDialog.tsx';
 import { SuggestionsPanel } from './SuggestionsPanel.tsx';
 
 type Pane =
@@ -78,10 +80,25 @@ export function AutomationsPage() {
   const saveSettings = useAutomationSettings();
   const setEnabled = useSetAutomationEnabled();
   const runNow = useRunAutomation();
+  const templates = useTemplates();
   const [pane, setPane] = useState<Pane>({ kind: 'none' });
+  const [askVars, setAskVars] = useState<AutomationWithStats | null>(null);
   const masterOn = settings.data?.enabled ?? false;
   const failure = error ?? settings.error ?? saveSettings.error ?? setEnabled.error ?? runNow.error;
   const close = () => setPane({ kind: 'none' });
+  const templateVars = (a: AutomationWithStats) =>
+    templates.data?.find((t) => t.id === a.action.templateId)?.vars ?? [];
+  const start = (a: AutomationWithStats, vars?: AutomationRunRequest['vars']) =>
+    runNow.mutate(
+      { id: a.id, vars },
+      {
+        onSuccess: () => {
+          setAskVars(null);
+          setPane({ kind: 'runs', automation: a });
+        },
+      },
+    );
+  const onRun = (a: AutomationWithStats) => (templateVars(a).length > 0 ? setAskVars(a) : start(a));
 
   const detail =
     pane.kind === 'new' ? (
@@ -109,8 +126,8 @@ export function AutomationsPage() {
         <li key={a.id}>
           <AutomationCard
             automation={a}
-            canRun={masterOn && !runNow.isPending}
-            onRun={() => runNow.mutate(a.id, { onSuccess: () => setPane({ kind: 'runs', automation: a }) })}
+            canRun={masterOn && !runNow.isPending && !templates.isLoading}
+            onRun={() => onRun(a)}
             onToggle={(v) => setEnabled.mutate({ id: a.id, enabled: v })}
             onEdit={() => setPane({ kind: 'edit', automation: a })}
             onHistory={() => setPane({ kind: 'runs', automation: a })}
@@ -168,6 +185,15 @@ export function AutomationsPage() {
           <section className="min-h-0 overflow-auto">{detail}</section>
         </div>
       )}
+      {askVars ? (
+        <RunVarsDialog
+          name={askVars.name}
+          vars={templateVars(askVars)}
+          busy={runNow.isPending}
+          onRun={(vars) => start(askVars, vars)}
+          onClose={() => setAskVars(null)}
+        />
+      ) : null}
     </div>
   );
 }

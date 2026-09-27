@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DiffStatSchema } from './p7-common.ts';
+import { TemplateVarSchema } from './templates.ts';
 
 export const AutomationTrigger = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cron'), cron: z.string().min(9).max(120) }),
@@ -38,6 +39,12 @@ export type Automation = z.infer<typeof Automation>;
 
 export const AutomationInput = Automation.extend({ id: z.string().min(1).optional() });
 export type AutomationInput = z.infer<typeof AutomationInput>;
+
+/** POST /api/automations/:id/run body: values for the template's `{{var}}` placeholders. */
+export const AutomationRunRequest = z.strictObject({
+  vars: z.partialRecord(TemplateVarSchema, z.string()).optional(),
+});
+export type AutomationRunRequest = z.infer<typeof AutomationRunRequest>;
 
 export const AutomationRunStatus = z.enum([
   'queued',

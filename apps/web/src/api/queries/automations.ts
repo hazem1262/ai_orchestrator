@@ -1,4 +1,4 @@
-import type { AutomationInput, AutomationSettingsPatch } from '@orc/api-contract';
+import type { AutomationInput, AutomationRunRequest, AutomationSettingsPatch } from '@orc/api-contract';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApiClient } from '@/api/client.ts';
 
@@ -49,7 +49,8 @@ export function useSetAutomationEnabled() {
 export function useRunAutomation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => getApiClient().automationsRun(id),
+    mutationFn: (v: { id: string; vars?: AutomationRunRequest['vars'] }) =>
+      getApiClient().automationsRun(v.id, v.vars),
     onSuccess: (run) => {
       void qc.invalidateQueries({ queryKey: automationKeys.list });
       void qc.invalidateQueries({ queryKey: automationKeys.runs(run.automationId) });

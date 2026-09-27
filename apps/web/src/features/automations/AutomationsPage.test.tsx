@@ -1,5 +1,5 @@
 import type { AutomationRunDetail, AutomationWithStats, Suggestion } from '@orc/api-contract';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setApiClientForTests } from '@/api/client.ts';
 import { fakeApi, renderP3 as renderWithClient } from '@/test/p3-render.tsx';
@@ -112,7 +112,14 @@ describe('AutomationsPage', () => {
     const runButton = screen.getByRole('button', { name: 'Run now' }) as HTMLButtonElement;
     await waitFor(() => expect(runButton.disabled).toBe(false));
     fireEvent.click(runButton);
-    await waitFor(() => expect(stubs.automationsRun).toHaveBeenCalledWith('a1'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('prUrl'), {
+      target: { value: 'https://github.com/o/r/pull/7' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Run' }));
+    await waitFor(() =>
+      expect(stubs.automationsRun).toHaveBeenCalledWith('a1', { prUrl: 'https://github.com/o/r/pull/7' }),
+    );
     fireEvent.click(screen.getByRole('checkbox', { name: 'Enable Fix CI' }));
     await waitFor(() => expect(stubs.automationsSetEnabled).toHaveBeenCalledWith('a1', false));
   });

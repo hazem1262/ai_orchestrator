@@ -3,6 +3,7 @@ import {
   Automation,
   type AutomationInput,
   AutomationRunDetail,
+  type AutomationRunRequest,
   AutomationSettings,
   type AutomationSettingsPatch,
   AutomationWithStats,
@@ -17,7 +18,7 @@ export interface AutomationsApi {
   /** `confirm` defaults to true; send false first to get the daemon's `409 confirmation_required` summary. */
   automationsDelete(id: string, confirm?: boolean): Promise<{ ok: true }>;
   automationsSetEnabled(id: string, enabled: boolean): Promise<Automation>;
-  automationsRun(id: string): Promise<AutomationRunDetail>;
+  automationsRun(id: string, vars?: AutomationRunRequest['vars']): Promise<AutomationRunDetail>;
   automationsRuns(id: string): Promise<AutomationRunDetail[]>;
   automationsRunGet(runId: string): Promise<AutomationRunDetail>;
   automationsRunLog(runId: string): Promise<{ lines: string[] }>;
@@ -48,7 +49,7 @@ export function automationsClient(call: ApiCall): AutomationsApi {
     automationsSave: (body) => call(Automation, 'POST', '/api/automations', body),
     automationsDelete: (id, confirm = true) => call(Ok, 'DELETE', a(id), { confirm }),
     automationsSetEnabled: (id, enabled) => call(Automation, 'POST', `${a(id)}/enabled`, { enabled }),
-    automationsRun: (id) => call(AutomationRunDetail, 'POST', `${a(id)}/run`, {}),
+    automationsRun: (id, vars) => call(AutomationRunDetail, 'POST', `${a(id)}/run`, vars ? { vars } : {}),
     automationsRuns: (id) => call(z.array(AutomationRunDetail), 'GET', `${a(id)}/runs`),
     automationsRunGet: (runId) => call(AutomationRunDetail, 'GET', r(runId)),
     automationsRunLog: (runId) => call(RunLog, 'GET', `${r(runId)}/log`),
