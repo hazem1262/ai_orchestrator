@@ -517,6 +517,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/templates.ts',
   'apps/daemon/src/http/routes/usage.ts',
   'apps/daemon/src/http/routes/views.ts',
+  'apps/daemon/src/http/routes/webauthn.ts',
   'apps/daemon/src/http/routes/worktrees.ts',
   'apps/daemon/src/http/static.ts',
 ];
