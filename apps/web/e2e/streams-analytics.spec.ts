@@ -9,7 +9,8 @@ test('work streams and analytics render against the fixture daemon', async ({ pa
   await page.goto('/analytics');
   await expect(page.getByRole('heading', { name: 'Analytics' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Quota' })).toBeVisible();
-  await expect(page.getByText('estimated')).toBeVisible();
+  // scoped: once earlier specs have launched sessions, the Spend panel carries its own "estimated" badge
+  await expect(page.getByRole('region', { name: 'Quota' }).getByText('estimated')).toBeVisible();
   await expect(page.getByRole('img', { name: 'Cost over time' })).toBeVisible();
 });
 
