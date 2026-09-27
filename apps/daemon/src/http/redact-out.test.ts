@@ -2,7 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import {
   AgentNodeSchema,
   InboxItemSchema,
-  LaunchResponse,
+  LaunchCompareResponse,
+  LaunchSessionResponse,
   ProjectSchema,
   PtyInfoSchema,
   SavedViewSchema,
@@ -339,11 +340,20 @@ const CASES: BoundaryCase[] = [
     // `KillResponse` is `{ killed: 'pty' | 'pid' }` and open-in answers `{ ok: true }`. Their
     // error bodies go through `redactedApiError`.
     name: 'LaunchResponse (served unredacted)',
-    schema: LaunchResponse,
+    schema: LaunchSessionResponse,
     run: (r) => r,
     structural: {
       ptyId: 'app-generated PTY id; the client opens /pty/:ptyId with it',
       sessionId: IDS_AND_CLOCKS.sessionId,
+    },
+  },
+  {
+    // The other member of the `LaunchResponse` union: a `compare` body answers with the group id.
+    name: 'LaunchResponse for a compare body (served unredacted)',
+    schema: LaunchCompareResponse,
+    run: (r) => r,
+    structural: {
+      compareGroupId: 'app-generated compare group id (a UUID); the client routes to /compare/:id with it',
     },
   },
 ];

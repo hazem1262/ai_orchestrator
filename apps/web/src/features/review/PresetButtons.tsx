@@ -16,6 +16,7 @@ export async function launchPreset(
     vars: i.vars,
     planApproval: false,
   });
+  if (!('ptyId' in r)) throw new Error('the preset launch did not start a session');
   useTerminalStore.getState().open(r.ptyId, presetId.replace('preset-', ''));
   return { ptyId: r.ptyId };
 }

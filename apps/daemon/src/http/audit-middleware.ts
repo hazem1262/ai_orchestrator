@@ -309,6 +309,29 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: (m) => `automation:${dec(m[1])}`,
     recordedBy: 'service',
   },
+  // Phase 7 compare mode. `CompareService` records each entry with the variants, index or
+  // per-worktree results; the middleware records only a request that fails before it does.
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare$/,
+    action: 'compare.launch',
+    target: () => null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare\/([^/]+)\/winner$/,
+    action: 'compare.pick',
+    target: (m) => `compare:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/compare\/([^/]+)\/archive-losers$/,
+    action: 'compare.archive',
+    target: (m) => `compare:${dec(m[1])}`,
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,
@@ -471,7 +494,7 @@ export function auditMiddleware(ctx: DaemonContext): MiddlewareHandler {
     const result = res.status < 400 ? 'ok' : res.status === 403 ? 'denied' : 'error';
     const outcome: Record<string, unknown> = {};
     if (result === 'ok' && obj) {
-      for (const k of ['ptyId', 'sessionId', 'launched']) if (k in obj) outcome[k] = obj[k];
+      for (const k of ['ptyId', 'sessionId', 'launched', 'compareGroupId']) if (k in obj) outcome[k] = obj[k];
     }
     const message = err ? (str(err.message) ?? '') : '';
     audit.record({

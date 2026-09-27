@@ -4,6 +4,7 @@ import type { HeadlessRunner } from './services/automations/headless.ts';
 import { attachAutomationSchedules } from './services/automations/schedules.ts';
 import { type AutomationServiceImpl, createAutomationService } from './services/automations/service.ts';
 import { createSuggestionService, type SuggestionService } from './services/automations/suggestions.ts';
+import { type CompareService, createCompareService } from './services/compare/compare.ts';
 
 export interface Phase7Options {
   /** The headless `claude -p` runner. Production passes none; tests pass a fake so no real `claude` runs. */
@@ -15,6 +16,7 @@ export interface Phase7Options {
 export interface Phase7 {
   automations: AutomationServiceImpl;
   suggestions: SuggestionService;
+  compare: CompareService;
   /** Starts suggestion collection when `automations.suggestions.enabled` and follows config changes. Idempotent. */
   start(): void;
   /** Detaches schedules, triggers and suggestions and drops queued runs. Idempotent. */
@@ -22,8 +24,9 @@ export interface Phase7 {
 }
 
 /**
- * Builds the Phase 7A services and sets `ctx.automations` and `ctx.suggestions`; the routes in
- * `registerAllRoutes` read them per request.
+ * Builds the Phase 7 services and sets `ctx.automations`, `ctx.suggestions` and `ctx.compare`;
+ * the routes in `registerAllRoutes` read them per request. Compare mode has no switch of its own:
+ * it only runs when the user launches a comparison.
  *
  * Cron schedules and event triggers are attached only once `automations.enabled` is on — here,
  * when it is on at boot (before `ctx.scheduler.start()`, so overdue cron jobs have a handler), or
@@ -36,6 +39,8 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
   ctx.automations = automations;
   const suggestions = createSuggestionService({ ctx, addedLines: o.addedLines });
   ctx.suggestions = suggestions;
+  const compare = createCompareService({ ctx });
+  ctx.compare = compare;
 
   const masterOn = () => ctx.config().automations.enabled;
   const gated: Pick<AutomationServiceImpl, 'list' | 'get' | 'start' | 'onChange'> = {
@@ -71,6 +76,7 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
   return {
     automations,
     suggestions,
+    compare,
     start() {
       if (started || stopped) return;
       started = true;

@@ -4,6 +4,7 @@ import type { Source } from '@orc/core';
 import type { Env, Hono } from 'hono';
 import type { DaemonContext } from '../../context.ts';
 import type { ExecFn } from '../../live/liveness.ts';
+import { ServiceError } from '../../services/errors.ts';
 import { LaunchError } from '../../services/launch.ts';
 import { openIn } from '../../services/open-in.ts';
 import { sessionPk } from '../../services/sessions.ts';
@@ -29,10 +30,23 @@ export function registerLaunchRoutes<E extends Env>(
         400,
       );
     }
+    const req = parsed.data;
+    if (req.compare && req.compare.length > 0) {
+      if (!ctx.compare) return c.json(redactedApiError('not_enabled', 'compare mode is not enabled'), 409);
+      try {
+        const group = await ctx.compare.launch(req);
+        return c.json({ compareGroupId: group.id }, 201);
+      } catch (err) {
+        if (err instanceof ServiceError) {
+          return c.json(redactedApiError(err.code, err.message, err.details), err.status);
+        }
+        throw err;
+      }
+    }
     if (!ctx.launcher)
       return c.json(redactedApiError('launcher_unavailable', 'launcher not initialised'), 503);
     try {
-      return c.json(await ctx.launcher.launch(parsed.data));
+      return c.json(await ctx.launcher.launch(req));
     } catch (err) {
       if (err instanceof LaunchError) {
         return c.json(redactedApiError(err.code, err.message, err.details), err.status);

@@ -105,7 +105,7 @@ function LaunchForm({
     };
     try {
       const res = await launch.mutateAsync(req);
-      openTerminal(res.ptyId, template?.label ?? (prompt.slice(0, 40) || 'New session'));
+      if ('ptyId' in res) openTerminal(res.ptyId, template?.label ?? (prompt.slice(0, 40) || 'New session'));
       onClose();
     } catch {
       // The failure is rendered from `launch.error`, and the dialog stays open.

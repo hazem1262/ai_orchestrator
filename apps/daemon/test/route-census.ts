@@ -92,7 +92,8 @@ export const CENSUS: Record<string, CensusEntry> = {
   },
   'POST /api/sessions/launch': {
     guardedBy: null,
-    reason: '{ ptyId, sessionId }: the daemon-minted pty id and the discovered session id',
+    reason:
+      '{ ptyId, sessionId }: the daemon-minted pty id and the discovered session id, or { compareGroupId } for a compare body',
   },
   'POST /api/sessions/:source/:id/kill': { guardedBy: null, reason: '{ killed: "pty" | "pid" }' },
   'POST /api/sessions/:source/:id/open-in': { guardedBy: null, reason: '{ ok: true }' },
@@ -582,6 +583,27 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'the runs with their Claude summaries, walked by redactedJson (core redactDeep) on the way out',
   },
+  'POST /api/compare': {
+    guardedBy: null,
+    reason: 'the new compare group (prompt, labels, worktree paths), walked by redactedJson on the way out',
+  },
+  'GET /api/compare/estimate': {
+    guardedBy: null,
+    reason: 'numbers only: variant count, median cost, estimate, burn rate and budget',
+  },
+  'GET /api/compare/:groupId': {
+    guardedBy: null,
+    reason: 'the group with each variant’s recap, tests and diff stat, walked by redactedJson on the way out',
+  },
+  'POST /api/compare/:groupId/winner': {
+    guardedBy: null,
+    reason: 'the decided group and the review URL, walked by redactedJson on the way out',
+  },
+  'POST /api/compare/:groupId/archive-losers': {
+    guardedBy: null,
+    reason:
+      'the group and per-worktree results, walked by redactedJson; the 409 confirmation summary goes through redactedApiError',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -604,6 +626,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/automations.ts',
+  'apps/daemon/src/http/routes/compare.ts',
   'apps/daemon/src/http/routes/away.ts',
   'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',

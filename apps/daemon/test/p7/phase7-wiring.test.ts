@@ -73,12 +73,13 @@ const cron = {
 };
 
 describe('createPhase7', () => {
-  it('sets both services on ctx and attaches cron schedules only once automations are on', async () => {
+  it('sets the Phase 7 services on ctx and attaches cron schedules only once automations are on', async () => {
     const t = setup();
     const p7 = createPhase7(t.ctx, offlinePhase7());
     p7.start();
     expect(t.ctx.automations).toBe(p7.automations);
     expect(t.ctx.suggestions).toBe(p7.suggestions);
+    expect(t.ctx.compare).toBe(p7.compare);
 
     p7.automations.save(cron);
     expect(t.scheduler.list('automation')).toEqual([]);

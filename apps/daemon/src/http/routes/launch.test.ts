@@ -124,24 +124,21 @@ describe('POST /api/sessions/launch', () => {
       cwd,
       compare: [{ source: 'codex' }],
     });
-    expect(nyi.status).toBe(501);
-    expect((await errorOf(nyi)).code).toBe('not_implemented');
+    expect(nyi.status).toBe(409);
+    expect((await errorOf(nyi)).code).toBe('not_enabled');
   });
 
-  it.each([[{ compare: [{ source: 'codex' }] }, 'compare']])(
-    'answers 501 not_implemented with details.field for %j',
-    async (over, field) => {
-      const res = await post('/api/sessions/launch', {
-        source: 'claude',
-        projectId: 'wakecap',
-        cwd,
-        ...over,
-      });
-      expect(res.status).toBe(501);
-      expect(await errorOf(res)).toMatchObject({ code: 'not_implemented', details: { field } });
-      expect(pty.spawned).toHaveLength(0);
-    },
-  );
+  it('answers 409 not_enabled for a compare body when compare mode is not wired', async () => {
+    const res = await post('/api/sessions/launch', {
+      source: 'claude',
+      projectId: 'wakecap',
+      cwd,
+      compare: [{ source: 'codex' }],
+    });
+    expect(res.status).toBe(409);
+    expect(await errorOf(res)).toMatchObject({ code: 'not_enabled' });
+    expect(pty.spawned).toHaveLength(0);
+  });
 
   it('answers 429 concurrency_limit with projectId, max and running', async () => {
     cap = 1;

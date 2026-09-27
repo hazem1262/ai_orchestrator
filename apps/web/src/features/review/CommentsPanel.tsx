@@ -45,7 +45,7 @@ export function CommentsPanel(p: {
       vars: {},
       planApproval: false,
     });
-    openTerminal(r.ptyId, 'review follow-up');
+    if ('ptyId' in r) openTerminal(r.ptyId, 'review follow-up');
     p.draft.clearComments();
   };
 

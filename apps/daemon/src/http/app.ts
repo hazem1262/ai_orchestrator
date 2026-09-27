@@ -12,6 +12,7 @@ import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
 import { registerAutomationRoutes } from './routes/automations.ts';
 import { registerAwayRoutes } from './routes/away.ts';
+import { registerCompareRoutes } from './routes/compare.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerExportRoutes } from './routes/export.ts';
 import { githubRoutes } from './routes/github.ts';
@@ -114,6 +115,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerPushRoutes(app, ctx);
   registerAwayRoutes(app, ctx);
   registerAutomationRoutes(app, ctx);
+  registerCompareRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));
