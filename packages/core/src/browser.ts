@@ -21,5 +21,6 @@ export * from './derive/secret-scan.ts';
 export * from './derive/step-stats.ts';
 export * from './derive/streams.ts';
 export * from './git/index.ts';
+export * from './recap/digest.ts';
 export * from './redact/redact.ts';
 export * from './types/index.ts';
