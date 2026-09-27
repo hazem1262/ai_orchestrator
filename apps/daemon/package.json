@@ -22,6 +22,7 @@
     "@napi-rs/keyring": "^2.1.0",
     "@orc/api-contract": "workspace:*",
     "@orc/core": "workspace:*",
+    "@slack/web-api": "^8.1.1",
     "better-sqlite3": "^13.0.3",
     "chokidar": "^5.0.0",
     "croner": "^10.0.1",
