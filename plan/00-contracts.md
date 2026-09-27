@@ -35,13 +35,14 @@
 | execa | `^10.0.1` |
 | croner | `^10.0.1` (used from P5: `services/scheduler/scheduler.ts`) |
 | @anthropic-ai/sdk | `^0.128.0` (P5: the `anthropic-api` recap engine) |
-| web-push | `^3.6.7` |
-| @simplewebauthn/server | `^14.0.2` |
+| web-push | `^3.6.7` (P6: installed 3.6.7) |
+| @types/web-push | `^3.6.4` (dev dependency, P6) |
+| @simplewebauthn/server | `^14.0.2` (P6: installed 14.0.3) |
 | @modelcontextprotocol/sdk | `^1.30.0` |
-| @linear/sdk | `^95.1.0` |
+| @linear/sdk | `^95.1.0` (P6: installed 95.2.0; 96.0.0 exists and was not adopted) |
 | @slack/web-api | `^8.1.1` |
 | node-notifier | `^10.0.1` |
-| @napi-rs/keyring | `^2.1.0` |
+| @napi-rs/keyring | `^2.1.0` (P6: `services/secrets/secret-store.ts`, service `orchestrator`) |
 
 **Web runtime dependencies**
 
@@ -63,7 +64,11 @@
 | cmdk | `^1.1.1` |
 | react-resizable-panels | `^4.12.4` |
 | @git-diff-view/react | `^0.1.7` |
-| vite-plugin-pwa | `^1.3.0` |
+| vite-plugin-pwa | `^1.3.0` (P6: installed 1.3.0; dev dependency, `injectManifest` with `src/sw.ts`) |
+| @simplewebauthn/browser | `^14.0.0` (P6: installed 14.0.0) |
+| workbox-precaching | `^7.4.1` (P6, used by `src/sw.ts`) |
+| workbox-build | `^7.4.1` (dev dependency, P6: peer of vite-plugin-pwa) |
+| workbox-window | `^7.4.1` (dev dependency, P6: peer of vite-plugin-pwa) |
 | @playwright/test | `^1.63.0` (e2e) |
 | @testing-library/jest-dom | `^7.0.1` (dev dependency, P5: loaded by `src/test/setup.ts`) |
 
@@ -158,7 +163,7 @@ $ORC_HOME/
   archive/<projectId>/<sessionId>.jsonl.zst
   archive/<projectId>/<sessionId>/subagents/agent-<id>.jsonl.zst
   logs/daemon.log
-  vapid.json         # phase 6
+  vapid.json         # phase 6: { publicKey, privateKey, createdAt } (created on first boot, mode 0600)
 ```
 
 ```ts
@@ -217,6 +222,9 @@ export const OrcConfig = z.object({
   limits: LimitsConfig.prefault({}),                                                                   // P5
   digest: DigestConfig.prefault({}),                                                                   // P5
   hooks: HooksConfig.prefault({}),                                                                     // P5
+  remote: RemoteConfig.prefault({}),                                                                   // P6
+  away: AwayConfig.prefault({}),                                                                       // P6
+  connectors: ConnectorsConfig.prefault({}),                                                           // P6
 }).strict();
 export type OrcConfig = z.infer<typeof OrcConfig>;
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
@@ -267,11 +275,43 @@ export const DigestConfig = z.object({
 });
 export const HooksConfig = z.object({ statusOverrideMs: z.number().int().positive().default(120000) });
 export type RecapsConfig = z.infer<typeof RecapsConfig>;   // and LimitsConfig, DigestConfig, HooksConfig
+
+// P6 sections (as built, packages/api-contract/src/config.ts)
+export const RemoteConfig = z.object({
+  enabled: z.boolean().default(false),
+  origin: z.string().nullable().default(null),            // e.g. "https://mac.tail1234.ts.net" (no trailing slash); also the passkey rpID host
+  allowedLogin: z.string().nullable().default(null),      // Tailscale-User-Login that may use the app remotely (trimmed; blank = remote off)
+  stepUpTtlSec: z.number().int().positive().default(300),
+  pairingTtlSec: z.number().int().positive().default(300),
+});
+export const AwayConfig = z.object({
+  auto: z.boolean().default(true),                        // follow macOS idle time (ioreg HIDIdleTime)
+  idleMinutes: z.number().int().positive().default(10),
+  channels: z.array(z.enum(['webpush', 'slack_dm'])).default(['webpush', 'slack_dm']),
+});
+export const ConnectorsConfig = z.object({
+  linear: z.object({
+    enabled: z.boolean().default(true),
+    defaultTeamKey: z.string().nullable().default(null),
+    pollSeconds: z.number().int().min(30).default(120),
+    redirectUri: z.string().default('http://127.0.0.1:4317/api/connectors/linear/callback'),   // unused: no Linear OAuth (P6 Task 21 skipped)
+  }).prefault({}),
+  slack: z.object({
+    enabled: z.boolean().default(true),
+    redirectUri: z.string().default('http://127.0.0.1:4317/api/connectors/slack/callback'),
+    dailyChannel: z.string().nullable().default(null),
+    pollSeconds: z.number().int().min(30).default(60),
+    dmBridge: z.boolean().default(true),
+    bridgePollSeconds: z.number().int().min(5).default(15),
+    nudgeViaReminder: z.boolean().default(false),         // spike S9 g2/g4 decide this; unconfirmed
+  }).prefault({}),
+});
+export type RemoteConfig = z.infer<typeof RemoteConfig>;   // and AwayConfig, ConnectorsConfig
 ```
 
 
 > **zod 4 note (found in Phase 0, Task 4):** `.default({})` on a nested object does **not** recurse into that object's own field defaults — it short-circuits after the parse. Use **`.prefault({})`** for every nested object that must fill its inner defaults. All nested plain-object fields above use `.prefault({})` for this reason; leaf fields keep `.default(...)`, and `z.record`/`z.array` fields keep `.default([])`/`.default({})` (they have no inner field defaults to fill).
-`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `recaps`, `limits`, `digest` and `hooks` (P5) also use `.prefault({})`; recaps stay `enabled: false` in every test daemon. The fixture e2e server roots its homes at `ORC_E2E_ROOT` (one `mkdtemp` per Playwright run, set by `apps/web/playwright.config.ts` together with `ORC_E2E_WORK`), or its own `mkdtemp` root when started by hand. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
+`safety` and `links` (P3) and `github` and `worktrees` (P4) use `.prefault({})`, not the `.default({})` of their plan text, for the zod 4 reason above. The daemon test homes (`apps/daemon/test/helpers.ts`) and the e2e server (`apps/daemon/test/e2e-server.ts`) write `github: { enabled: false }`, so no test daemon polls `gh`. `recaps`, `limits`, `digest` and `hooks` (P5) and `remote`, `away` and `connectors` (P6) also use `.prefault({})`; recaps stay `enabled: false` in every test daemon. The fixture e2e server roots its homes at `ORC_E2E_ROOT` (one `mkdtemp` per Playwright run, set by `apps/web/playwright.config.ts` together with `ORC_E2E_WORK`), or its own `mkdtemp` root when started by hand. `safety.secretScanPaths` is expanded against the real home directory, not `ORC_USER_HOME`, so a daemon on fixture homes still scans the real `~/Wakecap` files.
 
 When no projects are configured, the defaults come from Phase 1 auto-detection. The `wakecap` project gets `pathPrefixes: ["/Users/hazem/Wakecap"]`, the ticket regex above, `prodPatterns` from F9, and `features.workStreams = features.prodBadges = true`.
 
@@ -543,7 +583,7 @@ export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<
 - `recap/digest.ts`: `buildRecapDigest`, `renderPromptTemplate`, `DEFAULT_RECAP_PROMPT`, `DEFAULT_DAILY_PROMPT`, `DEFAULT_HANDOFF_PROMPT`, `approxTokens`, `truncateText`, `firstLine`; `recap/handoff.ts`: `collectHandoffEvidence`, `parseHandoffJson`, `handoffToMarkdown`, `buildResumePrompt`.
 - `derive/live-transcript.ts`: `createLiveReducer` takes `opts.windows: { table, defaultWindow }` and scales context fill with `contextFill`, keeping the widest window a session has needed.
 
-**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`. P5: `POST /api/handoffs/:id/resume-fresh` records `session.launch` (target `handoff:<id>`), and `POST /api/hooks/install` records `hook.install` (target `claude-settings`).
+**Audit action names** use a `<area>.<verb>` form: `session.launch`, `session.resume`, `session.fork`, `session.kill`, `session.export` (P3), `session.open` (P3, `POST …/open-in`), `pty.input`, `archive.restore`, `archive.sync` (P3), `worktree.create`, `worktree.sync`, `worktree.archive`, `checkpoint.create`, `checkpoint.rewind`, `git.commit`, `git.push`, `pr.create`, `pr.merge`, `automation.run`, `supervisor.answer`, `linear.comment`, `slack.post`, `remote.approve`, `hook.install`, and from P4 `worktree.script`, `worktree.open`, `worktree.prune`, `git.revert`, `review.send`, `plan.approve`, `plan.reject`, `ship.backmerge` (`worktree.prune` is reserved: nothing records it yet). The PR-merge auto-archive records `worktree.archive` with actor `automation`. P5: `POST /api/handoffs/:id/resume-fresh` records `session.launch` (target `handoff:<id>`), and `POST /api/hooks/install` records `hook.install` (target `claude-settings`). P6 adds `connector.connect`, `connector.configure`, `connector.disconnect`, `linear.issue.create`, `inbox.approve`, `remote.configure`, `remote.pairing_code`, `remote.pair`, `remote.revoke`, `webauthn.register` and `away.set`, and is the first phase to record `linear.comment`, `slack.post` and `remote.approve`; remote replies record `pty.input` with actor `remote` and `actorDetail` `"<device> (<login>)"` or `slack_dm`. Connector and share entries never carry a token, a client secret or the full post body (a redacted preview of at most 300 chars).
 
 ## 5. SQLite & migrations
 
@@ -575,7 +615,11 @@ export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<
 | `checkpoints` | 4 | `id`; unique `ref` |
 | `pr_cache` | 4 | `key` = `${repo}#${number}` |
 | `streams`, `stream_links`, `recaps`, `goals`, `handoffs`, `reminders`, `budgets`, `usage_blocks`, `scheduled_jobs`, `usage_entries`, `tool_uses`, `ledger_cursors`, `digests` | 5 | migration `0008_phase5.sql`; Drizzle tables in `apps/daemon/src/db/schema-p5.ts`, repos in `db/repos/{budgets,digests,goals,handoffs,recaps,reminders,scheduled-jobs,streams,usage-ledger}.ts` |
-| `connector_tokens_meta`, `push_subscriptions`, `webauthn_credentials`, `slack_threads` | 6 | — |
+| `connector_tokens_meta` | 6 | `connector` (`linear` \| `slack`) — migration `0009_phase6.sql`; Drizzle tables in `apps/daemon/src/db/schema-p6.ts` |
+| `remote_devices` | 6 | `id`; unique `token_hash` (sha256 of the device token) |
+| `webauthn_credentials` | 6 | `id` (credential id, base64url); `device_id` → `remote_devices.id` (cascade) |
+| `push_subscriptions` | 6 | `id`; unique `endpoint`; `device_id` nullable → `remote_devices.id` (cascade) |
+| `slack_threads` | 6 | `inbox_item_id` |
 | `automations`, `automation_runs`, `compare_groups`, `supervisor_rules`, `supervisor_decisions` | 7 | — |
 
 - **P2 columns** (as built, `apps/daemon/src/db/schema.ts`):
@@ -596,6 +640,18 @@ export interface WstackSkillRow { skill: string; runs: number; outcomes: Record<
 
   A hunk or file revert stores its safety commit at `refs/orchestrator/reverts/<worktree-hash>/<epochMs>` (not a checkpoint row); archiving the worktree deletes that worktree's revert refs.
 
+- **P6 columns** (as built, `apps/daemon/src/db/schema-p6.ts`). No secret is ever stored in SQLite; tokens live in the Keychain (`SecretStore`), device tokens only as hashes:
+
+| Table | Columns |
+|---|---|
+| `connector_tokens_meta` | `connector` pk, `auth_kind`, `account_id`, `account_label`, `scopes_json`, `cursor_json` (poller cursors), `last_status`, `connected_at`, `last_checked_at` |
+| `remote_devices` | `id` pk, `name`, `token_hash` unique, `login`, `created_at`, `last_seen_at`, `revoked_at` |
+| `webauthn_credentials` | `id` pk, `device_id`, `public_key`, `counter`, `transports_json`, `created_at`, `last_used_at`. Index on `device_id`. |
+| `push_subscriptions` | `id` pk, `device_id`, `endpoint` unique, `p256dh`, `auth`, `created_at`, `last_ok_at`, `failures` |
+| `slack_threads` | `inbox_item_id` pk, `session_pk`, `channel`, `root_ts`, `last_seen_ts`, `app_ts_json`, `reactions_done_json`, `state`, `created_at`, `updated_at`. Index on `state`. |
+
+  P6 repos: `db/repos/{connectors,remote,slack-threads}.ts`.
+
 - **Repositories:** each table group has a repo module in `apps/daemon/src/db/repos/<name>.ts` that exports plain functions taking `db: OrcDb` as the first argument, e.g. `upsertSession(db, s)`. **Routes never run SQL directly.** P2 adds `db/repos/inbox.ts`, `db/repos/test-results.ts` and `db/repos/archive.ts`.
 
 ```ts
@@ -611,6 +667,7 @@ export function openDb(file: string): { db: OrcDb; raw: Database.Database; close
   - Every `/api/*` and WS request needs the header `x-orc-token: <token>`. WS can use the `?token=` query instead, because browsers can't set WS headers.
   - The web app gets the token from `GET /bootstrap.js`, which only works from a loopback address and sets `window.__ORC_TOKEN__`.
   - WS upgrades must pass an **Origin check**: `http://127.0.0.1:<port>`, `http://localhost:<port>` or the configured Tailscale origin.
+  - From P6 on, remote requests (through `tailscale serve`) follow the **Remote auth** rules below: a per-device token instead of the install token, and `/bootstrap.js` answers `window.__ORC_TOKEN__ = null;` to them.
 - **Errors:** always `{ error: { code: string; message: string; details?: unknown } }` with a correct HTTP status. Codes are `snake_case`, e.g. `session_live`, `not_found`, `validation_failed`, `forbidden`, `confirmation_required`.
 - **Confirmation:** destructive endpoints need `{"confirm": true}` in the body. Without it they return `409 confirmation_required` with a `details.summary` to show the user.
 - **Validation:** every request and response schema lives in `@orc/api-contract/src/routes/<area>.ts` as zod. The client is `createApiClient({ baseUrl, token })` in `@orc/api-contract/src/client.ts` and exposes typed methods named `<area><Verb>`, e.g. `sessionsList`, `sessionsGet`, `sessionsResume`.
@@ -738,7 +795,29 @@ P5  POST   /api/reminders/:id/cancel                    → Reminder            
 P5  GET    /api/hooks/install                           → HookInstallStatus   (never writes)
 P5  POST   /api/hooks/install                           body { confirm } → { installed, settingsPath, backupPath } (confirm; audited as hook.install)
 P5  GET    /api/hooks/statusline                        → { command, snippet }
-P6  /api/connectors…  /api/push…  /api/webauthn…
+P6  GET    /api/connectors                              → ConnectorStatus[]
+P6  POST   /api/connectors/:id/token                    body { token } → ConnectorStatus                     (loopback only; audited as connector.connect)
+P6  POST   /api/connectors/:id/app                      body { clientId, clientSecret } → { ok }             (loopback only; audited as connector.configure)
+P6  GET    /api/connectors/:id/authorize                → { url }                                            (loopback only; Slack only — Linear answers 404, no Linear OAuth)
+P6  GET    /api/connectors/:id/callback?code&state      → text/html                                          (public, GET only: no token; one-time state)
+P6  DELETE /api/connectors/:id                          body { confirm } → { ok }                            (loopback only; audited as connector.disconnect)
+P6  GET    /api/linear/issues/:identifier               → LinearIssue
+P6  POST   /api/linear/issues/:identifier/comment       body LinearCommentBody → { ok } | 409 preview         (audited as linear.comment)
+P6  POST   /api/linear/follow-up                        body LinearFollowUpBody → LinearIssue | 409 preview   (audited as linear.issue.create)
+P6  POST   /api/slack/post                              body SlackPostBody → { ts } | 409 preview             (audited as slack.post)
+P6  POST   /api/sessions/:source/:id/reply              body { text } → { ok }                               (owned only; remote: step-up; audited as pty.input)
+P6  POST   /api/inbox/:id/approve                       body { confirm } → InboxItem                          (remote: step-up; audited as remote.approve | inbox.approve)
+P6  GET    /api/remote/status                           → RemoteStatus
+P6  POST   /api/remote/config                           body { enabled, origin, allowedLogin } → RemoteStatus (loopback only; uses ctx.updateConfig; audited as remote.configure)
+P6  POST   /api/remote/pairing                          → { code, expiresAt, url }                           (loopback only; audited as remote.pairing_code)
+P6  POST   /api/remote/pair                             body { code, name } → { deviceId, deviceToken }      (remote only; no token; audited as remote.pair)
+P6  GET    /api/remote/devices                          → RemoteDevice[]                                     (loopback only)
+P6  DELETE /api/remote/devices/:id                      body { confirm } → { ok }                            (loopback only; audited as remote.revoke)
+P6  GET    /api/remote/away                             → AwayState
+P6  POST   /api/remote/away                             body { mode: 'auto'|'on'|'off' } → AwayState          (audited as away.set)
+P6  POST   /api/webauthn/register/options | /api/webauthn/register/verify               (remote device only; verify audited as webauthn.register)
+P6  POST   /api/webauthn/stepup/options   | /api/webauthn/stepup/verify → { validUntil } (remote device only)
+P6  GET    /api/push/vapid-public-key → { publicKey } ; POST /api/push/subscriptions → { ok } ; DELETE /api/push/subscriptions body { endpoint } → { ok } ; POST /api/push/test → { sent }
 P7  /api/automations…  /api/compare…  /api/supervisor…
 ```
 
@@ -761,6 +840,23 @@ P5's zod schemas live in `packages/api-contract/src/routes/{usage,settings,strea
 **P4 LiveEvent additions** (`packages/api-contract/src/live.ts`, forwarded to `/ws`, appended to `LIVE_EVENT_TYPES`): `{ type: 'worktree.updated'; worktree: WorktreeView }`, `{ type: 'worktree.removed'; path: string }`, `{ type: 'pr.updated'; status: PrStatus }`, `{ type: 'checkpoint.created'; checkpoint: CheckpointRecord }`.
 
 **P4 BusEvent additions** (daemon-internal, `apps/daemon/src/live/event-bus.ts`): `{ type: 'pr.changed'; before: PrStatus | null; after: PrStatus }`, `{ type: 'plan.pending'; pk: string; plan: string; toolUseId: string }`, `{ type: 'pr.reviewRequested'; pr: PrRef; title: string; active: boolean }` (`active: false` when the request goes away).
+
+**P6 routes** are registered once, in `registerAllRoutes` (`http/app.ts`), by `register{Connector,Share,SessionAction,Remote,WebAuthn,Push,Away}Routes(app, ctx, deps?)`. The optional `deps` are for tests; in the daemon each handler reads its service per request (`ctx.linear`, `ctx.slack`, `ctx.secrets`, `ctx.share`, `ctx.sessionActions`, `ctx.away`, `ctx.remoteAccess`) through `need()` from `http/p6-util.ts` and answers `503 unavailable` while it is unset. There is no `Phase6.register` hook. P6 zod schemas live in `packages/api-contract/src/routes/connectors.ts` (`ConnectorId`, `ConnectorStatus`, `TokenBody`, `OAuthAppBody`, `LinearIssue`, `ShareSource`, `LinearCommentBody`, `LinearFollowUpBody`, `SlackPostBody`) and `routes/remote.ts` (`PairBody`, `PairResult`, `PairingCode`, `RemoteDevice`, `RemoteConfigBody`, `RemoteStatus`, `AwayMode`, `AwayState`, `AwayBody`, `ReplyBody`, `ApproveBody`, `PushSubscriptionBody`, `PushUnsubscribeBody`, `StepUpResult`, `WebAuthnVerifyBody`).
+
+**P6 error codes:** `loopback_only`, `remote_only`, `remote_disabled`, `remote_identity_mismatch`, `remote_bad_host`, `remote_forbidden`, `funnel_detected`, `step_up_required` (401), `step_up_failed`, `not_owned`, `denied`, `not_approvable`, `invalid_code`, `invalid_token`, `invalid_token_format`, `oauth_not_configured`, `invalid_state`, `unauthenticated`, `upstream_error` (502), `registration_window_closed`, `unknown_credential`, `bad_push_endpoint`, `unavailable` (503). The remote guard's own refusals are `403` except `unauthorized` and `step_up_required` (`401`).
+
+**P6 remote auth** (`http/remote-guard.ts`, `http/auth.ts`, `http/ws-remote.ts`, `remote/classify.ts`):
+- A request is **remote** (`isRemoteRequest`) when any of these holds: the socket address is not loopback; `Tailscale-User-Login` or `Tailscale-User-Name` is present; any `X-Forwarded-For`/`-Host`/`-Proto` or `Forwarded` header is present; the Host hostname is not `127.0.0.1`, `localhost` or `::1`.
+- `remoteGuard(deps)` runs first on every path (`app.use('*', …)`) and sets `c.var.remote: RemoteInfo | null`. `RemoteInfo = { deviceId: string | null; deviceName: string | null; login: string }`; handlers read it through `remoteOf(c)` and turn it into an audit actor with `whoOf(c)` (`{ actor: 'remote', actorDetail: "<device> (<login>)" }`). `remoteGuard(null)` marks every request local (P1 tests only).
+- `OrcEnv = { Bindings: HttpBindings; Variables: { remote: RemoteInfo | null } }`, `OrcApp = Hono<OrcEnv>` (`http/types.ts`).
+- Remote checks, in order (`evaluateRemote`): `remote.enabled`, an `https:` `remote.origin` and a non-blank trimmed `remote.allowedLogin`, else `403 remote_disabled`; Funnel detected → `403 funnel_detected`; `Tailscale-User-Login` must equal `allowedLogin` (case-insensitive, constant-time) → `403 remote_identity_mismatch`; `X-Forwarded-Host` or `Host` hostname must equal the origin's → `403 remote_bad_host`; an `Origin` header must equal `remote.origin` → `403 forbidden`; then the route policy.
+- Route policy `REMOTE_RULES` (first match wins) plus defaults in `remotePolicy(method, path)`: `public` — the two OAuth callbacks (GET), `POST /api/remote/pair`, `GET /api/health`; `deny` — `GET /api/remote/(devices|pairing)`, `GET /api/connectors…`, session `export`/`raw`, `safety/secrets`, `hooks/install`, `archive`; `device` — WebAuthn options/verify, push subscriptions/test, `POST /api/remote/away`, inbox `snooze|done|reopen`; `stepup` — `POST /api/inbox/:id/approve`, `POST /api/sessions/(claude|codex)/:id/(reply|kill)`, `POST …/plan/(approve|reject)`, `DELETE /api/pty/:id`, `POST /api/ship/merge`. Defaults: other `GET /api/*` → `device`, other API writes → `deny` (`403 remote_forbidden`), `GET /ws` → `device`, `/pty/*` → `deny`, other static `GET`/`HEAD` → `public`.
+- Device tokens: 32 random bytes base64url, sent as `x-orc-token` (or `?token=` on WS), stored only as a sha256 `token_hash`. The install token is never accepted from a remote request. A missing or revoked device token → `401 unauthorized`; a `stepup` route without a live grant → `401 step_up_required`. A step-up lasts `remote.stepUpTtlSec` (in memory, per device).
+- `apiAccessMiddleware` (the P1 host, Origin and install-token checks) skips requests `remoteGuard` classified as remote. `PUBLIC_API_PATHS` (the two OAuth callbacks) skip the token check for `GET` only, and never the host check.
+- WS: `checkWsUpgrade` runs `evaluateRemote` on remote upgrades, so `/ws` needs a device token and its Origin must be `remote.origin`; `/pty/*` is refused remotely. Local upgrades keep the P1/P2 token and Origin checks unchanged.
+- Funnel: `createFunnelWatch` reads `tailscale serve status --json` and treats any `AllowFunnel` entry as Funnel on. The key is an assumption until spike S9 check (h) confirms it.
+
+**P6 BusEvent additions** (daemon-internal; not forwarded to `/ws`): `{ type: 'linear.issueChanged'; before: LinearIssue | null; after: LinearIssue }` (assigned-to-me poller; `before: null` means newly assigned), `{ type: 'slack.mention'; channel: string; ts: string; text: string }` (`text` already redacted), `{ type: 'away.changed'; away: boolean; reason: 'manual' | 'idle' | 'present' }`. P6 adds no `LiveEvent` variant.
 
 **P2 BusEvent additions:** none. Phase 2 emits the existing `session.statusChanged`, `session.turnEnded`, `tests.recorded`, `hook.received`, `session.updated`, `session.removed` and `inbox.upserted`.
 
@@ -790,7 +886,10 @@ export type BusEvent = LiveEvent
   | { type: 'session.indexed'; pk: string }   // P1: emitted by the indexer whenever a session's rows change (new file, append, truncation-recovery re-read); daemon-internal only, not on the /ws LiveEvent wire
   | { type: 'tests.recorded'; pk: string; result: TestResult }
   | { type: 'config.changed' }         // P5
-  | { type: 'index.initialComplete' }; // P5
+  | { type: 'index.initialComplete' }  // P5
+  | { type: 'linear.issueChanged'; before: LinearIssue | null; after: LinearIssue }   // P6
+  | { type: 'slack.mention'; channel: string; ts: string; text: string }              // P6
+  | { type: 'away.changed'; away: boolean; reason: 'manual' | 'idle' | 'present' };   // P6
 export interface EventBus { emit(e: BusEvent): void; on<T extends BusEvent['type']>(type: T, fn: (e: Extract<BusEvent, { type: T }>) => void): () => void }
 export function createEventBus(): EventBus
 ```
@@ -863,6 +962,7 @@ export function createPtyManager(opts: { bus: EventBus; scrollbackBytes?: number
   | `codex-automated` | `originator: codex_sdk_ts` |
 
 - **P5 test isolation:** `apps/daemon/test/setup-env.ts` points `WSTACK_HOME` at an empty temp dir for every daemon test file; tests that need workflows stub it with `vi.stubEnv`. Recap tests use fake engines or `apps/daemon/test/bin/fake-claude-print`; no test reaches the Anthropic API.
+- **P6 test isolation:** no test touches the real Keychain, Linear, Slack, a push service, `ioreg` or `tailscale`. Every `createDaemon` in a test passes `phase6: offlinePhase6()` (`apps/daemon/test/p6-connector-fakes.ts`: memory `SecretStore`, fake Linear and Slack APIs, fake push sender, fake idle reader, fake `tailscale` runner); `secret-store.test.ts` mocks `@napi-rs/keyring` with an in-memory fake, and other tests use `createMemorySecretStore`. Remote-request tests use `withRemote(app)` and `p6Context()` from `apps/daemon/test/p6-fakes.ts`. There is no real-Keychain (`ORC_TEST_KEYCHAIN=1`) test.
 - **Daemon HTTP tests** use `app.request()` (Hono) without opening a port. WS/PTY tests use a real ephemeral port (`port: 0`).
 - **External CLIs** (`claude`, `codex`, `gh`, `git`) are faked in unit tests with small shell scripts in `apps/daemon/test/bin/`, prepended to `PATH`. Real `git` is used in temp repos for worktree and checkpoint tests.
 
@@ -921,6 +1021,11 @@ export interface DaemonContext {
   handoffs?: HandoffService;               // P5 — every P5 service is set by buildContext(); the ones with start() are started by createDaemon().start()
   linear?: LinearConnector;                // P6
   slack?: SlackConnector;                  // P6
+  secrets?: SecretStore;                   // P6
+  share?: ShareService;                    // P6
+  sessionActions?: SessionActions;         // P6
+  away?: AwayService;                      // P6
+  remoteAccess?: RemoteAccess;             // P6 — { devices, pairing, stepUp, funnel, webauthn, vapid, webpush }; every P6 field is set by createPhase6(), not buildContext()
   automations?: AutomationService;         // P7
   supervisor?: Supervisor;                 // P7
 }
@@ -973,7 +1078,7 @@ export function buildContext(o: { paths: OrcPaths; log?: Logger; launchExternal?
 // P1 — apps/daemon/src/main.ts (as-built)
 export const DEFAULT_WEB_DIST: string;   // apps/web/dist, resolved relative to the daemon package; serveStatic mounts it at '/' iff it exists and o.webDist isn't explicitly overridden
 export interface Daemon { ctx: DaemonContext; indexer: Indexer; token: string; start(o: { port: number; watch?: boolean }): Promise<{ port: number; close(): Promise<void> }> }
-export function createDaemon(o?: { paths?: OrcPaths; log?: Logger; launchExternal?: ExternalLauncher; webDist?: string | null }): Promise<Daemon>
+export function createDaemon(o?: { paths?: OrcPaths; log?: Logger; launchExternal?: ExternalLauncher; webDist?: string | null; phase6?: Phase6Options }): Promise<Daemon>   // phase6: P6 test overrides; production passes none
 
 // P1 — apps/daemon/src/services/projects.ts (as-built)
 /** Partial<ProjectConfig> is assignable; `features` is itself Partial for PATCH semantics. */
@@ -1278,13 +1383,59 @@ export function statuslineCommand(): string; export function statuslineSnippet()
 // P5 — apps/daemon/src/main.ts: createDaemon().start() starts digests, recaps, goals, reminders, scheduler, ledger, usage and streams (in that order, so handlers exist before overdue jobs fire),
 //   then emits index.initialComplete after the first scanAll.
 
-// P6 — connectors/linear/linear.ts ; connectors/slack/slack.ts
+// P6 (as built) — packages/api-contract/src/routes/connectors.ts ; re-exported as a type from connectors/linear/linear.ts
 export interface LinearIssue { id: string; identifier: string; title: string; state: string; assignee: string | null; url: string; labels: string[] }
-export interface LinearConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; issue(identifier: string): Promise<LinearIssue | null>; comment(identifier: string, markdown: string): Promise<void>; createIssue(i: { teamKey: string; title: string; description: string; assignToMe?: boolean }): Promise<LinearIssue>; assignedToMe(): Promise<LinearIssue[]> }
-export interface SlackConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; me(): Promise<{ userId: string; dmChannelId: string }>; post(channel: string, text: string, threadTs?: string): Promise<{ ts: string }>; replies(channel: string, threadTs: string, afterTs?: string): Promise<Array<{ ts: string; user: string; text: string }>>; mentions(sinceTs: string): Promise<Array<{ channel: string; ts: string; text: string }>> }
-// P6 — secrets
-export interface SecretStore { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; delete(key: string): Promise<void> }   // @napi-rs/keyring, service "orchestrator"
+// P6 — connectors/linear/linear.ts ; connectors/slack/slack.ts (injectable API adapters in connectors/{linear,slack}/api.ts; errors are ConnectorError from connectors/errors.ts)
+export interface LinearConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; issue(identifier: string): Promise<LinearIssue | null>; comment(identifier: string, markdown: string): Promise<void>; createIssue(i: { teamKey: string; title: string; description: string; assignToMe?: boolean }): Promise<LinearIssue>; assignedToMe(): Promise<LinearIssue[]>; me(): Promise<LinearViewer>; invalidate(): void }
+export function createLinearConnector(d: { secrets: SecretStore; api?: (token: string) => LinearApi; cacheTtlMs?: number; now?: () => number }): LinearConnector
+export interface SlackReply { ts: string; user: string; text: string; botId: string | null; appId: string | null }
+export interface SlackConnector { status(): Promise<'ok'|'unauthenticated'|'error'>; me(): Promise<{ userId: string; dmChannelId: string; label: string }>; post(channel: string, text: string, threadTs?: string): Promise<{ ts: string }>; replies(channel: string, threadTs: string, afterTs?: string): Promise<SlackReply[]>; mentions(sinceTs: string): Promise<Array<{ channel: string; ts: string; text: string }>>; reactions(channel: string, ts: string): Promise<string[]>; nudge(text: string): Promise<void>; invalidate(): void }
+export function createSlackConnector(d: { secrets: SecretStore; api?: (token: string | null) => SlackApi; now?: () => number }): SlackConnector
+// P6 — connectors/linear/assigned-poller.ts ; connectors/slack/mention-poller.ts ; connectors/stream-enricher.ts (all started by createPhase6().start())
+export interface PollerHandle { tick(): Promise<void>; start(): void; stop(): void }
+export function createLinearAssignedPoller(d: { ctx: DaemonContext; linear: LinearConnector; now?: () => Date }): PollerHandle   // emits linear.issueChanged; cursor in connector_tokens_meta.cursor_json
+export function createSlackMentionPoller(d: { ctx: DaemonContext; slack: SlackConnector; now?: () => Date }): PollerHandle      // emits slack.mention (redacted)
+// P6 — services/secrets/secret-store.ts (@napi-rs/keyring, service "orchestrator"; the account is the key)
+export interface SecretStore { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; delete(key: string): Promise<void> }
+export type SecretKey = `${'linear' | 'slack'}.${'token' | 'client_id' | 'client_secret' | 'refresh_token'}`;
+export function createSecretStore(service?: string): SecretStore
+export function createMemorySecretStore(initial?: Record<string, string>): SecretStore & { dump(): Record<string, string> }
+// P6 — http/p6-util.ts ; services/share/share.ts
+export interface Who { actor: AuditActor; actorDetail: string | null }
+export type ShareSource = { kind: 'recap'; sessionPk: string } | { kind: 'handoff'; sessionPk: string } | { kind: 'plan'; planPath: string } | { kind: 'daily'; projectId: string; date: string } | { kind: 'text'; text: string };   // zod in routes/connectors.ts
+export interface ShareService { compose(src: ShareSource): Promise<string>; commentOnLinear(identifier: string, body: string, who: Who): Promise<void>; createFollowUp(i: { sessionPk: string; teamKey: string; title: string; description: string; includeRecap: boolean }, who: Who): Promise<LinearIssue>; postToSlack(channel: string, text: string, who: Who): Promise<{ ts: string }> }   // MAX_SHARE_CHARS = 20_000
+// P6 — services/remote/session-actions.ts ; services/remote/slack-bridge.ts
+export interface SessionActions { reply(i: { pk: string; text: string } & Who): Promise<void>; approve(i: { itemId: string } & Who): Promise<InboxItem> }
+export function inboxSessionPk(item: InboxItem): string | null   // payload { source, id } → composed dedupe key `${kind}:session:${encodeURIComponent(pk)}[:facet]` → plain `<kind>:<pk>` → sessionId
+export interface SlackBridge { ensureThread(item: InboxItem, url: string): Promise<void>; onInboxUpserted(item: InboxItem): Promise<void>; poll(): Promise<void>; start(): void; stop(): void }
+// P6 — remote/*
+export interface DeviceService { create(name: string, login: string | null): { device: RemoteDeviceRow; token: string }; verify(token: string | null | undefined): RemoteDeviceRow | null; get(id: string): RemoteDeviceRow | null; list(): Array<RemoteDeviceRow & { credentials: number }>; revoke(id: string): boolean }
+export interface PairingService { create(): { code: string; expiresAt: string }; consume(code: string): boolean; activeUntil(): string | null }   // one active code, single use, 5 wrong tries cancel it
+export interface StepUpStore { grant(deviceId: string): string; valid(deviceId: string): boolean; validUntil(deviceId: string): string | null; revoke(deviceId: string): void }
+export interface FunnelWatch { detected(): boolean; refresh(): Promise<boolean>; start(): void; stop(): void }
+export interface WebAuthnService { registrationOptions(deviceId: string): Promise<PublicKeyCredentialCreationOptionsJSON>; verifyRegistration(deviceId: string, response: RegistrationResponseJSON): Promise<{ credentialId: string }>; stepUpOptions(deviceId: string): Promise<PublicKeyCredentialRequestOptionsJSON>; verifyStepUp(deviceId: string, response: AuthenticationResponseJSON): Promise<{ validUntil: string }> }   // registration open for REGISTRATION_WINDOW_MS (15 min) after pairing
+export interface AwayService { state(): AwayState; setMode(mode: AwayMode): Promise<AwayState>; tick(): Promise<AwayState>; start(): void; stop(): void }
+// P6 — notify/vapid.ts ; notify/webpush.ts ; notify/slack-dm.ts ; notify/routing.ts
+export interface VapidKeys { publicKey: string; privateKey: string; createdAt: string }   // $ORC_HOME/vapid.json via loadOrCreateVapidKeys(orcHome)
+export interface WebPushChannel extends NotifyChannelImpl { sendTest(): Promise<number> }   // id 'webpush'
+export function createSlackDmChannel(bridge: Pick<SlackBridge, 'ensureThread'>): NotifyChannelImpl   // id 'slack_dm'
+export function selectChannels(i: { pref: NotifyPref; away: boolean; awayChannels: NotifyChannel[] }): NotifyChannel[]   // while away: drop macos, add away.channels
+// P6 — context.ts ; phase6.ts ; http/app.ts
+export interface RemoteAccess { devices: DeviceService; pairing: PairingService; stepUp: StepUpStore; funnel: FunnelWatch; webauthn: WebAuthnService; vapid: VapidKeys; webpush: WebPushChannel }
+export interface Phase6Options { secrets?: SecretStore; linearApi?: (token: string) => LinearApi; slackApi?: (token: string | null) => SlackApi; pushSender?: PushSender; idle?: () => Promise<number | null>; run?: RunCommand }
+export function createPhase6(ctx: DaemonContext, o?: Phase6Options): Phase6   // builds every P6 service, sets them on ctx, registers the webpush and slack_dm channels (needs ctx.notifier, so it runs after startPhase2)
+export interface Phase6 { secrets; linear; slack; share; actions; bridge; away; devices; pairing; stepUp; funnel; webauthn; keys; push; guardDeps: RemoteGuardDeps; start(): void; stop(): void }   // no register hook; start/stop are idempotent and every timer is unref'd
+export interface AppOptions { ctx; token; port: () => number; webDist?; env?; remote?: RemoteGuardDeps | null; phase6?: { guardDeps: RemoteGuardDeps } | null }   // remote wins; phase6 only supplies guardDeps as the fallback
+export interface RemoteGuardDeps { config: () => OrcConfig; devices: DeviceService; stepUp: StepUpStore; funnel: Pick<FunnelWatch, 'detected'> }
+// createDaemon().start(): createPhase6 → createApp({ …, remote: phase6.guardDeps }) → phase6.start() → attachPtyWebSocket({ …, remote: phase6.guardDeps }); close() calls phase6.stop().
+```
 
+**P6 error and audit plumbing:**
+- `ServiceErrorStatus` is `400 | 401 | 403 | 404 | 409 | 422 | 500 | 502 | 503`; `502` is used for `upstream_error` (Linear or Slack failed), `503` for `unavailable`.
+- `apps/daemon/src/services/audit/actor-scope.ts` exports `actorScope: AsyncLocalStorage<{ actor: AuditActor; actorDetail: string | null }>`. P3's `withPtyInputAudit` reads `actorScope.getStore()` before its own `actor` option, so `pty.input` entries for remote replies carry `actor: 'remote'` and the device or `slack_dm` detail.
+- **For Phase 7:** `linear.issueChanged` and `slack.mention`, and the pollers in `connectors/linear/assigned-poller.ts` and `connectors/slack/mention-poller.ts`, already exist after Phase 6; Phase 7 consumes them instead of creating them. Their shipped signatures (`{ ctx, linear|slack, now? }` → `PollerHandle`, started by `createPhase6`) differ from the `{ linear, bus, log, intervalMs }` → `Poller` shape the Phase 7 plan sketches; Phase 7 subscribes to the bus events and does not start a second poller.
+
+```ts
 // P7 — services/automations ; services/supervisor
 export interface AutomationService { list(): Automation[]; save(a: Automation): Automation; runNow(id: string): Promise<AutomationRun>; runs(id: string): AutomationRun[] }
 export interface Automation { id: string; name: string; enabled: boolean; trigger: { type: 'cron'; cron: string } | { type: 'github'; event: 'review_comment'|'check_failed'|'pr_merged' } | { type: 'linear'; event: 'assigned'|'labeled'; label?: string } | { type: 'slack'; event: 'mention'; channel: string } | { type: 'manual' }; action: { templateId: string; projectId: string; repo?: string; useWorktree: boolean; headless: boolean; model?: string; timeoutMin: number; planApproval: boolean }; budgetUsd: number }
@@ -1296,7 +1447,7 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
 ## 12. Web app conventions
 - **Routes** (TanStack Router, file-based under `apps/web/src/routes/`):
   - `/` redirects to `/inbox` from P2 on (`/history` before that)
-  - `/history`, `/sessions/$source/$id`, `/live`, `/inbox`, `/worktrees` (P4), `/review/$source/$id` (P4), `/streams` and `/streams/$ticket` (P5), `/analytics` (P5), `/audit` (P3), `/automations` (P7), `/compare/$groupId` (P7), `/settings`
+  - `/history`, `/sessions/$source/$id`, `/live`, `/inbox`, `/worktrees` (P4), `/review/$source/$id` (P4), `/streams` and `/streams/$ticket` (P5), `/analytics` (P5), `/audit` (P3), `/pair` (P6), `/automations` (P7), `/compare/$groupId` (P7), `/settings`
 - **Global layout:** `apps/web/src/features/shell/AppShell.tsx`:
   - top bar with the project selector (F13), a search box and the inbox count
   - left nav
@@ -1346,6 +1497,15 @@ export interface Supervisor { evaluate(sessionPk: string): Promise<SupervisorDec
   - Store: `stores/streams.ts` → `useStreamViewStore` `{ view: 'list' | 'kanban'; setView(v) }`, persisted in localStorage under `orc.stream-view`.
   - Hooks and keys: `api/queries/usage.ts` (`['usage']`, `['usage','budgets']`, `['usage','concurrency']`, `['usage','context',source,id]`, `['analytics',name,params]`, `['digest']`), `api/queries/streams.ts` (`['streams',filters]`, `['stream',ticket]`), `api/queries/work.ts` (`['recap',source,id]`, `['recaps','spend']`, `['goal',targetType,targetId]`, `['goals',states]`, `['handoff',source,id]`, `['reminders',filters]`), `api/queries/settings.ts` (`['settings']`, `['hooks','install']`, `['hooks','statusline']`). `usage.updated` is applied to `['usage']` in `api/live-events.ts`.
   - Tests load `@testing-library/jest-dom` in `src/test/setup.ts`.
+- **P6 web (as built):**
+  - Route `routes/pair.tsx` → `/pair` (`features/remote/PairPage.tsx`: code + device name → device token → passkey → notifications). Settings gains the sections "Connectors" (`features/settings/ConnectorsPanel.tsx`) and "Remote" (`features/remote/RemotePanel.tsx`: origin, login, pairing code, devices, away mode, push).
+  - Features: `features/linear/LinearIssueChip.tsx` (on the stream detail page), `features/share/` (`ShareDialog.tsx`, `SessionShareActions.tsx`, `FollowUpDialog.tsx`, `DailyUpdateButton.tsx` on the Inbox page), `features/mobile/` (`useIsMobile.ts`, `MobileNav.tsx`, `InboxItemMobileCard.tsx`, `ReplyComposer.tsx`, `ReadOnlyDiff.tsx`).
+  - **Mobile breakpoint:** `MOBILE_QUERY = '(max-width: 767px)'` (`features/mobile/useIsMobile.ts`). On mobile, `AppShell` renders a bottom tab bar (`MobileNav`, `aria-label="Mobile navigation"`) instead of the left nav and hides the terminal dock; the review page shows `ReadOnlyDiff`.
+  - **Token:** `api/token.ts#resolveToken()` returns a non-empty `window.__ORC_TOKEN__`, else the device token in `localStorage['orc.deviceToken']` (`DEVICE_TOKEN_KEY`; `setDeviceToken`, `clearDeviceToken`, `isLoopbackOrigin`). P1's `getToken()` delegates to it; `api/client.ts` also exports `resetApiClient()` so the client is rebuilt after pairing.
+  - **Step-up:** `api/step-up.ts#withStepUp(fn, stepUp = performStepUp)` runs `fn`, and on `step_up_required` asks for the passkey once (`@simplewebauthn/browser` `startAuthentication`) and retries exactly once.
+  - **Client methods** come from `packages/api-contract/src/client-p6.ts#p6Methods(call: Caller)` (type `P6Methods`, plus `isApiErrorWithCode(e, code)`), spread into `createApiClient`: `connectorsList`, `connectorsSetToken`, `connectorsSetApp`, `connectorsAuthorize`, `connectorsDisconnect`, `linearIssue`, `linearComment`, `linearFollowUp`, `slackPost`, `sessionsReply`, `inboxApprove`, `remoteStatus`, `remoteSetConfig`, `remoteCreatePairing`, `remotePair`, `remoteDevices`, `remoteRevokeDevice`, `awayGet`, `awaySet`, `webauthnRegisterOptions`, `webauthnRegisterVerify`, `webauthnStepUpOptions`, `webauthnStepUpVerify`, `pushPublicKey`, `pushSubscribe`, `pushUnsubscribe`, `pushTest`.
+  - **Query keys:** `api/queries/connectors.ts` `connectorsKeys.all = ['connectors']`; `api/queries/linear.ts` `linearKeys.issue(identifier) = ['linear-issue', identifier]`; `api/queries/remote.ts` `remoteKeys = { status: ['remote-status'], devices: ['remote-devices'], away: ['away'] }`.
+  - **PWA:** `vite-plugin-pwa` with `strategies: 'injectManifest'` and the service worker `src/sw.ts` (its own `tsconfig.sw.json`, typechecked by `pnpm --filter @orc/web typecheck`). It precaches only static build assets (`**/*.{js,css,html,svg,png,woff2}`) and never caches API responses or transcript text. `pwa/register.ts` registers it, `pwa/push.ts` (`enablePush`, `disablePush`) manages the subscription, `pwa/push-payload.ts` parses pushes. Icons live in `public/icons/`.
 - **Tests:** component tests with Testing Library and an MSW-free fake client (`api/client.ts` exports `setApiClientForTests`). E2E runs with Playwright against the daemon started on fixtures (`apps/web/e2e/*.spec.ts`, via `pnpm --filter @orc/web e2e`).
 
 ## 13. Symbol ownership & de-duplication
@@ -1369,7 +1529,9 @@ The phase plans were written in parallel, so several symbols appear in more than
 | `UsageSchema`, `SessionSchema`, `TimelineEventSchema`, `AgentNodeSchema` | **P1** `packages/api-contract/src/routes/sessions.ts` (as built, `UsageSchema` lives in `packages/api-contract/src/domain.ts`) | All later phases import. P3's `routes/session-detail.ts` imports `UsageSchema` from `domain.ts`. |
 | `LaunchRequest`, `LaunchResponse`, `Template` | **P2** `packages/api-contract/src/routes/launch.ts` / `templates.ts` | P4 and P7 extend `LaunchRequest` by modifying that file (P4 enables `planApproval`/`worktree`, P7 enables `compare`). |
 | `PrStatus` (domain type) | **P4** `packages/core/src/types/work.ts` | The `connectors/github/github.ts` file re-exports it; §11's inline copy is superseded by P4's (adds `headRef`, `failedChecks`). |
-| `createLinearAssignedPoller`, `createSlackMentionPoller` | **P6** `apps/daemon/src/connectors/{linear,slack}/poller.ts` | P7 imports them for automation triggers. |
+| `createLinearAssignedPoller`, `createSlackMentionPoller`, `PollerHandle`, BusEvents `linear.issueChanged` / `slack.mention` | **P6** `apps/daemon/src/connectors/linear/assigned-poller.ts`, `apps/daemon/src/connectors/slack/mention-poller.ts`, `apps/daemon/src/live/event-bus.ts` | Already running after P6 (started by `createPhase6().start()`). P7 subscribes to the bus events for automation triggers and does not create or start a second poller. |
+| `LinearIssue` | **P6** `packages/api-contract/src/routes/connectors.ts` (zod), re-exported as a type from `apps/daemon/src/connectors/linear/linear.ts` | P7 imports it; no second definition. |
+| `createPhase6`, `Phase6Options`, `RemoteAccess`, `Who`, `whoOf`, `remoteOf`, `requireLoopback` | **P6** `apps/daemon/src/phase6.ts`, `context.ts`, `http/p6-util.ts` | Later remote-aware routes use `whoOf(c)` for the audit actor and `requireLoopback(c)` for Mac-only writes. |
 | `LIVE_EVENT_TYPES` | **P2** `apps/daemon/src/http/live-ws.ts` | Every later phase that adds a `LiveEvent` variant appends to this array in the same file (P3 `audit.recorded`; P4 `worktree.updated`, `worktree.removed`, `pr.updated`, `checkpoint.created`; P5 `usage.updated` payload typing). |
 | `Route`, `OrcApp`, `registerXRoutes` | **P1** `apps/daemon/src/http/app.ts` | The `Route`/`OrcApp` types are declared once in P1; each phase adds its own `registerXRoutes(app: OrcApp, ctx: DaemonContext)` file. |
 | `DaemonContext`, `buildContext`, `createDaemon`, `ServiceError` | **P1** `apps/daemon/src/context.ts`, `services/errors.ts` | Later phases add fields to `DaemonContext` by modifying that file (see §11). P3's `audit` and `denyList` are required fields because `buildContext` always creates them. |
@@ -1382,7 +1544,7 @@ The phase plans were written in parallel, so several symbols appear in more than
 | Test factories: `makeSession`, `makeInboxItem`, `createFakePty`, `fakeApi`, `fakeSessions`, `fakeProjects`, `fakeInbox`, `makeQueryClient`, `ev`, `need` | **Daemon:** P1 `apps/daemon/test/factories.ts`; **web:** P1 `apps/web/src/test/factories.ts` | Each later phase adds new factories to those files and imports the existing ones instead of redefining. `createTestContext`/`useTempHomes` stay in `apps/daemon/test/helpers.ts`. |
 
 | `ApiCallError` | — (not a class) | P2/P3 use **P1**'s `ApiRequestError`. `packages/api-contract/src/client-p3.ts` re-exports it as `export { ApiRequestError as ApiCallError }` so the P3 tests can import that name; it is the same class. Later phases import `ApiRequestError`. |
-| `AppOptions`, `createApp`, `getToken` | **P1** `apps/daemon/src/http/app.ts`, `apps/web/src/api/client.ts` | P6 extends them by modifying those files: `AppOptions` gains the remote guard, and `getToken()` delegates to `resolveToken()` in `api/token.ts`. |
+| `AppOptions`, `createApp`, `getToken` | **P1** `apps/daemon/src/http/app.ts`, `apps/web/src/api/client.ts` | P6 extended them: `AppOptions` gained `remote?: RemoteGuardDeps \| null` and `phase6?: { guardDeps } \| null` (no route registration through it), and `getToken()` delegates to `resolveToken()` in `api/token.ts`. A new remote-reachable route must get a `REMOTE_RULES` entry in `http/remote-guard.ts` or it falls under the defaults (remote reads need a device, remote writes are denied). |
 | `BusEvent`, `LiveEvent` | **P1** `apps/daemon/src/live/event-bus.ts`, `packages/api-contract/src/live.ts` | Every later phase appends variants to the same unions in those files (P4 worktree/PR/checkpoint, P5 `config.changed` and the typed `usage.updated`, P6 Linear/Slack/away, P7 automation/supervisor/compare). P6 owns `linear.issueChanged` and `slack.mention`; P7 imports them instead of re-adding them. |
 | `DEFAULT_TICKET_REGEX` | **P1** `packages/core/src/derive/tickets.ts` | P4's branch parser has its own regex in `git/branch.ts`, exported from the `git/index.ts` barrel as **`DEFAULT_BRANCH_TICKET_REGEX`**. |
 | `resumeCommand`, `resumeCommandLine` | **P1** `apps/daemon/src/services/sessions/external.ts` | P2 and P7 import; P7's compare/automation launches go through `spawnClaudeSession`. |
@@ -1424,3 +1586,4 @@ Phase 0's spikes settled several questions the phase plans left open. These over
 | **P1 Task 14, browser type-import boundary** | Not a spike — a deliberate P1 tradeoff recorded here per the ledger's explicit instruction. `apps/web/tsconfig.json` keeps `types: ["vite/client", "node"]` rather than rewriting every `apps/web` and `api-contract` type-only import to a `@orc/core/browser` subpath entry point. This means `apps/web`'s **typecheck** can see `@types/node` (TS type-checks the whole transitive graph reached by any `import type` from the full `@orc/core` barrel, and contracts §11 sanctions importing types from that barrel), so a careless future `import { readFile } from 'node:fs'` in a web component would typecheck — it is only the Vite **build** that would catch it (verified: the built `apps/web/dist` bundle greps clean for `node:` imports). If a later phase wants strict per-file browser/Node isolation enforced at typecheck time, that is a phase-level decision to point `api-contract` and `apps/web` at `@orc/core/browser` everywhere — a five-site change across two packages (three in `api-contract`, two in brief-authored `apps/web` files), not attempted in P1. |
 | **P1 Task 19, search-perf cardinality cap** | A synthetic-then-real two-stage tuning exercise, not a spike, but the empirical constant it produced binds the search-quality/perf tradeoff for later phases. `toFtsQuery` prefix-matches only the *last* (still-being-typed) token of a query, 3+ characters; every earlier token becomes an exact term. FTS5's native `snippet()` cost scales with the prefixed token's *matched-term cardinality*, not row count — a synthetic worst case (a numbered vocabulary where one 4-char prefix matched ~1,111 of 3,000 terms) took ~4s per search before this was found. Above `FTS_PREFIX_CARDINALITY_CAP = 250` (`apps/daemon/src/services/sessions.ts`), a search skips native `snippet()` and highlights the raw row text in application code instead (via `redactedHighlight`, so the secret-leak fix applies uniformly). **250 is empirical, not derived**: measured directly against the real `~/.claude`/`~/.codex` corpus's actual term cardinality and `snippet()` cost per common English 3-character prefix (`con`→489 terms/188ms was the one real-world case that exceeded the 150ms budget; every measured case ≤244 terms stayed under ~75ms). Real-text cost is **not monotonic in cardinality alone** (`con` cost 4-6x more than `get` at nearly the same cardinality) — a future corpus with different vocabulary characteristics could still occasionally exceed the cap's safety margin; the perf suite's gated per-shape assertions (not this cap alone) are the regression backstop. Phase 2+ should re-measure this cap if the indexed corpus's vocabulary shape changes materially (e.g. adding a new source with very different token distributions). |
 | **S2/S8** PTY | Scripted input **50/50** complete and in order; send-while-busy is queued by Claude's own TUI (not garbled); multi-line arrives as one prompt. `submitDelayMs` 120 ms works, and no idle detection is needed before sending. Browser render, typing, resize and scrollback replay all verified in headless Chrome. **GO.** | `encodePaste`/`sendText` live in `packages/core/src/pty/paste.ts`; Phase 1's `apps/daemon/src/pty/input.ts` wraps that module. **Two Phase 1 setup gotchas:** (1) node-pty 1.1.0's darwin-arm64 prebuild ships `spawn-helper` without the executable bit, and every `pty.spawn()` fails until it is `chmod +x`'d — the daemon package needs a postinstall step. (2) **A child session inherits `CLAUDE_CODE_CHILD_SESSION` and then writes NO transcript.** `PtyManager.spawn()` must delete that marker from the child env and set `CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1`, with a test asserting it; otherwise every session the app launches is invisible to its own indexer. |
+| **S9** remote | **Read-only checks only (2026-09-27); live checks a–h not yet run.** Tailscale 1.102.3 running; MagicDNS and HTTPS certificates on; origin `https://hazems-macbook-pro.tailc6e70.ts.net`; login `hazem@wakecap.com`; the tailnet is shared (161 devices), so `remote.allowedLogin` is the real gate. Decision: go with the plan's defaults, unconfirmed (`plan/spikes/S9.md`). | Phase 6 shipped on those defaults: `isRemoteRequest` header rules (b), the `Tailscale-User-Login` identity check (c — **NO-GO for remote access if `tailscale serve` does not strip a client-sent header**), Web Push (d1/d2), passkey rpID = MagicDNS host (e1/e2), `connectors.slack.redirectUri` (g1), `nudgeViaReminder: false` (g2/g4), the bridge's `appId` reply filter (g3) and the `AllowFunnel` key in `detectFunnel()` (h). Each changes as the S9 decision table says if its check fails. |
