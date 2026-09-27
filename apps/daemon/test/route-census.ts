@@ -376,6 +376,24 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'the saved goal, walked by redactedJson (core redactDeep) on the way out',
   },
+  'POST /api/handoffs/session/:source/:id': {
+    guardedBy: null,
+    reason:
+      'the generated handoff (model output over a redacted digest), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/handoffs/session/:source/:id': {
+    guardedBy: null,
+    reason: 'the latest handoff and its markdown, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/handoffs/:id/markdown': {
+    guardedBy: null,
+    reason: 'the handoff markdown download, passed through core redact before it is sent',
+  },
+  'POST /api/handoffs/:id/resume-fresh': {
+    guardedBy: null,
+    reason:
+      'launches a session through the P2 launcher (argv rules, concurrency cap); needs {"confirm": true}; the confirmation summary goes through redactedApiError',
+  },
   'GET /api/reminders': {
     guardedBy: null,
     reason: 'reminder rows with user-typed text, walked by redactedJson (core redactDeep) on the way out',
@@ -412,6 +430,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',
   'apps/daemon/src/http/routes/goals.ts',
+  'apps/daemon/src/http/routes/handoffs.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',

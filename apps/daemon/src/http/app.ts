@@ -13,6 +13,7 @@ import { registerAuditRoutes } from './routes/audit.ts';
 import { registerExportRoutes } from './routes/export.ts';
 import { githubRoutes } from './routes/github.ts';
 import { registerGoalRoutes } from './routes/goals.ts';
+import { registerHandoffRoutes } from './routes/handoffs.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerHookRoutes } from './routes/hooks.ts';
 import { registerInboxRoutes } from './routes/inbox.ts';
@@ -84,6 +85,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerRecapRoutes(app, ctx);
   registerGoalRoutes(app, ctx);
   registerReminderRoutes(app, ctx);
+  registerHandoffRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));

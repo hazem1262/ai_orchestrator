@@ -19,6 +19,7 @@ import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import { createGoalService, type GoalService } from './services/goals/goals.ts';
+import { createHandoffService, type HandoffService } from './services/handoff/handoff.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
@@ -103,6 +104,8 @@ export interface DaemonContext {
   goals?: GoalService;
   /** P5 — persisted one-shot reminders on the scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
   reminders?: ReminderService;
+  /** P5 — handoffs (structured evidence plus an LLM summary), markdown export and resume-fresh; set by `buildContext()`. */
+  handoffs?: HandoffService;
 }
 
 export interface BuildContextOptions {
@@ -177,6 +180,7 @@ export function buildContext(o: BuildContextOptions): {
   ctx.digests = digests;
   const recaps = createRecapService(ctx, { engines: defaultRecapEngines(ctx), scheduler });
   ctx.recaps = recaps;
+  ctx.handoffs = createHandoffService(ctx, { recaps });
   const goals = createGoalService(ctx);
   ctx.goals = goals;
   ctx.reminders = createReminderService(ctx, { scheduler });

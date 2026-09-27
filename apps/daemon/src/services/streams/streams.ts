@@ -6,6 +6,7 @@ import {
   collectTicketSignals,
   computeStreamStage,
   groupSignals,
+  type Handoff,
   type PrRef,
   type StreamDetail,
   type StreamLink,
@@ -228,7 +229,17 @@ export function createStreamService(
     if (now().getTime() - lastRefresh > staleMs) await refresh();
   }
 
-  function timeline(stream: WorkStream, links: StreamLink[]): StreamTimelineItem[] {
+  /** The newest handoff across the stream's sessions. */
+  function latestHandoff(stream: WorkStream): Handoff | null {
+    let newest: Handoff | null = null;
+    for (const pk of stream.sessionIds) {
+      const h = ctx.handoffs?.latest(pk) ?? null;
+      if (h && (newest === null || h.createdAt > newest.createdAt)) newest = h;
+    }
+    return newest;
+  }
+
+  function timeline(stream: WorkStream, links: StreamLink[], handoff: Handoff | null): StreamTimelineItem[] {
     const items: StreamTimelineItem[] = [];
     const byPk = new Map(sources.sessions.map((s) => [s.pk, s]));
     const byUrl = new Map(sources.prs.map((p) => [p.pr.url, p]));
@@ -286,7 +297,15 @@ export function createStreamService(
         });
       }
     }
-    // Handoff items join here once `ctx.handoffs` (Task 15) exists.
+    if (handoff) {
+      items.push({
+        ts: handoff.createdAt,
+        kind: 'handoff',
+        title: `Handoff: ${handoff.status}`,
+        ref: handoff.id,
+        detail: handoff.summary,
+      });
+    }
     const goal = ctx.goals?.get('stream', stream.ticket) ?? null;
     if (goal) {
       items.push({
@@ -313,13 +332,14 @@ export function createStreamService(
       if (!stream) return null;
       const links = listLinks(ctx.db, stream.ticket);
       const byUrl = new Map(sources.prs.map((p) => [p.pr.url, p]));
+      const handoff = latestHandoff(stream);
       return {
         stream,
         prsDetailed: stream.prs.map((r) => byUrl.get(r.url)).filter((p): p is StreamPr => p !== undefined),
         links,
-        timeline: timeline(stream, links),
+        timeline: timeline(stream, links, handoff),
         goal: ctx.goals?.get('stream', stream.ticket) ?? null,
-        handoff: null,
+        handoff,
         budget: deps.meter.checkBudget({ ticket: stream.ticket, projectId: stream.projectId }),
       };
     },

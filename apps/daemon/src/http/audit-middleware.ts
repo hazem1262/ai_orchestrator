@@ -40,6 +40,12 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
   },
   {
     method: 'POST',
+    pattern: /^\/api\/handoffs\/([^/]+)\/resume-fresh$/,
+    action: 'session.launch',
+    target: (m) => `handoff:${dec(m[1])}`,
+  },
+  {
+    method: 'POST',
     pattern: new RegExp(`^/api/sessions/${SRC}/([^/]+)/kill$`),
     action: 'session.kill',
     target: sessionTarget,
@@ -239,6 +245,11 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     why: 'schedules a local reminder; its PTY input is audited by withPtyInputAudit when it fires',
   },
   { method: 'POST', path: '/api/reminders/:id/cancel', why: 'local reminder state' },
+  {
+    method: 'POST',
+    path: '/api/handoffs/session/:source/:id',
+    why: 'builds a local handoff; the redacted digest goes to the configured recap engine',
+  },
 ];
 
 export function matchAuditedRoute(

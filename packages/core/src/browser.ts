@@ -22,5 +22,6 @@ export * from './derive/step-stats.ts';
 export * from './derive/streams.ts';
 export * from './git/index.ts';
 export * from './recap/digest.ts';
+export * from './recap/handoff.ts';
 export * from './redact/redact.ts';
 export * from './types/index.ts';

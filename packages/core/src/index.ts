@@ -26,5 +26,6 @@ export * from './git/index.ts';
 export * from './io/jsonl-tail.ts';
 export * from './pty/paste.ts';
 export * from './recap/digest.ts';
+export * from './recap/handoff.ts';
 export * from './redact/redact.ts';
 export * from './types/index.ts';
