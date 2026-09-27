@@ -127,6 +127,42 @@ describe('GET /api/sessions/:source/:id/export', () => {
     expect(exports.map((e) => e.params.redact ?? 'true')).toEqual(['false', 'true']);
   });
 
+  it("includes the session's latest handoff, redacted", async () => {
+    const handoff: Handoff = {
+      id: 'h-drift',
+      sessionId: 's-drift',
+      status: 'in_progress',
+      summary: 'half way',
+      evidence: [],
+      files: [],
+      nextSteps: [],
+      blockers: [],
+      links: [],
+      createdAt: '2026-09-17T00:00:00Z',
+    };
+    const saved = t.ctx.handoffs;
+    const asked: string[] = [];
+    t.ctx.handoffs = {
+      ...(saved as NonNullable<typeof saved>),
+      latest: (pk: string) => {
+        asked.push(pk);
+        return handoff;
+      },
+      toMarkdown: () => '# Handoff\nPGPASSWORD=hunter2',
+    };
+    try {
+      const res = await req();
+      expect(res.status).toBe(200);
+      const files = unzipSync(new Uint8Array(await res.arrayBuffer()));
+      expect(asked).toEqual(['claude:s-drift']);
+      expect(strFromU8(files['handoff.md'] ?? new Uint8Array())).toBe(
+        '# Handoff\nPGPASSWORD=«redacted:secret»',
+      );
+    } finally {
+      t.ctx.handoffs = saved;
+    }
+  });
+
   it('404s for unknown sessions', async () => {
     const res = await t.request('/api/sessions/claude/nope/export');
     expect(res.status).toBe(404);

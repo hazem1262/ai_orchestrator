@@ -44,13 +44,12 @@ export function registerExportRoutes(app: OrcApp, ctx: DaemonContext): void {
     try {
       const { detail, links } = get();
       const r = await buildSessionExport(
-        // handoffs: wired in Phase 5; the builder is already null-safe.
         {
           sessions: ctx.sessions,
           detail,
           links,
           audit: ctx.audit,
-          handoffs: undefined,
+          handoffs: ctx.handoffs,
           version: CORE_VERSION,
         },
         p.source,
