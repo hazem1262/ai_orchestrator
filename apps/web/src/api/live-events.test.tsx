@@ -1,5 +1,5 @@
 import type { LiveEvent } from '@orc/api-contract';
-import type { InboxItem, Session } from '@orc/core';
+import type { InboxItem, Session, UsageSnapshot } from '@orc/core';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { inboxItemFixture, liveSessionFixture, sessionFixture } from '../test/factories.ts';
@@ -7,6 +7,23 @@ import { makeQueryClient, queryWrapper } from '../test/query.tsx';
 import { applyLiveEvent, liveWsUrl, pkOf, useLiveEvents } from './live-events.ts';
 import { inboxKey } from './queries/inbox.ts';
 import { liveKey } from './queries/live.ts';
+
+const usageSnapshot: UsageSnapshot = {
+  source: 'estimate',
+  generatedAt: '2026-09-17T10:00:00.000Z',
+  block: {
+    active: true,
+    start: '2026-09-17T09:00:00.000Z',
+    end: '2026-09-17T14:00:00.000Z',
+    tokens: 1200,
+    costUsd: 1.5,
+    pctOfLimit: null,
+  },
+  week: { tokens: 9000, costUsd: 30, pctOfLimit: null },
+  burnRateUsdPerHour: 1.5,
+  burnRateTokensPerMin: 20,
+  projectedBlockExhaustionAt: null,
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -139,7 +156,7 @@ describe('applyLiveEvent', () => {
     qc.setQueryData(liveKey, before);
     const events: LiveEvent[] = [
       { type: 'index.progress', done: 1, total: 2 },
-      { type: 'usage.updated', snapshot: { anything: 1 } },
+      { type: 'usage.updated', snapshot: usageSnapshot },
     ];
     for (const e of events) expect(() => applyLiveEvent(qc, e)).not.toThrow();
     expect(qc.getQueryData(liveKey)).toBe(before);

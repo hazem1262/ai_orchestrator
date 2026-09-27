@@ -2,6 +2,7 @@ import type { AgentNode, Project, Session, Source } from '@orc/core';
 import { z } from 'zod';
 import { makeCaller, type P2Methods, p2Methods } from './client-p2.ts';
 import { createP3Methods, type P3Methods } from './client-p3.ts';
+import { type P5ClientMethods, p5ClientMethods } from './client-p5.ts';
 import { createPhase4Methods, type Phase4Client } from './client-phase4.ts';
 import { ProjectConfig } from './config.ts';
 import { AgentNodeSchema, ProjectSchema, SessionSchema } from './domain.ts';
@@ -79,7 +80,9 @@ export function toQueryString(params: Record<string, string | number | boolean |
   return s ? `?${s}` : '';
 }
 
-export function createApiClient(o: ApiClientOptions): ApiClient & P2Methods & P3Methods & Phase4Client {
+export function createApiClient(
+  o: ApiClientOptions,
+): ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods {
   const doFetch: typeof fetch = o.fetch ?? ((input, init) => fetch(input, init));
 
   async function call<T>(schema: z.ZodType<T>, method: string, path: string, body?: unknown): Promise<T> {
@@ -136,10 +139,12 @@ export function createApiClient(o: ApiClientOptions): ApiClient & P2Methods & P3
     ptyList: () => call(z.array(PtyInfoSchema), 'GET', '/api/pty'),
     ptyKill: (ptyId) => call(OkSchema, 'DELETE', `/api/pty/${encodeURIComponent(ptyId)}`, { confirm: true }),
   };
+  const caller = makeCaller({ baseUrl: o.baseUrl, token: o.token, fetchImpl: doFetch });
   return {
     ...methods,
-    ...p2Methods(makeCaller({ baseUrl: o.baseUrl, token: o.token, fetchImpl: doFetch })),
+    ...p2Methods(caller),
     ...createP3Methods({ baseUrl: o.baseUrl, token: o.token, fetch: doFetch }),
     ...createPhase4Methods({ baseUrl: o.baseUrl, token: o.token, fetch: doFetch }),
+    ...p5ClientMethods(caller),
   };
 }

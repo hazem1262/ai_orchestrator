@@ -3,6 +3,7 @@ import {
   createApiClient,
   type P2Methods,
   type P3Methods,
+  type P5ClientMethods,
   type Phase4Client,
 } from '@orc/api-contract';
 
@@ -12,8 +13,8 @@ declare global {
   }
 }
 
-/** The phase-1 routes plus the phase-2, phase-3 and phase-4 ones `createApiClient` merges in. */
-export type OrcApiClient = ApiClient & P2Methods & P3Methods & Phase4Client;
+/** The phase-1 routes plus the phase-2, phase-3, phase-4 and phase-5 ones `createApiClient` merges in. */
+export type OrcApiClient = ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods;
 
 let client: OrcApiClient | null = null;
 

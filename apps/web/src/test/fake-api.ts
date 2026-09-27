@@ -1,4 +1,4 @@
-import type { ApiClient, P2Methods, P3Methods, Phase4Client } from '@orc/api-contract';
+import type { ApiClient, P2Methods, P3Methods, P5ClientMethods, Phase4Client } from '@orc/api-contract';
 import { vi } from 'vitest';
 
 const unexpected = (name: string) =>
@@ -6,7 +6,7 @@ const unexpected = (name: string) =>
     throw new Error(`unexpected api call: ${name}`);
   });
 
-export type FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client;
+export type FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods;
 
 export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   const base: FakeApi = {
@@ -82,6 +82,44 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     githubStatus: unexpected('githubStatus'),
     githubPr: unexpected('githubPr'),
     githubMine: unexpected('githubMine'),
+    usageGet: unexpected('usageGet'),
+    usageBudgets: unexpected('usageBudgets'),
+    usageBudgetUpsert: unexpected('usageBudgetUpsert'),
+    usageBudgetDelete: unexpected('usageBudgetDelete'),
+    usageConcurrency: unexpected('usageConcurrency'),
+    usageContext: unexpected('usageContext'),
+    settingsGet: unexpected('settingsGet'),
+    settingsUpdate: unexpected('settingsUpdate'),
+    analyticsCost: unexpected('analyticsCost'),
+    analyticsTop: unexpected('analyticsTop'),
+    analyticsTools: unexpected('analyticsTools'),
+    analyticsTiming: unexpected('analyticsTiming'),
+    analyticsOutcomes: unexpected('analyticsOutcomes'),
+    analyticsWstack: unexpected('analyticsWstack'),
+    analyticsDigestLatest: unexpected('analyticsDigestLatest'),
+    analyticsDigestGenerate: unexpected('analyticsDigestGenerate'),
+    streamsList: unexpected('streamsList'),
+    streamsRefresh: unexpected('streamsRefresh'),
+    streamsGet: unexpected('streamsGet'),
+    streamsLink: unexpected('streamsLink'),
+    streamsUnlink: unexpected('streamsUnlink'),
+    recapsGetSession: unexpected('recapsGetSession'),
+    recapsRunSession: unexpected('recapsRunSession'),
+    recapsGetDaily: unexpected('recapsGetDaily'),
+    recapsRunDaily: unexpected('recapsRunDaily'),
+    recapsSpend: unexpected('recapsSpend'),
+    goalsList: unexpected('goalsList'),
+    goalsGet: unexpected('goalsGet'),
+    goalsSet: unexpected('goalsSet'),
+    handoffsLatest: unexpected('handoffsLatest'),
+    handoffsGenerate: unexpected('handoffsGenerate'),
+    handoffsResumeFresh: unexpected('handoffsResumeFresh'),
+    remindersList: unexpected('remindersList'),
+    remindersCreate: unexpected('remindersCreate'),
+    remindersCancel: unexpected('remindersCancel'),
+    hooksInstallStatus: unexpected('hooksInstallStatus'),
+    hooksInstall: unexpected('hooksInstall'),
+    hooksStatusline: unexpected('hooksStatusline'),
   };
   return { ...base, ...overrides };
 }

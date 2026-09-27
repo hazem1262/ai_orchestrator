@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OrcConfig, ProjectConfig } from './config.ts';
+import { DigestConfig, HooksConfig, LimitsConfig, OrcConfig, ProjectConfig, RecapsConfig } from './config.ts';
 
 describe('OrcConfig', () => {
   it('fills defaults from an empty object', () => {
@@ -47,5 +47,46 @@ describe('ProjectConfig', () => {
         typoedKeyThatDoesNotExist: true,
       }),
     ).toThrow();
+  });
+});
+
+describe('OrcConfig phase 5 sections', () => {
+  it('fills recaps, limits, digest and hooks defaults', () => {
+    const c = OrcConfig.parse({});
+    expect(c.recaps.idleMinutes).toBe(10);
+    expect(c.recaps.excludeProjectIds).toEqual([]);
+    expect(c.recaps.dailyProjectIds).toEqual(['wakecap']);
+    expect(c.recaps.monthlyBudgetUsd).toBe(20);
+    // S7 decided `official` (plan/spikes/S7.md): the default source and field paths follow it.
+    expect(c.limits.quotaSource).toBe('official');
+    expect(c.limits.officialFieldPaths.blockPct).toBe('rate_limits.five_hour.used_percentage');
+    expect(c.limits.officialFieldPaths.blockResetsAt).toBe('rate_limits.five_hour.resets_at');
+    expect(c.limits.officialFieldPaths.weekPct).toBe('rate_limits.seven_day.used_percentage');
+    expect(c.limits.officialFieldPaths.weekResetsAt).toBe('rate_limits.seven_day.resets_at');
+    expect(c.limits.blockTokenLimit).toBeNull();
+    expect(c.limits.warnPct).toBe(0.8);
+    expect(c.limits.contextWindows['claude-opus-5']).toBe(1000000);
+    expect(c.limits.contextWindows['claude-haiku-4-5']).toBe(200000);
+    expect(c.limits.pricing['claude-sonnet-5']).toEqual({
+      input: 2,
+      output: 10,
+      cacheWrite: 2.5,
+      cacheRead: 0.2,
+    });
+    expect(c.limits.contextWarnFill).toBe(0.85);
+    expect(c.digest.cron).toBe('0 9 * * 1');
+    expect(c.digest.dailyRecapCron).toBe('0 19 * * 1-5');
+    expect(c.hooks.statusOverrideMs).toBe(120000);
+  });
+
+  it('exposes each section as its own schema', () => {
+    expect(RecapsConfig.parse({}).engine).toBe('claude-cli');
+    expect(LimitsConfig.parse({ blockTokenLimit: 5000 }).blockTokenLimit).toBe(5000);
+    expect(DigestConfig.parse({}).enabled).toBe(true);
+    expect(HooksConfig.parse({}).statusOverrideMs).toBe(120000);
+  });
+
+  it('rejects an out-of-range warnPct', () => {
+    expect(() => LimitsConfig.parse({ warnPct: 1.5 })).toThrow();
   });
 });

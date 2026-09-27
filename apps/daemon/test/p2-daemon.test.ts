@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { InboxItem, Session } from '@orc/core';
+import type { InboxItem, Session, UsageSnapshot } from '@orc/core';
 import { pino } from 'pino';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
@@ -388,8 +388,21 @@ describe('the /ws upgrade beside the PTY socket', () => {
     await boot();
     const { messages } = await openWs('/ws');
     await expect.poll(() => messages[0]?.type).toBe('hello');
-    const snapshot = {
-      byModel: [{ model: 'fake-model', inputTokens: 1234, token_count: 56, maxTokens: 200000 }],
+    const snapshot: UsageSnapshot = {
+      source: 'estimate',
+      generatedAt: '2026-09-17T10:00:00.000Z',
+      block: {
+        active: true,
+        start: '2026-09-17T09:00:00.000Z',
+        end: '2026-09-17T14:00:00.000Z',
+        tokens: 1200,
+        costUsd: 1.5,
+        pctOfLimit: null,
+      },
+      week: { tokens: 9000, costUsd: 30, pctOfLimit: null },
+      burnRateUsdPerHour: 1.5,
+      burnRateTokensPerMin: 20,
+      projectedBlockExhaustionAt: null,
     };
     daemon.ctx.bus.emit({ type: 'usage.updated', snapshot });
     await expect.poll(() => messages.find((m) => m.type === 'usage.updated')?.snapshot).toEqual(snapshot);

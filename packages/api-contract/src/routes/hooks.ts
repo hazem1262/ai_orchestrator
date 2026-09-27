@@ -21,3 +21,21 @@ export const HookIngestBody = z.looseObject({
   message: z.string().max(4096).optional(),
 });
 export type HookIngestBody = z.output<typeof HookIngestBody>;
+
+export const HookInstallStatusSchema = z.object({
+  settingsPath: z.string(),
+  settingsExists: z.boolean(),
+  installed: z.boolean(),
+  command: z.string(),
+  snippet: z.string(),
+  backupDir: z.string(),
+});
+export type HookInstallStatus = z.infer<typeof HookInstallStatusSchema>;
+export const HookInstallBody = z.object({ confirm: z.boolean().optional() });
+export const HookInstallResultSchema = z.object({
+  installed: z.literal(true),
+  settingsPath: z.string(),
+  backupPath: z.string().nullable(),
+});
+export const StatuslineSnippetSchema = z.object({ command: z.string(), snippet: z.string() });
+export const HookIngestResponseSchema = z.object({ ok: z.literal(true), accepted: z.boolean() });

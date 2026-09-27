@@ -38,6 +38,64 @@ export const ProjectConfig = z
     maxConcurrentOwned: z.number().int().positive().default(6),
   })
   .strict();
+export const RecapsConfig = z.object({
+  enabled: z.boolean().default(false),
+  trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'),
+  engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'),
+  autoModel: z.string().default('claude-haiku-4-5'),
+  onDemandModel: z.string().default('claude-sonnet-5'),
+  monthlyBudgetUsd: z.number().default(20),
+  maxInputTokens: z.number().default(30000),
+  minPrompts: z.number().default(2),
+  language: z.string().default('en'),
+  promptTemplate: z.string().nullable().default(null),
+  idleMinutes: z.number().int().positive().default(10), // on_idle debounce
+  excludeProjectIds: z.array(z.string()).default([]),
+  dailyProjectIds: z.array(z.string()).default(['wakecap']), // daily recap targets
+});
+export const LimitsConfig = z.object({
+  // Spike S7 (plan/spikes/S7.md) chose `official`: the statusLine stdin JSON carries `rate_limits`.
+  quotaSource: z.enum(['estimate', 'official']).default('official'),
+  officialFieldPaths: z
+    .object({
+      blockPct: z.string().nullable().default('rate_limits.five_hour.used_percentage'),
+      blockResetsAt: z.string().nullable().default('rate_limits.five_hour.resets_at'),
+      weekPct: z.string().nullable().default('rate_limits.seven_day.used_percentage'),
+      weekResetsAt: z.string().nullable().default('rate_limits.seven_day.resets_at'),
+    })
+    .prefault({}),
+  blockTokenLimit: z.number().int().positive().nullable().default(null), // user plan limit (5h)
+  weekTokenLimit: z.number().int().positive().nullable().default(null), // user plan limit (7d)
+  warnPct: z.number().min(0).max(1).default(0.8),
+  contextWindows: z
+    .record(z.string(), z.number().int().positive())
+    .default({ 'claude-opus-5': 1000000, 'claude-sonnet-5': 1000000, 'claude-haiku-4-5': 200000 }),
+  defaultContextWindow: z.number().int().positive().default(200000),
+  // USD per 1M tokens (Anthropic first-party list prices, checked 2026-09-17; cache write =
+  // 1.25 x input (5-min TTL), cache read = 0.1 x input). Used only for estimates.
+  pricing: z
+    .record(
+      z.string(),
+      z.object({ input: z.number(), output: z.number(), cacheWrite: z.number(), cacheRead: z.number() }),
+    )
+    .default({
+      'claude-opus-5': { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 },
+      'claude-sonnet-5': { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+      'claude-haiku-4-5': { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+    }),
+  contextWarnFill: z.number().min(0).max(1).default(0.85),
+});
+export const DigestConfig = z.object({
+  enabled: z.boolean().default(true),
+  cron: z.string().default('0 9 * * 1'), // weekly digest, Mon 09:00 local
+  dailyRecapCron: z.string().default('0 19 * * 1-5'), // daily project recap
+});
+export const HooksConfig = z.object({ statusOverrideMs: z.number().int().positive().default(120000) });
+export type RecapsConfig = z.infer<typeof RecapsConfig>;
+export type LimitsConfig = z.infer<typeof LimitsConfig>;
+export type DigestConfig = z.infer<typeof DigestConfig>;
+export type HooksConfig = z.infer<typeof HooksConfig>;
+
 export const OrcConfig = z
   .object({
     port: z.number().int().default(4317),
@@ -52,20 +110,10 @@ export const OrcConfig = z
       .prefault({}),
     projects: z.array(ProjectConfig).default([]),
     codex: z.object({ showAutomated: z.boolean().default(false) }).prefault({}),
-    recaps: z
-      .object({
-        enabled: z.boolean().default(false),
-        trigger: z.enum(['manual', 'on_idle', 'daily']).default('manual'),
-        engine: z.enum(['claude-cli', 'anthropic-api']).default('claude-cli'),
-        autoModel: z.string().default('claude-haiku-4-5'),
-        onDemandModel: z.string().default('claude-sonnet-5'),
-        monthlyBudgetUsd: z.number().default(20),
-        maxInputTokens: z.number().default(30000),
-        minPrompts: z.number().default(2),
-        language: z.string().default('en'),
-        promptTemplate: z.string().nullable().default(null),
-      })
-      .prefault({}),
+    recaps: RecapsConfig.prefault({}),
+    limits: LimitsConfig.prefault({}),
+    digest: DigestConfig.prefault({}),
+    hooks: HooksConfig.prefault({}),
     notifications: z
       .record(
         z.string(),
