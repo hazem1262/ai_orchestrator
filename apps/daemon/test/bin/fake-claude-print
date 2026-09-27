@@ -1,0 +1,26 @@
+#!/bin/sh
+# Fake `claude -p` for recap tests. Never contacts anything.
+# FAKE_CLAUDE_LOG=<prefix>  → writes args to <prefix>.args (one per line) and stdin to <prefix>.stdin
+# FAKE_CLAUDE_MODE=error|garbage|slow
+# FAKE_CLAUDE_OUTPUT_FILE=<file> → print that file as the JSON result instead of the default
+if [ -n "$FAKE_CLAUDE_LOG" ]; then
+  printf '%s\n' "$@" > "$FAKE_CLAUDE_LOG.args"
+  cat > "$FAKE_CLAUDE_LOG.stdin"
+else
+  cat > /dev/null
+fi
+case "$FAKE_CLAUDE_MODE" in
+  error)
+    printf '%s\n' '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"boom","total_cost_usd":0.001}'
+    exit 1 ;;
+  garbage)
+    printf '%s\n' 'not json'
+    exit 0 ;;
+  slow)
+    sleep 5 ;;
+esac
+if [ -n "$FAKE_CLAUDE_OUTPUT_FILE" ]; then
+  cat "$FAKE_CLAUDE_OUTPUT_FILE"
+  exit 0
+fi
+printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"Fixed the notification tests.\n**Goal:** fix tests","total_cost_usd":0.0123,"session_id":"fake"}'

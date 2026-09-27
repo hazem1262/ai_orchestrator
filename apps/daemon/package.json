@@ -13,6 +13,7 @@
     "postinstall": "node -e 'try{const p=require(\"path\"),f=require(\"fs\");let d;try{d=p.dirname(require.resolve(\"node-pty/package.json\",{paths:[__dirname]}))}catch(e){process.exit(0)}const pb=p.join(d,\"prebuilds\");if(f.existsSync(pb)){for(const x of f.readdirSync(pb)){const h=p.join(pb,x,\"spawn-helper\");if(f.existsSync(h))f.chmodSync(h,0o755)}}}catch(e){}'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@hono/node-server": "^2.1.1",
     "@orc/api-contract": "workspace:*",
     "@orc/core": "workspace:*",
