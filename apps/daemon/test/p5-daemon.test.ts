@@ -3,6 +3,7 @@ import { pino } from 'pino';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDaemon } from '../src/main.ts';
 import { createTestContext, makeTempHomes, type TempHomes } from './helpers.ts';
+import { offlinePhase6 } from './p6-connector-fakes.ts';
 
 /**
  * Phase 5 wired into the real daemon: `createDaemon` + `start` on a temp copy of fixtures/, never
@@ -40,6 +41,7 @@ describe('phase 5 daemon wiring', () => {
       log,
       launchExternal: async () => undefined,
       webDist: null,
+      phase6: offlinePhase6(),
     });
     const d = await daemon.start({ port: 0, watch: false });
     try {

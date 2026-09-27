@@ -5,20 +5,26 @@ import type { VapidKeys } from '../../notify/vapid.ts';
 import { isAllowedPushEndpoint, type WebPushChannel } from '../../notify/webpush.ts';
 import { ServiceError } from '../../services/errors.ts';
 import { readJson } from '../json.ts';
-import { remoteOf } from '../p6-util.ts';
+import { need, remoteOf } from '../p6-util.ts';
 import type { OrcApp } from '../types.ts';
 
 /**
  * VAPID public key, push subscriptions and a test send. A remote subscription stores the calling
- * device id, so revoking the device drops it. Not mounted by `registerAllRoutes` yet: Task 20's
- * `createPhase6().register` mounts it with the other Phase 6 routes.
+ * device id, so revoking the device drops it. Registered from `registerAllRoutes` with no `deps`:
+ * the keys and the channel are then read off `ctx.remoteAccess` per request (503 while unwired).
  */
 export function registerPushRoutes(
   app: OrcApp,
   ctx: DaemonContext,
-  d: { keys: VapidKeys; channel: WebPushChannel },
+  deps?: { keys: VapidKeys; channel: WebPushChannel },
 ): void {
-  app.get('/api/push/vapid-public-key', (c) => c.json({ publicKey: d.keys.publicKey }));
+  const d = (): { keys: VapidKeys; channel: WebPushChannel } => {
+    if (deps) return deps;
+    const r = need(ctx.remoteAccess, 'remote access');
+    return { keys: r.vapid, channel: r.webpush };
+  };
+
+  app.get('/api/push/vapid-public-key', (c) => c.json({ publicKey: d().keys.publicKey }));
 
   app.post('/api/push/subscriptions', async (c) => {
     const body = await readJson(c, PushSubscriptionBody);
@@ -41,5 +47,5 @@ export function registerPushRoutes(
     return c.json({ ok: true as const });
   });
 
-  app.post('/api/push/test', async (c) => c.json({ sent: await d.channel.sendTest() }));
+  app.post('/api/push/test', async (c) => c.json({ sent: await d().channel.sendTest() }));
 }

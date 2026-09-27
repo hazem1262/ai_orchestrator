@@ -2,6 +2,8 @@ import type { LinearIssue } from '@orc/api-contract';
 import type { LinearApi } from '../src/connectors/linear/api.ts';
 import type { SlackApi, SlackMessage } from '../src/connectors/slack/api.ts';
 import { compareSlackTs } from '../src/connectors/slack/text.ts';
+import type { Phase6Options } from '../src/phase6.ts';
+import { createMemorySecretStore } from '../src/services/secrets/secret-store.ts';
 
 export function linearIssue(identifier: string, o: Partial<LinearIssue> = {}): LinearIssue {
   return {
@@ -126,4 +128,20 @@ export function fakeSlackApi() {
       root.reactions.push({ name, users: [user] });
     },
   });
+}
+
+/**
+ * `createDaemon({ phase6 })` options that keep Phase 6 inside the process: an in-memory secret
+ * store instead of the Keychain, fake Linear and Slack APIs, a push sender that sends nothing, no
+ * `ioreg` idle reads and no `tailscale` calls.
+ */
+export function offlinePhase6(): Phase6Options {
+  return {
+    secrets: createMemorySecretStore(),
+    linearApi: () => fakeLinearApi(),
+    slackApi: () => fakeSlackApi(),
+    pushSender: async () => ({ statusCode: 201 }),
+    idle: async () => null,
+    run: async () => '{}',
+  };
 }

@@ -11,9 +11,16 @@ import type { InboxEngine } from './inbox/engine.ts';
 import { createEventBus, type EventBus } from './live/event-bus.ts';
 import type { LiveTracker } from './live/live-tracker.ts';
 import type { Notifier } from './notify/notifier.ts';
+import type { VapidKeys } from './notify/vapid.ts';
+import type { WebPushChannel } from './notify/webpush.ts';
 import { withPtyInputAudit } from './pty/audited-pty.ts';
 import { createPtyManager, type PtyManager } from './pty/pty-manager.ts';
 import type { AwayService } from './remote/away.ts';
+import type { DeviceService } from './remote/devices.ts';
+import type { PairingService } from './remote/pairing.ts';
+import type { StepUpStore } from './remote/step-up.ts';
+import type { FunnelWatch } from './remote/tailscale.ts';
+import type { WebAuthnService } from './remote/webauthn.ts';
 import { type AnalyticsService, createAnalyticsService } from './services/analytics/analytics.ts';
 import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
@@ -43,6 +50,17 @@ import { createUsageLedger, type UsageLedger } from './services/usage/ledger.ts'
 import { createUsageMeter, type UsageMeter } from './services/usage/meter.ts';
 import { createUserMetaService, type UserMetaService } from './services/user-meta.ts';
 import type { WorktreeService } from './services/worktree/worktree.ts';
+
+/** P6 — the remote-access services the remote, WebAuthn and push routes read per request. */
+export interface RemoteAccess {
+  devices: DeviceService;
+  pairing: PairingService;
+  stepUp: StepUpStore;
+  funnel: FunnelWatch;
+  webauthn: WebAuthnService;
+  vapid: VapidKeys;
+  webpush: WebPushChannel;
+}
 
 /** contracts §11 — Phase 1 fields. Later phases add optional services. */
 export interface DaemonContext {
@@ -124,6 +142,8 @@ export interface DaemonContext {
   linear?: LinearConnector;
   /** P6 — Slack, acting as the user through a user token. */
   slack?: SlackConnector;
+  /** P6 — paired devices, pairing codes, step-up grants, the Funnel watch, passkeys and web push; set by `createPhase6`. */
+  remoteAccess?: RemoteAccess;
 }
 
 export interface BuildContextOptions {

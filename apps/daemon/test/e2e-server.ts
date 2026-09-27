@@ -5,6 +5,7 @@ import { saveConfig } from '../src/config.ts';
 import { createDaemon } from '../src/main.ts';
 import { projectConfigFor } from '../src/services/projects.ts';
 import { e2eRoot, FAKE_CLAUDE, makeTempHomes, writeClaudeSession } from './homes.ts';
+import { offlinePhase6 } from './p6-connector-fakes.ts';
 
 const port = Number(process.env.ORC_E2E_PORT ?? 4399);
 // Unique per run unless the Playwright config pinned ORC_E2E_ROOT; the specs read the launch
@@ -47,7 +48,13 @@ writeClaudeSession(homes, {
   timestamp: '2026-09-10T08:00:00.000Z',
 });
 
-const daemon = await createDaemon({ paths: homes.paths, launchExternal: async () => undefined });
+// Phase 6 stays in the process: an in-memory secret store, fake Linear/Slack APIs, no push
+// service, no `ioreg` and no `tailscale`.
+const daemon = await createDaemon({
+  paths: homes.paths,
+  launchExternal: async () => undefined,
+  phase6: offlinePhase6(),
+});
 const running = await daemon.start({ port, watch: false });
 console.log(`e2e daemon ready on http://127.0.0.1:${running.port}`);
 

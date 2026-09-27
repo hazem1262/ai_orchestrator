@@ -10,6 +10,7 @@ import { type RemoteGuardDeps, remoteGuard } from './remote-guard.ts';
 import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
+import { registerAwayRoutes } from './routes/away.ts';
 import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerExportRoutes } from './routes/export.ts';
 import { githubRoutes } from './routes/github.ts';
@@ -25,10 +26,13 @@ import { registerNotificationRoutes } from './routes/notifications.ts';
 import { planRoutes } from './routes/plan.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPtyRoutes } from './routes/pty.ts';
+import { registerPushRoutes } from './routes/push.ts';
 import { registerRecapRoutes } from './routes/recaps.ts';
 import { registerReminderRoutes } from './routes/reminders.ts';
+import { registerRemoteRoutes } from './routes/remote.ts';
 import { reviewRoutes } from './routes/review.ts';
 import { registerSafetyRoutes } from './routes/safety.ts';
+import { registerSessionActionRoutes } from './routes/session-actions.ts';
 import { registerSessionDetailRoutes } from './routes/session-detail.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerSettingsRoutes } from './routes/settings.ts';
@@ -38,6 +42,7 @@ import { registerStreamRoutes } from './routes/streams.ts';
 import { registerTemplateRoutes } from './routes/templates.ts';
 import { registerUsageRoutes } from './routes/usage.ts';
 import { registerViewRoutes } from './routes/views.ts';
+import { registerWebAuthnRoutes } from './routes/webauthn.ts';
 import { worktreesRoutes } from './routes/worktrees.ts';
 import { registerStatic } from './static.ts';
 import type { OrcApp, OrcEnv } from './types.ts';
@@ -50,6 +55,11 @@ export interface AppOptions {
   env?: NodeJS.ProcessEnv;
   /** Remote-access guard deps; `null` or unset marks every request as local (P1 tests only). */
   remote?: RemoteGuardDeps | null;
+  /**
+   * The Phase 6 instance from `createPhase6`. Only its guard deps are read, as the fallback when
+   * `remote` is unset. It registers no routes: the Phase 6 routes are in `registerAllRoutes`.
+   */
+  phase6?: { guardDeps: RemoteGuardDeps } | null;
 }
 
 /**
@@ -62,7 +72,10 @@ export interface AppOptions {
  * from `main.ts` was demonstrated to put an unredacted `/api/brand-new` into the live daemon with
  * the entire suite passing, because the census calls `createApp` without it. The phase 2 routes
  * (live, hooks, inbox, templates, launch, archive, notifications) are registered here too, above
- * the catch-all; their services are set on `ctx` by `startPhase2` and read per request.
+ * the catch-all; their services are set on `ctx` by `startPhase2` and read per request. The phase 6
+ * routes (connectors, share, session actions, remote, WebAuthn, push, away) follow the same rule:
+ * `createPhase6` sets their services on `ctx`, the handlers read them per request and answer
+ * `503 unavailable` while they are unset, and `AppOptions.phase6` only supplies the guard deps.
  */
 export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerHealthRoutes(app);
@@ -92,6 +105,11 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerHandoffRoutes(app, ctx);
   registerConnectorRoutes(app, ctx);
   registerShareRoutes(app, ctx);
+  registerSessionActionRoutes(app, ctx);
+  registerRemoteRoutes(app, ctx);
+  registerWebAuthnRoutes(app, ctx);
+  registerPushRoutes(app, ctx);
+  registerAwayRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));
@@ -132,7 +150,7 @@ export function createApp(o: AppOptions): OrcApp {
 
   // Runs first and on every path: it decides local vs remote, fully authenticates remote requests
   // and sets `c.var.remote`. The local host/Origin/install-token checks below skip remote ones.
-  app.use('*', remoteGuard(o.remote ?? null));
+  app.use('*', remoteGuard(o.remote ?? o.phase6?.guardDeps ?? null));
   app.use('/api/*', apiAccessMiddleware(o));
   app.use('/api/*', auditMiddleware(o.ctx));
 

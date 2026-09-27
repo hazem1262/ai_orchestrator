@@ -302,6 +302,38 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     path: '/api/handoffs/session/:source/:id',
     why: 'builds a local handoff; the redacted digest goes to the configured recap engine',
   },
+  // Phase 6 routes that record their own audit entries, or change nothing outside this Mac. The
+  // connector and share posts are in AUDITED_ROUTES above, not here.
+  {
+    method: 'POST',
+    path: '/api/sessions/:source/:id/reply',
+    why: 'audited by withPtyInputAudit as pty.input (a deny-list block is recorded as denied)',
+  },
+  {
+    method: 'POST',
+    path: '/api/inbox/:id/approve',
+    why: 'audited in SessionActions as remote.approve or inbox.approve',
+  },
+  { method: 'POST', path: '/api/remote/config', why: 'audited in the route as remote.configure' },
+  { method: 'POST', path: '/api/remote/pairing', why: 'audited in the route as remote.pairing_code' },
+  {
+    method: 'POST',
+    path: '/api/remote/pair',
+    why: 'audited in the route as remote.pair, including a wrong code',
+  },
+  { method: 'DELETE', path: '/api/remote/devices/:id', why: 'audited in the route as remote.revoke' },
+  { method: 'POST', path: '/api/remote/away', why: 'audited in the route as away.set' },
+  { method: 'POST', path: '/api/webauthn/register/options', why: 'issues a challenge; no state change' },
+  { method: 'POST', path: '/api/webauthn/register/verify', why: 'audited in the route as webauthn.register' },
+  { method: 'POST', path: '/api/webauthn/stepup/options', why: 'issues a challenge; no state change' },
+  {
+    method: 'POST',
+    path: '/api/webauthn/stepup/verify',
+    why: 'grants a step-up; the guarded action it unlocks is audited',
+  },
+  { method: 'POST', path: '/api/push/subscriptions', why: 'device-local notification preference' },
+  { method: 'DELETE', path: '/api/push/subscriptions', why: 'device-local notification preference' },
+  { method: 'POST', path: '/api/push/test', why: 'sends a test notification to the user’s own devices only' },
 ];
 
 export function matchAuditedRoute(

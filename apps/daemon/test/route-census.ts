@@ -466,6 +466,50 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: '{ ts }; the 409 confirmation preview is composed through core redact before it is returned',
   },
+  'POST /api/sessions/:source/:id/reply': {
+    guardedBy: null,
+    reason: '{ ok: true }; the reply text is written to the PTY and never echoed back',
+  },
+  'POST /api/inbox/:id/approve': { guardedBy: 'redactInboxItem', reason: '' },
+  'GET /api/remote/status': {
+    guardedBy: null,
+    reason:
+      'remote settings the user typed (enabled, origin, allowedLogin), device id and timestamps; no transcript data',
+  },
+  'POST /api/remote/config': { guardedBy: null, reason: 'the same remote status as GET /api/remote/status' },
+  'POST /api/remote/pairing': {
+    guardedBy: null,
+    reason: 'the one-time pairing code for the user to type on the phone, its expiry and the pair URL',
+  },
+  'POST /api/remote/pair': {
+    guardedBy: null,
+    reason: 'deliberately returns the new device token to the device that redeemed the pairing code',
+  },
+  'GET /api/remote/devices': {
+    guardedBy: null,
+    reason:
+      'paired devices: user-chosen names, Tailscale login, timestamps and passkey ids; no transcript data',
+  },
+  'DELETE /api/remote/devices/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary names the device the user paired',
+  },
+  'POST /api/webauthn/register/options': {
+    guardedBy: null,
+    reason: 'WebAuthn creation options: RP id, challenge, device id and existing credential ids',
+  },
+  'POST /api/webauthn/register/verify': { guardedBy: null, reason: '{ credentialId }' },
+  'POST /api/webauthn/stepup/options': {
+    guardedBy: null,
+    reason: 'WebAuthn request options: RP id, challenge and allowed credential ids',
+  },
+  'POST /api/webauthn/stepup/verify': { guardedBy: null, reason: '{ validUntil }' },
+  'GET /api/push/vapid-public-key': { guardedBy: null, reason: 'the VAPID public key' },
+  'POST /api/push/subscriptions': { guardedBy: null, reason: '{ ok: true }' },
+  'DELETE /api/push/subscriptions': { guardedBy: null, reason: '{ ok: true }' },
+  'POST /api/push/test': { guardedBy: null, reason: '{ sent: number }' },
+  'GET /api/remote/away': { guardedBy: null, reason: 'the away state: flags, mode, reason and idle seconds' },
+  'POST /api/remote/away': { guardedBy: null, reason: 'the same away state as GET /api/remote/away' },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth

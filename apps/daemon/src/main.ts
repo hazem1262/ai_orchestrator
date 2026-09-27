@@ -15,6 +15,7 @@ import { createPlanApprovalRule } from './inbox/rules/plan-approval.ts';
 import { prEventRule } from './inbox/rules/pr-event.ts';
 import { createIndexer, type Indexer } from './indexer/indexer.ts';
 import { startPhase2 } from './phase2.ts';
+import { createPhase6, type Phase6Options } from './phase6.ts';
 import { warnIfChildSessionEnv } from './pty/pty-manager.ts';
 import { createCheckpointService } from './services/checkpoint/checkpoint.ts';
 import { registerCheckpointHook } from './services/checkpoint/turn-hook.ts';
@@ -75,7 +76,14 @@ export interface Daemon {
 }
 
 export async function createDaemon(
-  o: { paths?: OrcPaths; log?: Logger; launchExternal?: ExternalLauncher; webDist?: string | null } = {},
+  o: {
+    paths?: OrcPaths;
+    log?: Logger;
+    launchExternal?: ExternalLauncher;
+    webDist?: string | null;
+    /** Phase 6 overrides. Production passes none; tests pass all of them (no Keychain, network or `tailscale`). */
+    phase6?: Phase6Options;
+  } = {},
 ): Promise<Daemon> {
   const paths = o.paths ?? resolvePaths();
   const built = buildContext({ paths, log: o.log, launchExternal: o.launchExternal });
@@ -116,14 +124,22 @@ export async function createDaemon(
       ctx.ledger?.start();
       ctx.usage?.start();
       ctx.streams?.start();
-      const app = createApp({ ctx, token, port: () => boundPort, webDist });
+      const phase6 = createPhase6(ctx, o.phase6 ?? {});
+      const app = createApp({ ctx, token, port: () => boundPort, webDist, remote: phase6.guardDeps });
       const server = await new Promise<Server>((resolve) => {
         const s = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, (info: AddressInfo) => {
           boundPort = info.port;
           resolve(s as Server);
         });
       });
-      const sockets = attachPtyWebSocket(server, { ctx, token, origins, liveHub: phase2.hub });
+      phase6.start();
+      const sockets = attachPtyWebSocket(server, {
+        ctx,
+        token,
+        origins,
+        liveHub: phase2.hub,
+        remote: phase6.guardDeps,
+      });
       ctx.log.info({ port: boundPort }, 'daemon listening');
       const scan = indexer
         .scanAll()
@@ -137,6 +153,7 @@ export async function createDaemon(
         port: boundPort,
         close: async () => {
           await scan;
+          phase6.stop();
           ctx.goals?.stop();
           ctx.recaps?.stop();
           ctx.digests?.stop();

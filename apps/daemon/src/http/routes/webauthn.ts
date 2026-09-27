@@ -9,17 +9,18 @@ import type { OrcApp } from '../types.ts';
 
 /**
  * Passkey registration and step-up for paired remote devices (`403 remote_only` otherwise).
- * Not mounted by `registerAllRoutes` yet: Task 20's `createPhase6().register` mounts it with the
- * other Phase 6 routes.
+ * Registered from `registerAllRoutes` with no `deps`: the service is then read off
+ * `ctx.remoteAccess` per request (503 while unwired).
  */
 export function registerWebAuthnRoutes(
   app: OrcApp,
   ctx: DaemonContext,
-  d: { webauthn: WebAuthnService },
+  deps?: { webauthn: WebAuthnService },
 ): void {
+  const webauthn = () => deps?.webauthn ?? need(ctx.remoteAccess, 'remote access').webauthn;
   app.post('/api/webauthn/register/options', async (c) => {
     const r = requireRemoteDevice(c);
-    return c.json(await d.webauthn.registrationOptions(r.deviceId));
+    return c.json(await webauthn().registrationOptions(r.deviceId));
   });
 
   app.post('/api/webauthn/register/verify', async (c) => {
@@ -34,21 +35,21 @@ export function registerWebAuthnRoutes(
         target: r.deviceId,
         params: {},
       },
-      () => d.webauthn.verifyRegistration(r.deviceId, response as unknown as RegistrationResponseJSON),
+      () => webauthn().verifyRegistration(r.deviceId, response as unknown as RegistrationResponseJSON),
     );
     return c.json(out);
   });
 
   app.post('/api/webauthn/stepup/options', async (c) => {
     const r = requireRemoteDevice(c);
-    return c.json(await d.webauthn.stepUpOptions(r.deviceId));
+    return c.json(await webauthn().stepUpOptions(r.deviceId));
   });
 
   app.post('/api/webauthn/stepup/verify', async (c) => {
     const r = requireRemoteDevice(c);
     const { response } = await readJson(c, WebAuthnVerifyBody);
     return c.json(
-      await d.webauthn.verifyStepUp(r.deviceId, response as unknown as AuthenticationResponseJSON),
+      await webauthn().verifyStepUp(r.deviceId, response as unknown as AuthenticationResponseJSON),
     );
   });
 }

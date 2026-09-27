@@ -27,8 +27,11 @@ export interface RemoteRouteDeps {
  * Remote status, config, pairing and devices. Each mutating route records its own audit entry.
  * Configuring, creating a pairing code and managing devices are loopback-only; redeeming a
  * pairing code is remote-only (the `public` remote policy lets an unpaired device reach it).
+ * Registered from `registerAllRoutes` with no `deps`: the services are then read off
+ * `ctx.remoteAccess` per request (503 while unwired).
  */
-export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteRouteDeps): void {
+export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, deps?: RemoteRouteDeps): void {
+  const d = (): RemoteRouteDeps => deps ?? need(ctx.remoteAccess, 'remote access');
   function status(c: Context<OrcEnv>): RemoteStatus {
     const cfg = ctx.config().remote;
     const r = remoteOf(c);
@@ -38,9 +41,9 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
       allowedLogin: r ? null : cfg.allowedLogin,
       isRemote: r !== null,
       deviceId: r?.deviceId ?? null,
-      stepUpValidUntil: r?.deviceId ? d.stepUp.validUntil(r.deviceId) : null,
-      funnelDetected: d.funnel.detected(),
-      pairingActiveUntil: r ? null : d.pairing.activeUntil(),
+      stepUpValidUntil: r?.deviceId ? d().stepUp.validUntil(r.deviceId) : null,
+      funnelDetected: d().funnel.detected(),
+      pairingActiveUntil: r ? null : d().pairing.activeUntil(),
     };
   }
 
@@ -63,7 +66,7 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
       ...cfg,
       remote: { ...cfg.remote, enabled: body.enabled, origin: body.origin, allowedLogin: body.allowedLogin },
     }));
-    await d.funnel.refresh();
+    await d().funnel.refresh();
     ctx.audit.record({
       ...whoOf(c),
       action: 'remote.configure',
@@ -81,7 +84,7 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
     if (!cfg.enabled || !cfg.origin || !cfg.allowedLogin?.trim()) {
       throw new ServiceError('remote_disabled', 409, 'enable remote access first');
     }
-    const p = d.pairing.create();
+    const p = d().pairing.create();
     ctx.audit.record({
       ...whoOf(c),
       action: 'remote.pairing_code',
@@ -103,7 +106,7 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
       );
     const body = await readJson(c, PairBody);
     const detail = `${body.name} (${r.login})`;
-    if (!d.pairing.consume(body.code)) {
+    if (!d().pairing.consume(body.code)) {
       ctx.audit.record({
         actor: 'remote',
         actorDetail: detail,
@@ -115,7 +118,7 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
       });
       throw new ServiceError('invalid_code', 403, 'wrong or expired pairing code');
     }
-    const { device, token } = d.devices.create(body.name, r.login);
+    const { device, token } = d().devices.create(body.name, r.login);
     ctx.audit.record({
       actor: 'remote',
       actorDetail: detail,
@@ -131,17 +134,19 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
   app.get('/api/remote/devices', (c) => {
     requireLoopback(c);
     return c.json(
-      d.devices.list().map(
-        (x): RemoteDevice => ({
-          id: x.id,
-          name: x.name,
-          login: x.login,
-          createdAt: x.createdAt,
-          lastSeenAt: x.lastSeenAt,
-          revokedAt: x.revokedAt,
-          credentials: x.credentials,
-        }),
-      ),
+      d()
+        .devices.list()
+        .map(
+          (x): RemoteDevice => ({
+            id: x.id,
+            name: x.name,
+            login: x.login,
+            createdAt: x.createdAt,
+            lastSeenAt: x.lastSeenAt,
+            revokedAt: x.revokedAt,
+            credentials: x.credentials,
+          }),
+        ),
     );
   });
 
@@ -149,11 +154,11 @@ export function registerRemoteRoutes(app: OrcApp, ctx: DaemonContext, d: RemoteR
     requireLoopback(c);
     const id = c.req.param('id');
     const { confirm } = await readJson(c, ConfirmBody);
-    const device = d.devices.get(id);
+    const device = d().devices.get(id);
     if (!device) throw new ServiceError('not_found', 404, 'unknown device');
     confirmOr409(confirm, `Revoke ${device.name}? It loses access, its passkeys and its push subscriptions.`);
-    d.devices.revoke(id);
-    d.stepUp.revoke(id);
+    d().devices.revoke(id);
+    d().stepUp.revoke(id);
     ctx.audit.record({
       ...whoOf(c),
       action: 'remote.revoke',

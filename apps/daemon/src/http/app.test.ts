@@ -24,6 +24,7 @@ import { createInboxEngine } from '../inbox/engine.ts';
 import type { Indexer } from '../indexer/indexer.ts';
 import { stubSession } from '../live/stub-session.ts';
 import { createArchiveService } from '../services/archive/archive.ts';
+import { createSessionActions } from '../services/remote/session-actions.ts';
 import { createApp } from './app.ts';
 import type { OrcApp } from './types.ts';
 
@@ -662,6 +663,27 @@ describe('route-level redaction, derived from the census', () => {
           bodies.push(await json(res));
         }
         return { bodies, mustContain: REDACTED, mustNotContain: secrets };
+      },
+    },
+    'POST /api/inbox/:id/approve': {
+      run: async () => {
+        const ticket = S('approveticket');
+        const summary = S('approvesummary');
+        const engine = createInboxEngine(ctx);
+        ctx.inbox = engine;
+        ctx.sessionActions = createSessionActions(ctx);
+        const item = engine.upsert({
+          kind: 'automation_result',
+          scope: { session: 'claude:s-approve' },
+          ticket,
+          reason: 'r',
+          payload: { summary },
+        });
+        const res = await call(`/api/inbox/${item.id}/approve`, { method: 'POST', body: { confirm: true } });
+        expect(res.status).toBe(200);
+        const body = (await json(res)) as { id: string; state: string };
+        expect(body).toMatchObject({ id: item.id, state: 'done' });
+        return { bodies: [body], mustContain: REDACTED, mustNotContain: [ticket, summary] };
       },
     },
     'GET /api/sessions': {
