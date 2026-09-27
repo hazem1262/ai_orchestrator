@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { AgncSessionPanel } from '@/features/agnc/AgncSessionPanel.tsx';
 import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
+import { isRemoteSession } from '@/lib/source.ts';
 import { ExportButton } from './ExportButton.tsx';
 import { SafetyBadges } from './SafetyBadges.tsx';
 import { SessionHeader } from './SessionHeader.tsx';
@@ -61,19 +62,21 @@ export function SessionDetailPage({ source, id, tab, agentId, file, onNavigate }
               Review
             </Link>
             <ExportButton source={source} id={id} />
-            <ResumeActions
-              target={{
-                source: session.source,
-                id: session.id,
-                availability: session.availability,
-                live: session.live,
-                title: session.name ?? session.firstPrompt ?? session.id,
-              }}
-            />
+            {isRemoteSession(session) ? null : (
+              <ResumeActions
+                target={{
+                  source: session.source,
+                  id: session.id,
+                  availability: session.availability,
+                  live: session.live,
+                  title: session.name ?? session.firstPrompt ?? session.id,
+                }}
+              />
+            )}
           </div>
         }
       />
-      {session.source === 'agnc' ? (
+      {isRemoteSession(session) ? (
         <AgncSessionPanel session={session} />
       ) : (
         <>
