@@ -30,11 +30,13 @@ import type { ProjectServiceImpl } from '../../src/services/projects.ts';
 import type { RecapService } from '../../src/services/recap/recap.ts';
 import type { DenyList } from '../../src/services/safety/deny-list.ts';
 import type { ScheduledJob, Scheduler } from '../../src/services/scheduler/scheduler.ts';
+import { createMemorySecretStore } from '../../src/services/secrets/secret-store.ts';
 import { type SessionListItem, type SessionService, sessionPk } from '../../src/services/sessions.ts';
 import type { ShipService } from '../../src/services/ship/ship.ts';
 import type { Template, TemplateRegistry } from '../../src/services/templates.ts';
 import type { UsageMeter } from '../../src/services/usage/meter.ts';
 import type { CreateWorktreeInput, WorktreeService } from '../../src/services/worktree/worktree.ts';
+import { fakeAgncFactory, makeFakeAgncState } from './agnc-server.ts';
 
 const iso = () => new Date().toISOString();
 
@@ -601,7 +603,8 @@ export function createMemoryScheduler(): Scheduler & {
 /**
  * Phase 7 overrides for every `createDaemon` in tests and the e2e fixture daemon: a headless runner
  * that writes one assistant line to the run log and never spawns `claude`, no `git diff` for
- * TODO suggestions, and a supervisor classifier that always escalates without spawning `claude`.
+ * TODO suggestions, a supervisor classifier that always escalates without spawning `claude`, and
+ * AGNC on the in-memory fake server with the memory secret store (never the network or the Keychain).
  */
 export function offlinePhase7(): Phase7Options {
   return {
@@ -626,6 +629,7 @@ export function offlinePhase7(): Phase7Options {
       };
     },
     addedLines: async () => '',
+    agnc: { factory: fakeAgncFactory(makeFakeAgncState()), secrets: createMemorySecretStore() },
     classifier: async (i) => ({
       output: { decision: 'escalate', answer: null, confidence: 0, reason: 'offline classifier' },
       costUsd: 0,

@@ -187,6 +187,12 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     supervisorDecisions: unexpected('supervisorDecisions'),
     supervisorMarkWrong: unexpected('supervisorMarkWrong'),
     supervisorEvaluate: unexpected('supervisorEvaluate'),
+    agncStatus: unexpected('agncStatus'),
+    agncConnect: unexpected('agncConnect'),
+    agncMessages: unexpected('agncMessages'),
+    agncEvents: unexpected('agncEvents'),
+    agncPrompt: unexpected('agncPrompt'),
+    agncHandoff: unexpected('agncHandoff'),
   };
   return { ...base, ...overrides };
 }

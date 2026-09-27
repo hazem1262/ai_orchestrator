@@ -146,4 +146,27 @@ describe('createPhase7', () => {
     setSupervisor(true);
     expect(start).toHaveBeenCalledTimes(2);
   });
+
+  it('polls AGNC (fake server, memory secrets) only while agnc.enabled is on', async () => {
+    const t = setup();
+    const p7 = createPhase7(t.ctx, offlinePhase7());
+    expect(t.ctx.agnc).toBe(p7.agnc);
+    const seen: string[] = [];
+    t.ctx.bus.on('session.updated', (e) => {
+      if (e.session.source === 'agnc') seen.push(e.session.id);
+    });
+    let cfg = t.ctx.config();
+    t.ctx.config = () => cfg;
+    const setAgnc = (enabled: boolean) => {
+      cfg = OrcConfig.parse({ ...cfg, agnc: { ...cfg.agnc, enabled } });
+      t.ctx.bus.emit({ type: 'config.changed' });
+    };
+    p7.start();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen).toEqual([]);
+    setAgnc(true);
+    await vi.waitFor(() => expect(seen).toEqual(['ag-1', 'ag-2']));
+    setAgnc(false);
+    p7.stop();
+  });
 });

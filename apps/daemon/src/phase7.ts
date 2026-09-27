@@ -1,3 +1,11 @@
+import { createAgncCollector } from './collectors/agnc/agnc-collector.ts';
+import {
+  type AgncClientFactory,
+  type AgncConnector,
+  createAgncConnector,
+  createStreamableFactory,
+} from './connectors/agnc/agnc.ts';
+import { createKeyringOAuthProvider } from './connectors/agnc/oauth-provider.ts';
 import type { DaemonContext } from './context.ts';
 import { attachTriggerDispatcher } from './services/automations/dispatcher.ts';
 import type { HeadlessRunner } from './services/automations/headless.ts';
@@ -5,6 +13,7 @@ import { attachAutomationSchedules } from './services/automations/schedules.ts';
 import { type AutomationServiceImpl, createAutomationService } from './services/automations/service.ts';
 import { createSuggestionService, type SuggestionService } from './services/automations/suggestions.ts';
 import { type CompareService, createCompareService } from './services/compare/compare.ts';
+import { createSecretStore, type SecretStore } from './services/secrets/secret-store.ts';
 import type { Classifier } from './services/supervisor/classifier.ts';
 import { createSupervisor, type SupervisorImpl } from './services/supervisor/supervisor.ts';
 
@@ -15,6 +24,11 @@ export interface Phase7Options {
   addedLines?: (cwd: string, base: string) => Promise<string>;
   /** The supervisor's classifier. Production passes none (headless `claude -p`); tests pass a fake. */
   classifier?: Classifier;
+  /**
+   * AGNC overrides. Production passes none: the Keychain `SecretStore` and the Streamable HTTP
+   * transport to `agnc.url`. Tests pass the in-memory fake server and the memory secret store.
+   */
+  agnc?: { factory?: AgncClientFactory; secrets?: SecretStore; intervalMs?: number };
 }
 
 export interface Phase7 {
@@ -22,12 +36,14 @@ export interface Phase7 {
   suggestions: SuggestionService;
   compare: CompareService;
   supervisor: SupervisorImpl;
+  agnc: AgncConnector;
   /**
-   * Starts suggestion collection when `automations.suggestions.enabled` and the supervisor's
-   * `session.statusChanged` listener when `supervisor.enabled`, and follows config changes. Idempotent.
+   * Starts suggestion collection when `automations.suggestions.enabled`, the supervisor's
+   * `session.statusChanged` listener when `supervisor.enabled` and the AGNC session poller when
+   * `agnc.enabled`, and follows config changes. Idempotent.
    */
   start(): void;
-  /** Detaches schedules, triggers, suggestions and the supervisor and drops queued runs. Idempotent. */
+  /** Detaches schedules, triggers, suggestions, the supervisor and the AGNC poller and drops queued runs. Idempotent. */
   stop(): void;
 }
 
@@ -52,6 +68,8 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
   ctx.compare = compare;
   const supervisor = createSupervisor({ ctx, classifier: o.classifier });
   ctx.supervisor = supervisor;
+  const agnc = createAgncWiring(ctx, o.agnc ?? {});
+  ctx.agnc = agnc;
 
   const masterOn = () => ctx.config().automations.enabled;
   const gated: Pick<AutomationServiceImpl, 'list' | 'get' | 'start' | 'onChange'> = {
@@ -90,6 +108,18 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
     }
   };
 
+  const agncCollector = createAgncCollector({ ctx, agnc, intervalMs: o.agnc?.intervalMs });
+  let stopAgnc: (() => void) | null = null;
+  const syncAgnc = () => {
+    const on = ctx.config().agnc.enabled;
+    if (on && !stopAgnc) stopAgnc = agncCollector.start();
+    else if (!on && stopAgnc) {
+      stopAgnc();
+      stopAgnc = null;
+      void agnc.disconnect();
+    }
+  };
+
   let started = false;
   let stopped = false;
   attachTriggers();
@@ -99,16 +129,19 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
     suggestions,
     compare,
     supervisor,
+    agnc,
     start() {
       if (started || stopped) return;
       started = true;
       syncSuggestions();
       syncSupervisor();
+      syncAgnc();
       stops.push(
         ctx.bus.on('config.changed', () => {
           attachTriggers();
           syncSuggestions();
           syncSupervisor();
+          syncAgnc();
         }),
       );
     },
@@ -120,7 +153,30 @@ export function createPhase7(ctx: DaemonContext, o: Phase7Options = {}): Phase7 
       stopSuggestions = null;
       stopSupervisor?.();
       stopSupervisor = null;
+      stopAgnc?.();
+      stopAgnc = null;
+      void agnc.disconnect();
       automations.stop();
     },
   };
+}
+
+/**
+ * The AGNC connector. OAuth client registration and tokens go only to the SecretStore (`agnc.client`,
+ * `agnc.tokens`). The redirect URL is the daemon's `GET /oauth/agnc/callback`, and the transport
+ * reads `agnc.url` per connection. Nothing reaches the network until something calls the connector.
+ */
+function createAgncWiring(ctx: DaemonContext, o: NonNullable<Phase7Options['agnc']>): AgncConnector {
+  const provider = createKeyringOAuthProvider({
+    secrets: o.secrets ?? createSecretStore(),
+    redirectUrl: `http://127.0.0.1:${ctx.config().port}/oauth/agnc/callback`,
+  });
+  const factory: AgncClientFactory =
+    o.factory ?? (() => createStreamableFactory({ url: ctx.config().agnc.url, provider })());
+  return createAgncConnector({
+    factory,
+    log: ctx.log,
+    state: () => provider.state(),
+    pendingUrl: () => provider.pendingAuthorizationUrl(),
+  });
 }
