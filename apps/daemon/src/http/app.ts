@@ -4,11 +4,12 @@ import { HTTPException } from 'hono/http-exception';
 import type { DaemonContext } from '../context.ts';
 import { ServiceError } from '../services/errors.ts';
 import { auditMiddleware } from './audit-middleware.ts';
-import { allowedHosts, allowedOrigins, isLoopback, tokenMatches } from './auth.ts';
+import { allowedHosts, allowedOrigins, isLoopback, PUBLIC_API_PATHS, tokenMatches } from './auth.ts';
 import { redactedApiError } from './redact-out.ts';
 import { registerAnalyticsRoutes } from './routes/analytics.ts';
 import { registerArchiveRoutes } from './routes/archive.ts';
 import { registerAuditRoutes } from './routes/audit.ts';
+import { registerConnectorRoutes } from './routes/connectors.ts';
 import { registerExportRoutes } from './routes/export.ts';
 import { githubRoutes } from './routes/github.ts';
 import { registerGoalRoutes } from './routes/goals.ts';
@@ -85,6 +86,7 @@ export function registerAllRoutes(app: OrcApp, ctx: DaemonContext): void {
   registerGoalRoutes(app, ctx);
   registerReminderRoutes(app, ctx);
   registerHandoffRoutes(app, ctx);
+  registerConnectorRoutes(app, ctx);
   // Phase 4 sub-apps. Each renders its own §6 error bodies through `redactedApiError` and reads
   // its service off `ctx` per request (set by `wirePhase4`), answering 503 while it is unset.
   app.route('/api', worktreesRoutes(ctx));
@@ -132,7 +134,8 @@ export function createApp(o: AppOptions): OrcApp {
     if (origin && !allowedOrigins(o.port(), o.env).includes(origin)) {
       return c.json(apiError('forbidden', 'origin not allowed'), 403);
     }
-    if (!tokenMatches(o.token, c.req.header('x-orc-token'))) {
+    const isPublic = c.req.method === 'GET' && PUBLIC_API_PATHS.has(c.req.path);
+    if (!isPublic && !tokenMatches(o.token, c.req.header('x-orc-token'))) {
       return c.json(apiError('unauthorized', 'missing or invalid token'), 401);
     }
     await next();

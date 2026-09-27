@@ -198,6 +198,29 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
     target: sessionTarget,
     recordedBy: 'service',
   },
+  // Phase 6 connectors. Each handler records its own entry through `audited()` so the params
+  // never carry the pasted token or the OAuth client secret.
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/([^/]+)\/token$/,
+    action: 'connector.connect',
+    target: (m) => dec(m[1]),
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/connectors\/([^/]+)\/app$/,
+    action: 'connector.configure',
+    target: (m) => dec(m[1]),
+    recordedBy: 'service',
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/connectors\/([^/]+)$/,
+    action: 'connector.disconnect',
+    target: (m) => dec(m[1]),
+    recordedBy: 'service',
+  },
   {
     method: 'POST',
     pattern: /^\/api\/hooks\/install$/,

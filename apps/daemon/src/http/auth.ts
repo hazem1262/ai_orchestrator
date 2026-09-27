@@ -20,3 +20,12 @@ export function tokenMatches(expected: string, given: string | null | undefined)
 export function isLoopback(addr: string | undefined): boolean {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
+
+/**
+ * Browser redirects from OAuth providers carry no token; they are protected by a one-time `state`
+ * instead. Exempt for `GET` only, and only on these exact paths.
+ */
+export const PUBLIC_API_PATHS: ReadonlySet<string> = new Set([
+  '/api/connectors/linear/callback',
+  '/api/connectors/slack/callback',
+]);

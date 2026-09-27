@@ -418,6 +418,31 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: 'the cancelled reminder, walked by redactedJson (core redactDeep) on the way out',
   },
+  'GET /api/connectors': {
+    guardedBy: null,
+    reason: 'connector status rows: ids, health, auth kind and the account label; never a token',
+  },
+  'POST /api/connectors/:id/token': {
+    guardedBy: null,
+    reason: 'the connector status row after the token is verified; the token itself is never echoed',
+  },
+  'POST /api/connectors/:id/app': {
+    guardedBy: null,
+    reason: '{ ok: true }; the client secret is never echoed',
+  },
+  'GET /api/connectors/:id/authorize': {
+    guardedBy: null,
+    reason: 'the provider authorize URL (client id, redirect URI, one-time state); no secret',
+  },
+  'GET /api/connectors/:id/callback': {
+    guardedBy: null,
+    reason:
+      'public HTML page for the OAuth redirect; provider and exchange error text goes through core redact and is HTML-escaped',
+  },
+  'DELETE /api/connectors/:id': {
+    guardedBy: null,
+    reason: '{ ok: true }; the 409 confirmation summary is a constant sentence with the connector id',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -439,6 +464,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',
   'apps/daemon/src/http/routes/goals.ts',
