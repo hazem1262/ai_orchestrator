@@ -22,6 +22,8 @@ export * from './routes/launch.ts';
 export * from './routes/links.ts';
 export * from './routes/live.ts';
 export * from './routes/notifications.ts';
+export * from './routes/p7-common.ts';
+export * from './routes/p7-placeholders.ts';
 export * from './routes/plan.ts';
 export * from './routes/projects.ts';
 export * from './routes/pty.ts';

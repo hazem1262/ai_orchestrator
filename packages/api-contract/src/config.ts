@@ -162,6 +162,41 @@ export const OrcConfig = z
       )
       .default({}),
     archive: z.object({ enabled: z.boolean().default(true), maxGb: z.number().default(10) }).prefault({}),
+    automations: z
+      .object({
+        enabled: z.boolean().default(false),
+        maxConcurrent: z.number().int().positive().default(2),
+        suggestions: z
+          .object({
+            enabled: z.boolean().default(false),
+            intervalMin: z.number().int().positive().default(60),
+          })
+          .prefault({}),
+      })
+      .prefault({}),
+    supervisor: z
+      .object({
+        enabled: z.boolean().default(false),
+        model: z.string().default('claude-haiku-4-5'),
+        confidenceThreshold: z.number().min(0).max(1).default(0.85),
+        maxPerSessionPerHour: z.number().int().nonnegative().default(3),
+        maxPerHour: z.number().int().nonnegative().default(10),
+        monthlyBudgetUsd: z.number().nonnegative().default(5),
+        quietHours: z
+          .object({ start: z.string().regex(/^\d{2}:\d{2}$/), end: z.string().regex(/^\d{2}:\d{2}$/) })
+          .nullable()
+          .default(null),
+        debounceMs: z.number().int().nonnegative().default(3000),
+      })
+      .prefault({}),
+    compare: z.object({ maxVariants: z.number().int().min(2).max(6).default(4) }).prefault({}),
+    agnc: z
+      .object({
+        enabled: z.boolean().default(false),
+        url: z.string().default('https://agnc.wakecap.ai/mcp'),
+        pollSeconds: z.number().int().positive().default(30),
+      })
+      .prefault({}),
     github: z
       .object({
         enabled: z.boolean().default(true),

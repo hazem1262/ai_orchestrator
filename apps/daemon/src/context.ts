@@ -3,6 +3,7 @@ import type { OrcConfig } from '@orc/api-contract';
 import type Database from 'better-sqlite3';
 import pino, { type Logger } from 'pino';
 import { loadConfig, type OrcPaths, saveConfig } from './config.ts';
+import type { AgncConnector } from './connectors/agnc/agnc.ts';
 import type { GithubConnector } from './connectors/github/github.ts';
 import type { LinearConnector } from './connectors/linear/linear.ts';
 import type { SlackConnector } from './connectors/slack/slack.ts';
@@ -25,7 +26,9 @@ import { type AnalyticsService, createAnalyticsService } from './services/analyt
 import { createDigestService, type DigestService } from './services/analytics/digest.ts';
 import type { ArchiveServiceRuntime } from './services/archive/archive.ts';
 import { type AuditService, createAuditService } from './services/audit/audit.ts';
+import type { SuggestionService } from './services/automations/suggestions.ts';
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
+import type { CompareService } from './services/compare/compare.ts';
 import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
 import { createGoalService, type GoalService } from './services/goals/goals.ts';
@@ -144,6 +147,12 @@ export interface DaemonContext {
   slack?: SlackConnector;
   /** P6 — paired devices, pairing codes, step-up grants, the Funnel watch, passkeys and web push; set by `createPhase6`. */
   remoteAccess?: RemoteAccess;
+  /** P7 — automation suggestions (Jules-style suggested tasks). */
+  suggestions?: SuggestionService;
+  /** P7 — compare mode across agents. */
+  compare?: CompareService;
+  /** P7 — optional AGNC sessions. */
+  agnc?: AgncConnector;
 }
 
 export interface BuildContextOptions {
