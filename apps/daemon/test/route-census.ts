@@ -487,6 +487,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/analytics.ts',
   'apps/daemon/src/http/routes/archive.ts',
   'apps/daemon/src/http/routes/audit.ts',
+  'apps/daemon/src/http/routes/away.ts',
   'apps/daemon/src/http/routes/connectors.ts',
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',

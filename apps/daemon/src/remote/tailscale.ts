@@ -2,7 +2,7 @@ import { execa } from 'execa';
 
 export type RunCommand = (cmd: string, args: string[]) => Promise<string>;
 
-const defaultRun: RunCommand = async (cmd, args) => (await execa(cmd, args, { timeout: 5000 })).stdout;
+export const runCommand: RunCommand = async (cmd, args) => (await execa(cmd, args, { timeout: 5000 })).stdout;
 
 /**
  * `tailscale serve status --json` lists Funnel-enabled host:ports under `AllowFunnel`. Spike S9
@@ -16,7 +16,7 @@ export function detectFunnel(status: unknown): boolean {
 }
 
 /** Read-only status call; `null` when tailscale is missing or the output is not JSON. */
-export async function readServeStatus(run: RunCommand = defaultRun): Promise<unknown> {
+export async function readServeStatus(run: RunCommand = runCommand): Promise<unknown> {
   try {
     const out = await run('tailscale', ['serve', 'status', '--json']);
     return out.trim() ? JSON.parse(out) : {};

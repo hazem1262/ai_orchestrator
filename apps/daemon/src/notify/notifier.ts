@@ -1,5 +1,6 @@
 import type { OrcConfig } from '@orc/api-contract';
 import type { InboxItem, InboxKind } from '@orc/core';
+import { selectChannels } from './routing.ts';
 
 /**
  * contracts §11 — the notifier contract only. Task 11 adds the implementation below these types;
@@ -81,7 +82,7 @@ export function createNotifier(opts: {
     async notify(item) {
       const cfg = opts.config();
       const pref = prefFor(cfg, item.kind);
-      if (!pref.enabled || pref.channels.length === 0) return;
+      if (!pref.enabled) return;
       const t = now();
       const prev = lastSent.get(item.dedupeKey);
       if (prev !== undefined && t - prev < debounceMs) return;
@@ -93,8 +94,7 @@ export function createNotifier(opts: {
         if (!oldest.done) lastSent.delete(oldest.value);
       }
       let sent = false;
-      for (const id of pref.channels) {
-        if (away && id === 'macos') continue;
+      for (const id of selectChannels({ pref, away, awayChannels: cfg.away.channels })) {
         const ch = channels.get(id);
         if (!ch) continue;
         try {
