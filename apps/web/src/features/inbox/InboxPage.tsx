@@ -10,6 +10,8 @@ import { cn } from '@/components/ui/cn.ts';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { formatDuration } from '@/features/live-board/sort.ts';
+import { InboxItemMobileCard } from '@/features/mobile/InboxItemMobileCard.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { DailyUpdateButton } from '@/features/share/DailyUpdateButton.tsx';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
@@ -55,6 +57,7 @@ export function InboxPage({ now }: { now?: () => number } = {}) {
   const action = useInboxAction();
   const navigate = useNavigate();
   const openTerminal = useTerminalStore((t) => t.open);
+  const isMobile = useIsMobile();
 
   const ownedPty = (item: InboxItem): string | null => {
     const ref = sessionRef(item);
@@ -106,8 +109,14 @@ export function InboxPage({ now }: { now?: () => number } = {}) {
     <div className="flex flex-col gap-3 p-4">
       <div className="flex items-center gap-4">
         <h1 className="text-lg font-semibold">Inbox</h1>
-        <p className="ml-auto text-xs text-muted-foreground">j/k move · e done · s snooze 1h · Enter open</p>
-        <DailyUpdateButton />
+        {isMobile ? null : (
+          <>
+            <p className="ml-auto text-xs text-muted-foreground">
+              j/k move · e done · s snooze 1h · Enter open
+            </p>
+            <DailyUpdateButton />
+          </>
+        )}
       </div>
 
       <Tabs
@@ -129,23 +138,31 @@ export function InboxPage({ now }: { now?: () => number } = {}) {
           {!isLoading && items.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nothing needs you right now.</p>
           ) : null}
-          <ul aria-label="Inbox items" className="flex flex-col gap-1">
-            {items.map((item, i) => (
-              <InboxRow
-                key={item.id}
-                item={item}
-                now={clock()}
-                selected={i === selected}
-                pty={ownedPty(item)}
-                onSelect={() => setSelected(i)}
-                onOpen={() => onOpen(i)}
-                onTerminal={(ptyId) => openTerminal(ptyId, item.reason)}
-                onDone={() => onDone(i)}
-                onSnooze={(until) => snooze(i, until)}
-                onReopen={() => action.mutate({ id: item.id, action: 'reopen' })}
-              />
-            ))}
-          </ul>
+          {isMobile ? (
+            <section aria-label="Inbox items" className="flex flex-col gap-2">
+              {items.map((item) => (
+                <InboxItemMobileCard key={item.id} item={item} kindLabel={KIND_LABEL[item.kind]} />
+              ))}
+            </section>
+          ) : (
+            <ul aria-label="Inbox items" className="flex flex-col gap-1">
+              {items.map((item, i) => (
+                <InboxRow
+                  key={item.id}
+                  item={item}
+                  now={clock()}
+                  selected={i === selected}
+                  pty={ownedPty(item)}
+                  onSelect={() => setSelected(i)}
+                  onOpen={() => onOpen(i)}
+                  onTerminal={(ptyId) => openTerminal(ptyId, item.reason)}
+                  onDone={() => onDone(i)}
+                  onSnooze={(until) => snooze(i, until)}
+                  onReopen={() => action.mutate({ id: item.id, action: 'reopen' })}
+                />
+              ))}
+            </ul>
+          )}
         </TabsContent>
       </Tabs>
     </div>

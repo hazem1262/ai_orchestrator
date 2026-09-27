@@ -5,6 +5,8 @@ import { useCheckpointDiff, useDiff, useReview } from '@/api/queries/review.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { GitConfirmDialog } from '@/features/git/GitConfirmDialog.tsx';
 import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
+import { ReadOnlyDiff } from '@/features/mobile/ReadOnlyDiff.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { CommentsPanel } from './CommentsPanel.tsx';
 import { FileDiff } from './FileDiff.tsx';
 import { FileTree } from './FileTree.tsx';
@@ -32,6 +34,7 @@ export function ReviewPage({
   const draft = useReviewDraft(`${source}:${id}`);
   const [mode, setMode] = useState<'split' | 'unified'>('split');
   const [selected, setSelected] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const files = diff.data?.files ?? [];
@@ -52,6 +55,47 @@ export function ReviewPage({
     );
   const summary = review.data;
   const file = diff.data?.files.find((f) => f.path === selected) ?? null;
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col gap-3 p-3">
+        <p className="text-xs text-muted-foreground">
+          Read-only on a phone. Comments, reverts and shipping are on the Mac.
+        </p>
+        {sel.kind === 'checkpoint' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="self-start"
+            onClick={() => setSel({ kind: 'worktree' })}
+          >
+            Back to full diff
+          </Button>
+        )}
+        {diff.isLoading && <p className="text-sm text-muted-foreground">Loading diff…</p>}
+        {diff.error && (
+          <p role="alert" className="text-sm text-destructive">
+            {diff.error.message}
+          </p>
+        )}
+        {diff.data && diff.data.files.length === 0 && (
+          <p className="text-sm text-muted-foreground">No changes.</p>
+        )}
+        {(diff.data?.files ?? []).map((f) => (
+          <section key={f.path} aria-label={`Diff of ${f.path}`} className="flex flex-col gap-1">
+            <h2 className="break-all font-mono text-xs font-semibold">
+              {f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
+            </h2>
+            {f.status === 'binary' ? (
+              <p className="text-sm text-muted-foreground">Binary file changed.</p>
+            ) : (
+              <ReadOnlyDiff unified={f.patch} />
+            )}
+          </section>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0">

@@ -1,4 +1,5 @@
 import { Separator } from '@/components/ui/separator.tsx';
+import { RemotePanel } from '@/features/remote/RemotePanel.tsx';
 import { SecretsHygienePanel } from '@/features/safety/SecretsHygienePanel.tsx';
 import { ArchiveSettings } from './ArchiveSettings.tsx';
 import { BridgeSettings } from './BridgeSettings.tsx';
@@ -31,6 +32,13 @@ export function SettingsPage() {
             Connectors
           </h2>
           <ConnectorsPanel />
+        </section>
+        <Separator />
+        <section aria-labelledby="settings-remote" className="flex flex-col gap-2">
+          <h2 id="settings-remote" className="text-base font-semibold">
+            Remote &amp; mobile
+          </h2>
+          <RemotePanel />
         </section>
       </div>
     </div>
