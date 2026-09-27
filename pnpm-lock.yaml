@@ -130,6 +130,25 @@ importers:
         specifier: ^4.23.13
         version: 4.23.13
 
+  apps/mcp:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.1(zod@4.6.5)
+      '@orc/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.28)(tsx@4.23.13)(typescript@6.0.3)
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
+
   apps/web:
     dependencies:
       '@git-diff-view/react':
