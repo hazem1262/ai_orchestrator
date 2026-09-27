@@ -232,6 +232,13 @@ export const NON_ACTION_ROUTES: Array<{ method: string; path: string; why: strin
     path: '/api/recaps/daily',
     why: 'redacted session list to the configured recap engine; cost tracked in recaps',
   },
+  { method: 'PUT', path: '/api/goals/:targetType/:targetId', why: 'local goal metadata' },
+  {
+    method: 'POST',
+    path: '/api/reminders',
+    why: 'schedules a local reminder; its PTY input is audited by withPtyInputAudit when it fires',
+  },
+  { method: 'POST', path: '/api/reminders/:id/cancel', why: 'local reminder state' },
 ];
 
 export function matchAuditedRoute(

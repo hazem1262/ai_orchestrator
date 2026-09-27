@@ -362,6 +362,32 @@ export const CENSUS: Record<string, CensusEntry> = {
     guardedBy: null,
     reason: "this month's recap spend and budget; numbers only",
   },
+  'GET /api/goals': {
+    guardedBy: null,
+    reason:
+      'goal objectives (prefilled from session prompts and stream titles), walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/goals/:targetType/:targetId': {
+    guardedBy: null,
+    reason:
+      'the goal and its prefill from the session first prompt or stream title, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'PUT /api/goals/:targetType/:targetId': {
+    guardedBy: null,
+    reason: 'the saved goal, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'GET /api/reminders': {
+    guardedBy: null,
+    reason: 'reminder rows with user-typed text, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/reminders': {
+    guardedBy: null,
+    reason: 'the created reminder, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/reminders/:id/cancel': {
+    guardedBy: null,
+    reason: 'the cancelled reminder, walked by redactedJson (core redactDeep) on the way out',
+  },
   // Only registered when `webDist` is set, which production always does and the census's first
   // `createApp(...)` call did not — so this route, and anything else added inside
   // `registerStatic`, was invisible here while being live and UNAUTHENTICATED (the auth
@@ -385,6 +411,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/audit.ts',
   'apps/daemon/src/http/routes/export.ts',
   'apps/daemon/src/http/routes/github.ts',
+  'apps/daemon/src/http/routes/goals.ts',
   'apps/daemon/src/http/routes/health.ts',
   'apps/daemon/src/http/routes/hooks.ts',
   'apps/daemon/src/http/routes/inbox.ts',
@@ -396,6 +423,7 @@ export const REGISTRAR_FILES = [
   'apps/daemon/src/http/routes/projects.ts',
   'apps/daemon/src/http/routes/pty.ts',
   'apps/daemon/src/http/routes/recaps.ts',
+  'apps/daemon/src/http/routes/reminders.ts',
   'apps/daemon/src/http/routes/review.ts',
   'apps/daemon/src/http/routes/safety.ts',
   'apps/daemon/src/http/routes/session-detail.ts',

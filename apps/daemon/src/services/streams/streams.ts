@@ -286,7 +286,17 @@ export function createStreamService(
         });
       }
     }
-    // Handoff and goal items join here once `ctx.handoffs` (Task 15) and `ctx.goals` (Task 14) exist.
+    // Handoff items join here once `ctx.handoffs` (Task 15) exists.
+    const goal = ctx.goals?.get('stream', stream.ticket) ?? null;
+    if (goal) {
+      items.push({
+        ts: goal.updatedAt,
+        kind: 'goal',
+        title: `Goal: ${goal.state}`,
+        ref: goal.id,
+        detail: goal.objective,
+      });
+    }
     items.sort((a, b) => b.ts.localeCompare(a.ts));
     return items;
   }
@@ -308,7 +318,7 @@ export function createStreamService(
         prsDetailed: stream.prs.map((r) => byUrl.get(r.url)).filter((p): p is StreamPr => p !== undefined),
         links,
         timeline: timeline(stream, links),
-        goal: null,
+        goal: ctx.goals?.get('stream', stream.ticket) ?? null,
         handoff: null,
         budget: deps.meter.checkBudget({ ticket: stream.ticket, projectId: stream.projectId }),
       };

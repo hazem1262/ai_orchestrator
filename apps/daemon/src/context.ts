@@ -18,10 +18,12 @@ import { type AuditService, createAuditService } from './services/audit/audit.ts
 import type { CheckpointService } from './services/checkpoint/checkpoint.ts';
 import type { DiffService } from './services/diff/diff.ts';
 import { createExternalLauncher, type ExternalLauncher } from './services/external.ts';
+import { createGoalService, type GoalService } from './services/goals/goals.ts';
 import type { LaunchService } from './services/launch.ts';
 import { createPrSource, type PrSource } from './services/pr-source.ts';
 import { createProjectService, type ProjectServiceImpl } from './services/projects.ts';
 import { createRecapService, defaultRecapEngines, type RecapService } from './services/recap/recap.ts';
+import { createReminderService, type ReminderService } from './services/reminders/reminders.ts';
 import type { PlanApprovalService } from './services/review/plan-approval.ts';
 import type { ReviewService } from './services/review/review.ts';
 import { createDenyList, type DenyList } from './services/safety/deny-list.ts';
@@ -97,8 +99,10 @@ export interface DaemonContext {
   digests?: DigestService;
   /** P5 — LLM session and daily recaps with a cache and a monthly budget; set by `buildContext()`, started by `createDaemon().start()`. */
   recaps?: RecapService;
-  // P5 — later tasks add their own optional fields here, in the task that creates the type:
-  // reminders (T14).
+  /** P5 — session and stream goals with the merge and waiting rules; set by `buildContext()`, started by `createDaemon().start()`. */
+  goals?: GoalService;
+  /** P5 — persisted one-shot reminders on the scheduler; set by `buildContext()`, started by `createDaemon().start()`. */
+  reminders?: ReminderService;
 }
 
 export interface BuildContextOptions {
@@ -173,12 +177,16 @@ export function buildContext(o: BuildContextOptions): {
   ctx.digests = digests;
   const recaps = createRecapService(ctx, { engines: defaultRecapEngines(ctx), scheduler });
   ctx.recaps = recaps;
+  const goals = createGoalService(ctx);
+  ctx.goals = goals;
+  ctx.reminders = createReminderService(ctx, { scheduler });
   return {
     ctx,
     raw: opened.raw,
     saveConfig: save,
     close: () => {
       scheduler.stop();
+      goals.stop();
       recaps.stop();
       digests.stop();
       streams.stop();
