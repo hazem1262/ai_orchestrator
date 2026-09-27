@@ -1,26 +1,24 @@
 import { HookIngestBody } from '@orc/api-contract';
+import { HOOK_BODY_LIMIT_BYTES, mapHookPayload, pickHookFields } from '@orc/core';
 import { bodyLimit } from 'hono/body-limit';
 import type { DaemonContext } from '../../context.ts';
 import { redactedApiError } from '../redact-out.ts';
 import type { OrcApp } from '../types.ts';
 
-/**
- * Generous against any real hook payload — Claude Code sends the submitted prompt and the tool
- * input, both of which we discard — and small enough that the ingest cannot be used to make the
- * daemon buffer. Without it a 32 MiB body is accepted and held in memory before a single field
- * of it is read.
- */
-export const HOOK_BODY_LIMIT_BYTES = 256 * 1024;
+/** Re-exported for the Phase 2 route tests; the value lives in `@orc/core` `derive/hooks.ts`. */
+export { HOOK_BODY_LIMIT_BYTES };
 
 /**
- * The minimal hook ingest. The daemon never installs this hook itself — the user pastes the
- * snippet into `~/.claude/settings.json` by hand (the consented install is phase 5), so the body
- * that arrives here is Claude Code's own payload and carries far more than we want: the submitted
- * prompt, the tool input, the transcript path.
+ * The hook ingest behind the real-time bridge. The body that arrives here is Claude Code's own
+ * payload and carries far more than we want: the submitted prompt, the tool input, the
+ * transcript path.
  *
- * Only `session_id`, `hook_event_name` and `message` are kept. Everything else is dropped on the
- * floor and never logged — including in the `hook.received` bus payload, which carries no message
- * at all, since bus events reach the WS hub and the log.
+ * Only `session_id`, `hook_event_name`, `message` and `tool_name` are kept (`pickHookFields`).
+ * Everything else is dropped on the floor and never logged — including in the `hook.received`
+ * bus payload, which carries no message at all, since bus events reach the WS hub and the log.
+ *
+ * Every valid event is forwarded to the tracker; `accepted` says whether it maps to a live status
+ * (`mapHookPayload`). Unknown events are forwarded too and ignored by `LiveTracker.applyHook`.
  */
 export function registerHookRoutes(app: OrcApp, ctx: DaemonContext): void {
   app.post(
@@ -38,18 +36,22 @@ export function registerHookRoutes(app: OrcApp, ctx: DaemonContext): void {
           400,
         );
       }
-      const b = parsed.data;
+      const fields = pickHookFields(raw);
+      if (!fields) return c.json(redactedApiError('validation_failed', 'invalid hook payload'), 400);
+      const signal = mapHookPayload(raw);
       ctx.bus.emit({
         type: 'hook.received',
-        payload: { sessionId: b.session_id, event: b.hook_event_name },
+        payload: { sessionId: fields.sessionId, event: fields.event },
       });
       ctx.live?.applyHook({
-        sessionId: b.session_id,
-        event: b.hook_event_name,
-        message: b.message ?? null,
+        sessionId: fields.sessionId,
+        event: fields.event,
+        message: fields.message,
         ts: new Date().toISOString(),
+        // Only set when a tool is known, so an event without one carries the same four keys as before.
+        ...(signal?.currentTool ? { tool: signal.currentTool } : {}),
       });
-      return c.json({ ok: true });
+      return c.json({ ok: true as const, accepted: signal !== null });
     },
   );
 }

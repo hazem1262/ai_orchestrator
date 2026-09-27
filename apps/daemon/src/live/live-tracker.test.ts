@@ -1014,7 +1014,9 @@ describe('mapHookToStatus', () => {
     expect(mapHookToStatus('UserPromptSubmit')).toBe('busy');
     expect(mapHookToStatus('PreToolUse')).toBe('busy');
     expect(mapHookToStatus('Stop')).toBe('idle');
-    expect(mapHookToStatus('SessionStart')).toBeNull();
+    expect(mapHookToStatus('SessionStart')).toBe('idle');
+    expect(mapHookToStatus('PostToolUse')).toBe('busy');
+    expect(mapHookToStatus('SubagentStop')).toBeNull();
   });
 });
 

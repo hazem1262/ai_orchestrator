@@ -10,6 +10,7 @@ export * from './derive/analytics.ts';
 export * from './derive/deliverables.ts';
 export * from './derive/deny-list.ts';
 export * from './derive/digest.ts';
+export * from './derive/hooks.ts';
 export * from './derive/index.ts';
 export * from './derive/ledger.ts';
 export * from './derive/patterns.ts';

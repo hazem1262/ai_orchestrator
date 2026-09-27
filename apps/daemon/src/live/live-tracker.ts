@@ -1,6 +1,8 @@
 import {
   createLiveReducer,
   deriveLiveStatus,
+  hookStatusFor,
+  hookWins,
   type LiveReducer,
   type LiveState,
   type LiveStatus,
@@ -25,6 +27,7 @@ export interface HookEvent {
   event: string;
   message: string | null;
   ts: string;
+  tool?: string | null;
 }
 
 export interface LiveTracker {
@@ -46,19 +49,7 @@ export interface LiveTrackerDeps {
 }
 
 export function mapHookToStatus(event: string): RegistryStatus | null {
-  switch (event) {
-    case 'Notification':
-      return 'waiting';
-    case 'UserPromptSubmit':
-    case 'PreToolUse':
-    case 'PostToolUse':
-    case 'SubagentStart':
-      return 'busy';
-    case 'Stop':
-      return 'idle';
-    default:
-      return null;
-  }
+  return hookStatusFor(event);
 }
 
 /** Claude's standard context window. `createLiveReducer` assumes this when told nothing. */
@@ -207,7 +198,7 @@ interface Entry {
   registryStatus: RegistryStatus | null;
   registryAt: number;
   waitingFor: string | null;
-  hook: { status: RegistryStatus; at: number; message: string | null } | null;
+  hook: { status: RegistryStatus; at: number; message: string | null; tool: string | null } | null;
   transcriptPath: string | null;
   offset: number;
   reducer: LiveReducer;
@@ -379,8 +370,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
 
   function update(e: Entry, alive: boolean, nowMs: number): void {
     const t = e.reducer.snapshot();
-    const hookWins = e.hook !== null && e.hook.at > e.registryAt;
-    const registryStatus = hookWins && e.hook ? e.hook.status : e.registryStatus;
+    const hookActive = hookWins(e.hook?.at ?? null, e.registryAt, nowMs, ctx.config().hooks.statusOverrideMs);
+    const registryStatus = hookActive && e.hook ? e.hook.status : e.registryStatus;
     const status = deriveLiveStatus({ alive, registryStatus, transcript: t });
     let change: { from: LiveStatus | null; to: LiveStatus } | null = null;
     if (status !== e.status) {
@@ -395,7 +386,7 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
     // `waitingFor` is copied verbatim out of Claude Code's own registry file (or a hook payload):
     // free text from a process we do not control, and a field Phase 1 already caught leaking once.
     // It is redacted here, at the point it enters our own state, as well as at the HTTP boundary.
-    const waitingText = hookWins && e.hook?.message ? e.hook.message : (e.waitingFor ?? 'input needed');
+    const waitingText = hookActive && e.hook?.message ? e.hook.message : (e.waitingFor ?? 'input needed');
     e.live = {
       pid: e.pid,
       status,
@@ -404,7 +395,8 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       ownership: owner ? 'owned' : 'observed',
       ptyId: owner?.id ?? null,
       stage: t.stage,
-      currentTool: t.currentTool,
+      currentTool:
+        hookActive && e.hook?.status === 'busy' && e.hook.tool !== null ? e.hook.tool : t.currentTool,
       backgroundJobs: t.backgroundJobs,
       runningSubagents: t.runningSubagents,
       contextFill: t.contextFill,
@@ -610,7 +602,12 @@ export function createLiveTracker(ctx: DaemonContext, deps: LiveTrackerDeps): Li
       const e = entries.get(sessionPk('claude', ev.sessionId));
       if (!status || !e) return;
       const at = Date.parse(ev.ts);
-      e.hook = { status, at: Number.isFinite(at) ? at : now().getTime(), message: ev.message };
+      e.hook = {
+        status,
+        at: Number.isFinite(at) ? at : now().getTime(),
+        message: ev.message,
+        tool: ev.tool ?? null,
+      };
       void refresh();
     },
   };
