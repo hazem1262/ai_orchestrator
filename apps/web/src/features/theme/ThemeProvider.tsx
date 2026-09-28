@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import { type Theme, useThemeStore } from '@/stores/theme.ts';
 
 export const DARK_QUERY = '(prefers-color-scheme: dark)';
@@ -27,6 +27,13 @@ export function resolveTheme(theme: Theme, systemDark: boolean): 'light' | 'dark
   return theme;
 }
 
+const ResolvedThemeContext = createContext<'light' | 'dark'>('light');
+
+/** The theme actually on screen ("system" already resolved); light outside a `ThemeProvider`. */
+export function useResolvedTheme(): 'light' | 'dark' {
+  return useContext(ResolvedThemeContext);
+}
+
 /** Keeps the `dark` class on `<html>` in step with the chosen theme (and the OS, for "system"). */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme = useThemeStore((s) => s.theme);
@@ -35,5 +42,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark');
   }, [resolved]);
-  return children;
+  return <ResolvedThemeContext value={resolved}>{children}</ResolvedThemeContext>;
 }
