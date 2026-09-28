@@ -122,6 +122,13 @@ const SCREENS: { path: string; ready: (page: Page) => Promise<void> }[] = [
       await page.waitForLoadState('networkidle');
     },
   },
+  {
+    path: '/sessions/claude/s-subagents',
+    ready: async (page) => {
+      await expect(page.getByRole('heading', { level: 1, name: 'investigate SUPRT-1557' })).toBeVisible();
+      await page.waitForLoadState('networkidle');
+    },
+  },
 ];
 
 for (const screen of SCREENS) {
