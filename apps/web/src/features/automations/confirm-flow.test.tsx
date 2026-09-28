@@ -59,13 +59,13 @@ describe('daemon confirmation flow', () => {
     setApiClientForTests(fakeApi({ automationsRuns: vi.fn(async () => [run]), automationsApprove }));
     renderP3(<RunHistory automation={auto} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve plan' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Approve plan?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Approve plan?' });
     expect(dialog.textContent).toContain('Approve the plan and let "Fix CI" implement it.');
     expect(dialog.textContent).toContain('Plan: fix the lint step');
     expect(automationsApprove).toHaveBeenCalledWith('r1', false);
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(automationsApprove).toHaveBeenLastCalledWith('r1'));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
   it('deletes an automation only after the 409 summary is confirmed', async () => {
