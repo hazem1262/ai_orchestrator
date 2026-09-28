@@ -1,89 +1,75 @@
-import { createContext, type ReactNode, useContext, useId, useState } from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { Tabs as TabsPrimitive } from 'radix-ui';
+import type { ComponentProps } from 'react';
 import { cn } from './cn.ts';
 
-interface TabsContextValue {
-  value: string;
-  setValue(v: string): void;
-  baseId: string;
-}
-
-const TabsContext = createContext<TabsContextValue | null>(null);
-
-function useTabs(): TabsContextValue {
-  const ctx = useContext(TabsContext);
-  if (!ctx) throw new Error('Tabs components must be used inside <Tabs>');
-  return ctx;
-}
-
-export function Tabs(props: {
-  value?: string;
-  defaultValue?: string;
-  onValueChange?(value: string): void;
-  className?: string;
-  children: ReactNode;
-}) {
-  const [inner, setInner] = useState(props.defaultValue ?? '');
-  const baseId = useId();
-  const value = props.value ?? inner;
-  const setValue = (v: string) => {
-    setInner(v);
-    props.onValueChange?.(v);
-  };
-  return (
-    <TabsContext.Provider value={{ value, setValue, baseId }}>
-      <div className={props.className}>{props.children}</div>
-    </TabsContext.Provider>
-  );
-}
-
-export function TabsList({ className, children }: { className?: string; children: ReactNode }) {
-  return (
-    <div role="tablist" className={cn('inline-flex gap-1 border-b', className)}>
-      {children}
-    </div>
-  );
-}
-
-export function TabsTrigger({ value, children }: { value: string; children: ReactNode }) {
-  const tabs = useTabs();
-  const active = tabs.value === value;
-  return (
-    <button
-      type="button"
-      role="tab"
-      id={`${tabs.baseId}-tab-${value}`}
-      aria-selected={active}
-      aria-controls={`${tabs.baseId}-panel-${value}`}
-      onClick={() => tabs.setValue(value)}
-      className={cn(
-        '-mb-px border-b-2 px-3 py-1.5 text-sm',
-        active ? 'border-primary font-medium' : 'border-transparent',
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function TabsContent({
-  value,
+/** The root adds no layout of its own, so a call site's `className` decides how the list and panels stack. */
+export function Tabs({
   className,
-  children,
-}: {
-  value: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  const tabs = useTabs();
-  if (tabs.value !== value) return null;
+  orientation = 'horizontal',
+  ...rest
+}: ComponentProps<typeof TabsPrimitive.Root>) {
   return (
-    <div
-      role="tabpanel"
-      id={`${tabs.baseId}-panel-${value}`}
-      aria-labelledby={`${tabs.baseId}-tab-${value}`}
-      className={className}
-    >
-      {children}
-    </div>
+    <TabsPrimitive.Root
+      data-slot="tabs"
+      orientation={orientation}
+      className={cn('group/tabs', className)}
+      {...rest}
+    />
+  );
+}
+
+export const tabsListVariants = cva(
+  'group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none',
+  {
+    variants: {
+      variant: {
+        default: 'bg-muted',
+        line: 'gap-1 bg-transparent',
+      },
+    },
+    // The app's tab strips sit on the page as underlined labels, so `line` is the default.
+    defaultVariants: { variant: 'line' },
+  },
+);
+
+export function TabsList({
+  className,
+  variant = 'line',
+  ...rest
+}: ComponentProps<typeof TabsPrimitive.List> & VariantProps<typeof tabsListVariants>) {
+  return (
+    <TabsPrimitive.List
+      data-slot="tabs-list"
+      data-variant={variant}
+      className={cn(tabsListVariants({ variant }), className)}
+      {...rest}
+    />
+  );
+}
+
+export function TabsTrigger({ className, ...rest }: ComponentProps<typeof TabsPrimitive.Trigger>) {
+  return (
+    <TabsPrimitive.Trigger
+      data-slot="tabs-trigger"
+      className={cn(
+        "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 has-data-[icon=inline-end]:pr-1 has-data-[icon=inline-start]:pl-1 dark:text-muted-foreground dark:hover:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        'group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent',
+        'data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground',
+        'after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100',
+        className,
+      )}
+      {...rest}
+    />
+  );
+}
+
+export function TabsContent({ className, ...rest }: ComponentProps<typeof TabsPrimitive.Content>) {
+  return (
+    <TabsPrimitive.Content
+      data-slot="tabs-content"
+      className={cn('text-sm outline-none', className)}
+      {...rest}
+    />
   );
 }

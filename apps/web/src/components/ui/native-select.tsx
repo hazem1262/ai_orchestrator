@@ -1,14 +1,8 @@
 import type { ComponentProps } from 'react';
 import { cn } from './cn.ts';
+import { inputClassName } from './input.tsx';
 
+/** A native `<select>` styled like `Input`. */
 export function NativeSelect({ className, ...rest }: ComponentProps<'select'>) {
-  return (
-    <select
-      className={cn(
-        'h-8 rounded-md border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring',
-        className,
-      )}
-      {...rest}
-    />
-  );
+  return <select data-slot="native-select" className={cn(inputClassName, 'pr-1.5', className)} {...rest} />;
 }

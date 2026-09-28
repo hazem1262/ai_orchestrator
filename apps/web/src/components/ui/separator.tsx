@@ -1,20 +1,23 @@
+import { Separator as SeparatorPrimitive } from 'radix-ui';
+import type { ComponentProps } from 'react';
 import { cn } from './cn.ts';
 
 export function Separator({
-  orientation = 'horizontal',
   className,
-}: {
-  orientation?: 'horizontal' | 'vertical';
-  className?: string;
-}) {
+  orientation = 'horizontal',
+  decorative = true,
+  ...rest
+}: ComponentProps<typeof SeparatorPrimitive.Root>) {
   return (
-    <hr
-      aria-orientation={orientation}
+    <SeparatorPrimitive.Root
+      data-slot="separator"
+      decorative={decorative}
+      orientation={orientation}
       className={cn(
-        'border-0 bg-border',
-        orientation === 'horizontal' ? 'h-px w-full' : 'h-full w-px',
+        'shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch',
         className,
       )}
+      {...rest}
     />
   );
 }

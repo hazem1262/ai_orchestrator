@@ -103,7 +103,7 @@ describe('ReviewPage', () => {
     expect(within(tree).getByText('src/a.ts')).toBeDefined();
     expect(within(tree).getByText('+1 −1')).toBeDefined();
     fireEvent.click(within(tree).getByLabelText('Viewed src/a.ts'));
-    expect((within(tree).getByLabelText('Viewed src/a.ts') as HTMLInputElement).checked).toBe(true);
+    expect(within(tree).getByRole('checkbox', { name: 'Viewed src/a.ts' })).toBeChecked();
     expect(screen.getByTestId('diffview').dataset.mode).toBe('1');
     fireEvent.click(screen.getByRole('button', { name: 'Unified' }));
     expect(screen.getByTestId('diffview').dataset.mode).toBe('2');
