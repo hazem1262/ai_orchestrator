@@ -1,7 +1,9 @@
 import type { SessionListItem } from '@orc/api-contract';
 import { useCallback, useMemo } from 'react';
 import { useSessions } from '@/api/queries/sessions.ts';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 import { useProjectStore } from '@/stores/project.ts';
 import { cleanSearch, type HistorySearch, toListFilters } from './filters.ts';
 import { HistoryFilters } from './HistoryFilters.tsx';
@@ -27,34 +29,37 @@ export function HistoryPage({
   }, [fetchNextPage]);
 
   return (
-    <div className="flex h-full flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold">History</h1>
-        <SavedViews search={search} onApply={(s) => onSearchChange(cleanSearch(s))} />
-      </div>
-      <HistoryFilters
-        search={search}
-        onChange={(patch) => onSearchChange(cleanSearch({ ...search, ...patch }))}
-        onReset={() => onSearchChange({})}
-      />
-      {q.isError ? (
-        <div className="flex items-center justify-between gap-3">
-          <p role="alert" className="text-sm text-destructive">
-            {q.error.message}
-          </p>
-          <Button variant="outline" size="sm" disabled={q.isFetching} onClick={() => void q.refetch()}>
-            Retry
-          </Button>
+    <TooltipProvider>
+      <div className="flex h-full flex-col gap-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-lg font-semibold">History</h1>
+          <SavedViews search={search} onApply={(s) => onSearchChange(cleanSearch(s))} />
         </div>
-      ) : null}
-      <SessionTable
-        items={items}
-        loading={q.isLoading}
-        error={q.isError}
-        hasMore={q.hasNextPage}
-        loadingMore={q.isFetchingNextPage}
-        onEndReached={loadMore}
-      />
-    </div>
+        <HistoryFilters
+          search={search}
+          onChange={(patch) => onSearchChange(cleanSearch({ ...search, ...patch }))}
+          onReset={() => onSearchChange({})}
+        />
+        {q.isError ? (
+          <Alert variant="destructive">
+            <AlertTitle>Couldn't load History</AlertTitle>
+            <AlertDescription>{q.error.message}</AlertDescription>
+            <AlertAction>
+              <Button variant="outline" size="sm" disabled={q.isFetching} onClick={() => void q.refetch()}>
+                Retry
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : null}
+        <SessionTable
+          items={items}
+          loading={q.isLoading}
+          error={q.isError}
+          hasMore={q.hasNextPage}
+          loadingMore={q.isFetchingNextPage}
+          onEndReached={loadMore}
+        />
+      </div>
+    </TooltipProvider>
   );
 }

@@ -1,117 +1,29 @@
-import { HIDDEN_LABEL, type SessionListItem } from '@orc/api-contract';
-import { Link } from '@tanstack/react-router';
+import type { SessionListItem } from '@orc/api-contract';
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { History as HistoryIcon } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { usePinSession } from '@/api/queries/sessions.ts';
-import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
-import { Button } from '@/components/ui/button.tsx';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
-import { ResumeActions } from '@/features/terminal/ResumeActions.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { formatCost, formatDateTime, formatDuration } from '@/lib/format.ts';
-import { HideToggle, LabelEditor } from './LabelEditor.tsx';
-import { Snippet } from './Snippet.tsx';
+import { Chips, PinButton, SessionSecondary, SessionTitle } from './parts.tsx';
+import { RowActions } from './RowActions.tsx';
+import { SessionCards } from './SessionCards.tsx';
 
 export const SESSION_ROW_HEIGHT = 64;
-// Below md only the pin, Session and actions columns stay; the Session column never collapses.
+// The row grid is CSS grid, not a native table layout, so react-virtual can absolutely position
+// rows by translateY. Below `lg` the Links and Duration columns drop out (audit F8 column priority).
 const GRID =
-  'grid grid-cols-[2.25rem_minmax(0,1fr)_auto] md:grid-cols-[2.25rem_minmax(0,1fr)_8.5rem_4.5rem_4.5rem_13rem_11rem]';
-const DESKTOP_ONLY = new Set(['lastActivityAt', 'durationMs', 'costUsd', 'chips']);
-const priorityClass = (columnId: string) => (DESKTOP_ONLY.has(columnId) ? ' max-md:hidden' : '');
-
-const AVAILABILITY_VARIANT: Record<SessionListItem['availability'], BadgeVariant> = {
-  resumable: 'success',
-  archived: 'warning',
-  'prompts-only': 'outline',
-  remote: 'secondary',
-};
-
-function PinButton({ item }: { item: SessionListItem }) {
-  const pin = usePinSession();
-  return (
-    <Button
-      size="icon"
-      variant="ghost"
-      aria-label={item.pinned ? 'Unpin' : 'Pin'}
-      aria-pressed={item.pinned}
-      onClick={() => pin.mutate({ source: item.source, id: item.id, pinned: !item.pinned })}
-    >
-      {item.pinned ? '★' : '☆'}
-    </Button>
-  );
-}
+  'grid grid-cols-[2.25rem_minmax(0,1fr)_7rem_5rem_9rem] lg:grid-cols-[2.25rem_minmax(0,1fr)_13rem_7rem_5rem_5rem_9rem]';
+const LG_ONLY = new Set(['chips', 'durationMs']);
+const priorityClass = (columnId: string) => (LG_ONLY.has(columnId) ? ' max-lg:hidden' : '');
 
 function SessionCell({ item }: { item: SessionListItem }) {
-  const title = item.name ?? item.firstPrompt ?? item.id;
-  const secondary =
-    item.recap ?? (item.lastPrompt && item.lastPrompt !== title ? item.lastPrompt : item.firstPrompt);
   return (
     <div className="flex min-w-0 flex-col py-1">
-      <Link
-        to="/sessions/$source/$id"
-        params={{ source: item.source, id: item.id }}
-        className="truncate font-medium hover:underline"
-        title={title}
-      >
-        {title}
-      </Link>
-      <span className="truncate text-xs text-muted-foreground">
-        {item.snippet ? <Snippet text={item.snippet} /> : (secondary ?? '')}
-      </span>
-    </div>
-  );
-}
-
-function Chips({ item }: { item: SessionListItem }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1 overflow-hidden">
-      <Badge variant={AVAILABILITY_VARIANT[item.availability]}>{item.availability}</Badge>
-      {item.source !== 'claude' ? <Badge variant="secondary">{item.source}</Badge> : null}
-      {item.live ? (
-        <Badge variant="warning">{item.live.ownership === 'owned' ? 'open' : item.live.status}</Badge>
-      ) : null}
-      {item.tickets.slice(0, 2).map((t) => (
-        <Badge key={t} variant="outline">
-          {t}
-        </Badge>
-      ))}
-      {item.prs.slice(0, 2).map((pr) => (
-        <a
-          key={pr.url}
-          href={pr.url}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-primary underline"
-        >
-          #{pr.number}
-        </a>
-      ))}
-      {item.labels
-        .filter((l) => l !== HIDDEN_LABEL)
-        .map((l) => (
-          <Badge key={l} variant="secondary">
-            {l}
-          </Badge>
-        ))}
-    </div>
-  );
-}
-
-function RowActions({ item }: { item: SessionListItem }) {
-  return (
-    <div className="flex items-center justify-end gap-1">
-      <ResumeActions
-        compact
-        target={{
-          source: item.source,
-          id: item.id,
-          availability: item.availability,
-          live: item.live,
-          title: item.name ?? item.firstPrompt ?? item.id,
-        }}
-      />
-      <LabelEditor item={item} />
-      <HideToggle item={item} />
+      <SessionTitle item={item} className="truncate" />
+      <SessionSecondary item={item} />
     </div>
   );
 }
@@ -125,13 +37,13 @@ const columns = helper.columns([
     cell: (info) => <PinButton item={info.row.original} />,
   }),
   helper.accessor('name', { header: 'Session', cell: (info) => <SessionCell item={info.row.original} /> }),
+  helper.display({ id: 'chips', header: 'Links', cell: (info) => <Chips item={info.row.original} /> }),
   helper.accessor('lastActivityAt', {
     header: 'Last activity',
     cell: (info) => formatDateTime(info.getValue()),
   }),
   helper.accessor('durationMs', { header: 'Duration', cell: (info) => formatDuration(info.getValue()) }),
   helper.accessor('costUsd', { header: 'Cost', cell: (info) => formatCost(info.getValue()) }),
-  helper.display({ id: 'chips', header: 'Links', cell: (info) => <Chips item={info.row.original} /> }),
   helper.display({
     id: 'actions',
     header: () => <span className="sr-only">Actions</span>,
@@ -139,23 +51,46 @@ const columns = helper.columns([
   }),
 ]);
 
-export interface SessionTableProps {
-  items: SessionListItem[];
-  loading: boolean;
-  error?: boolean;
-  hasMore: boolean;
-  loadingMore: boolean;
-  onEndReached(): void;
+function TableSkeleton() {
+  const rows = Array.from({ length: 6 }, (_, i) => i);
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Loading sessions"
+      className="flex flex-col gap-2 rounded-xl border p-2"
+    >
+      {rows.map((i) => (
+        <div key={i} className="flex items-center gap-3 px-2 py-2">
+          <Skeleton className="size-6 shrink-0 rounded-full" />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Skeleton className="h-4" style={{ width: `${70 - i * 5}%` }} />
+            <Skeleton className="h-3 w-2/5" />
+          </div>
+          <Skeleton className="h-3 w-16 max-lg:hidden" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-7 w-20" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
-export function SessionTable({
-  items,
-  loading,
-  error = false,
-  hasMore,
-  loadingMore,
-  onEndReached,
-}: SessionTableProps) {
+function EmptyRows() {
+  return (
+    <Empty className="border">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <HistoryIcon />
+        </EmptyMedia>
+        <EmptyTitle>No sessions match these filters.</EmptyTitle>
+        <EmptyDescription>Try a shorter search, or clear the filters above.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+function VirtualizedTable({ items, hasMore, loadingMore, onEndReached }: SessionTableProps) {
   const table = useTable({ features, columns, data: items, getRowId: (row) => row.pk });
   const rows = table.getRowModel().rows;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -176,20 +111,15 @@ export function SessionTable({
     if (hasMore && !loadingMore && rows.length > 0 && lastIndex >= rows.length - 5) endReached.current();
   }, [hasMore, loadingMore, lastIndex, rows.length]);
 
-  if (loading) return <Skeleton className="h-64" />;
-  if (rows.length === 0) {
-    if (error) return null;
-    return <p className="p-8 text-center text-sm text-muted-foreground">No sessions match these filters.</p>;
-  }
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto rounded-md border">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto rounded-xl border">
       {/*
         display:grid overrides the implicit table/rowgroup/row/columnheader/cell roles in some
         browsers (notably Safari), so every role below is restored explicitly even though it
         matches Biome's a11y rules for what the native element already implies.
       */}
       {/* biome-ignore lint/a11y/noRedundantRoles: display:grid strips the implicit table role, see comment above */}
-      <table role="table" className="grid w-full text-sm">
+      <table role="table" aria-label="Sessions" className="grid w-full text-sm">
         {/* biome-ignore lint/a11y/noRedundantRoles: display:grid strips the implicit rowgroup role */}
         <thead role="rowgroup" className="sticky top-0 z-10 grid bg-background">
           {table.getHeaderGroups().map((group) => (
@@ -200,7 +130,7 @@ export function SessionTable({
                 <th
                   key={header.id}
                   role="columnheader"
-                  className={`px-2 py-1.5 text-left font-medium${priorityClass(header.column.id)}`}
+                  className={`h-9 px-2 text-left align-middle font-medium text-foreground${priorityClass(header.column.id)}`}
                 >
                   {header.isPlaceholder ? null : <table.FlexRender header={header} />}
                 </th>
@@ -220,7 +150,7 @@ export function SessionTable({
                 // biome-ignore lint/a11y/noRedundantRoles: display:grid strips the implicit row role
                 role="row"
                 data-index={vi.index}
-                className={`${GRID} absolute w-full items-center border-b`}
+                className={`${GRID} absolute w-full items-center border-b transition-colors hover:bg-muted/50`}
                 style={rowStyle}
               >
                 {row.getAllCells().map((cell) => (
@@ -236,5 +166,49 @@ export function SessionTable({
       </table>
       {loadingMore ? <p className="p-2 text-center text-xs text-muted-foreground">Loading more…</p> : null}
     </div>
+  );
+}
+
+export interface SessionTableProps {
+  items: SessionListItem[];
+  loading: boolean;
+  error?: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onEndReached(): void;
+}
+
+export function SessionTable({
+  items,
+  loading,
+  error = false,
+  hasMore,
+  loadingMore,
+  onEndReached,
+}: SessionTableProps) {
+  const isMobile = useIsMobile();
+
+  if (loading) return <TableSkeleton />;
+  if (items.length === 0) {
+    if (error) return null;
+    return <EmptyRows />;
+  }
+  if (isMobile) {
+    return (
+      <div className="min-h-0 flex-1 overflow-auto">
+        <SessionCards items={items} />
+        {loadingMore ? <p className="p-2 text-center text-xs text-muted-foreground">Loading more…</p> : null}
+      </div>
+    );
+  }
+  return (
+    <VirtualizedTable
+      items={items}
+      loading={loading}
+      error={error}
+      hasMore={hasMore}
+      loadingMore={loadingMore}
+      onEndReached={onEndReached}
+    />
   );
 }
