@@ -12,8 +12,10 @@ import { useProjects } from '@/api/queries/projects.ts';
 import { useTemplates } from '@/api/queries/templates.ts';
 import { useWorktrees } from '@/api/queries/worktrees.ts';
 import { Button } from '@/components/ui/button.tsx';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
 import { CompareLaunchSection } from '@/features/compare/CompareLaunchSection.tsx';
 import { type LaunchDraft, LaunchPhase4Fields } from '@/features/launch/LaunchPhase4Fields.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
@@ -49,8 +51,25 @@ export function LaunchDialog() {
   const open = useLaunchStore((s) => s.open);
   const preset = useLaunchStore((s) => s.preset);
   const hide = useLaunchStore((s) => s.hide);
-  // Remounting per open is what resets the form; the fields are plain local state.
-  return open ? <LaunchForm preset={preset} onClose={hide} /> : null;
+  const returnFocus = useFocusReturn(open);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) hide();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        onCloseAutoFocus={returnFocus}
+        aria-describedby={undefined}
+        className="top-4 max-h-[calc(100%-2rem)] translate-y-0 overflow-auto sm:top-8 sm:max-h-[calc(100%-4rem)] sm:max-w-xl"
+      >
+        {/* The content unmounts on close, so each open starts from a fresh form. */}
+        <LaunchForm preset={preset} onClose={hide} />
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 const FIELD = 'flex flex-col gap-1 text-sm';
@@ -128,165 +147,156 @@ function LaunchForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-8">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="max-h-full w-full max-w-xl overflow-auto rounded-lg border bg-background p-4 shadow-xl"
-      >
-        <h2 id={titleId} className="mb-3 text-lg font-semibold">
-          New session
-        </h2>
-        <form onSubmit={submit} className="flex flex-col gap-3">
-          <fieldset className="flex gap-3 text-sm">
-            <legend className="sr-only">Source</legend>
-            {(['claude', 'codex'] as const).map((s) => (
-              <label key={s} className="flex items-center gap-1">
-                <input
-                  type="radio"
-                  name="source"
-                  className="accent-primary"
-                  checked={source === s}
-                  onChange={() => setSource(s)}
-                />
-                {s === 'claude' ? 'Claude' : 'Codex'}
-              </label>
-            ))}
-          </fieldset>
-
-          <label className={FIELD} htmlFor={`${titleId}-project`}>
-            Project
-          </label>
-          <NativeSelect
-            id={`${titleId}-project`}
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-          >
-            <option value="">(none)</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </NativeSelect>
-
-          <label className={FIELD} htmlFor={`${titleId}-cwd`}>
-            Working directory
-          </label>
-          <Input
-            id={`${titleId}-cwd`}
-            value={cwd}
-            placeholder={defaultCwd}
-            onChange={(e) => setCwd(e.target.value)}
-          />
-
-          <label className={FIELD} htmlFor={`${titleId}-template`}>
-            Template
-          </label>
-          <NativeSelect
-            id={`${titleId}-template`}
-            value={templateId}
-            onChange={(e) => setTemplateId(e.target.value)}
-          >
-            <option value="">(none)</option>
-            <optgroup label="Workflows">
-              {templates
-                .filter((t) => t.kind === 'workflow')
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-            </optgroup>
-            <optgroup label="Presets">
-              {templates
-                .filter((t) => t.kind === 'preset')
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-            </optgroup>
-          </NativeSelect>
-
-          {template?.vars.map((v) => (
-            <div key={v} className={FIELD}>
-              <label htmlFor={`${titleId}-var-${v}`}>{VAR_LABEL[v]}</label>
-              <Input
-                id={`${titleId}-var-${v}`}
-                value={vars[v] ?? ''}
-                onChange={(e) => setVars({ ...vars, [v]: e.target.value })}
+    <>
+      <DialogTitle className="text-lg font-semibold">New session</DialogTitle>
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <fieldset className="flex gap-3 text-sm">
+          <legend className="sr-only">Source</legend>
+          {(['claude', 'codex'] as const).map((s) => (
+            <label key={s} className="flex items-center gap-1">
+              <input
+                type="radio"
+                name="source"
+                className="accent-primary"
+                checked={source === s}
+                onChange={() => setSource(s)}
               />
-            </div>
+              {s === 'claude' ? 'Claude' : 'Codex'}
+            </label>
           ))}
+        </fieldset>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className={FIELD}>
-              <label htmlFor={`${titleId}-ticket`}>Ticket</label>
-              <Input
-                id={`${titleId}-ticket`}
-                value={ticket}
-                placeholder="SAF-1787"
-                onChange={(e) => setTicket(e.target.value)}
-              />
-            </div>
-            <div className={FIELD}>
-              <label htmlFor={`${titleId}-model`}>Model</label>
-              <Input
-                id={`${titleId}-model`}
-                value={model}
-                placeholder="default"
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </div>
+        <label className={FIELD} htmlFor={`${titleId}-project`}>
+          Project
+        </label>
+        <NativeSelect
+          id={`${titleId}-project`}
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+        >
+          <option value="">(none)</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </NativeSelect>
+
+        <label className={FIELD} htmlFor={`${titleId}-cwd`}>
+          Working directory
+        </label>
+        <Input
+          id={`${titleId}-cwd`}
+          value={cwd}
+          placeholder={defaultCwd}
+          onChange={(e) => setCwd(e.target.value)}
+        />
+
+        <label className={FIELD} htmlFor={`${titleId}-template`}>
+          Template
+        </label>
+        <NativeSelect
+          id={`${titleId}-template`}
+          value={templateId}
+          onChange={(e) => setTemplateId(e.target.value)}
+        >
+          <option value="">(none)</option>
+          <optgroup label="Workflows">
+            {templates
+              .filter((t) => t.kind === 'workflow')
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+          </optgroup>
+          <optgroup label="Presets">
+            {templates
+              .filter((t) => t.kind === 'preset')
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+          </optgroup>
+        </NativeSelect>
+
+        {template?.vars.map((v) => (
+          <div key={v} className={FIELD}>
+            <label htmlFor={`${titleId}-var-${v}`}>{VAR_LABEL[v]}</label>
+            <Input
+              id={`${titleId}-var-${v}`}
+              value={vars[v] ?? ''}
+              onChange={(e) => setVars({ ...vars, [v]: e.target.value })}
+            />
           </div>
+        ))}
 
-          <label className={FIELD} htmlFor={`${titleId}-prompt`}>
-            Prompt
-          </label>
-          <textarea
-            id={`${titleId}-prompt`}
-            className="min-h-24 rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-
-          <LaunchPhase4Fields
-            draft={draft}
-            onChange={onDraftChange}
-            repos={(worktrees.data ?? []).filter((w) => w.isMain).map((w) => w.path)}
-          />
-
-          <details className="rounded-md border p-2" open={(preset?.compare?.length ?? 0) > 0}>
-            <summary className="cursor-pointer text-sm">
-              Compare across agents{compare.length >= 2 ? ` (${compare.length})` : ''}
-            </summary>
-            <CompareLaunchSection projectId={projectId || null} value={compare} onChange={setCompare} />
-          </details>
-
-          {launch.error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {describeLaunchError(launch.error)}
-            </p>
-          ) : null}
-
-          {worktree ? (
-            <p className="text-sm wrap-anywhere text-muted-foreground">
-              {`Launching creates a worktree from ${worktree.base || 'main'} in ${worktree.repo || '(no repository)'} and starts the session there.`}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={launch.isPending}>
-              Launch
-            </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <div className={FIELD}>
+            <label htmlFor={`${titleId}-ticket`}>Ticket</label>
+            <Input
+              id={`${titleId}-ticket`}
+              value={ticket}
+              placeholder="SAF-1787"
+              onChange={(e) => setTicket(e.target.value)}
+            />
           </div>
-        </form>
-      </div>
-    </div>
+          <div className={FIELD}>
+            <label htmlFor={`${titleId}-model`}>Model</label>
+            <Input
+              id={`${titleId}-model`}
+              value={model}
+              placeholder="default"
+              onChange={(e) => setModel(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <label className={FIELD} htmlFor={`${titleId}-prompt`}>
+          Prompt
+        </label>
+        <textarea
+          id={`${titleId}-prompt`}
+          className="min-h-24 rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+        />
+
+        <LaunchPhase4Fields
+          draft={draft}
+          onChange={onDraftChange}
+          repos={(worktrees.data ?? []).filter((w) => w.isMain).map((w) => w.path)}
+        />
+
+        <details className="rounded-md border p-2" open={(preset?.compare?.length ?? 0) > 0}>
+          <summary className="cursor-pointer text-sm">
+            Compare across agents{compare.length >= 2 ? ` (${compare.length})` : ''}
+          </summary>
+          <CompareLaunchSection projectId={projectId || null} value={compare} onChange={setCompare} />
+        </details>
+
+        {launch.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {describeLaunchError(launch.error)}
+          </p>
+        ) : null}
+
+        {worktree ? (
+          <p className="text-sm wrap-anywhere text-muted-foreground">
+            {`Launching creates a worktree from ${worktree.base || 'main'} in ${worktree.repo || '(no repository)'} and starts the session there.`}
+          </p>
+        ) : null}
+
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={launch.isPending}>
+            Launch
+          </Button>
+        </div>
+      </form>
+    </>
   );
 }
