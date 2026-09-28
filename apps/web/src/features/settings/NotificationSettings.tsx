@@ -1,5 +1,5 @@
 import type { NotificationPrefs } from '@orc/api-contract';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNotificationPrefs, useSaveNotificationPrefs } from '@/api/queries/archive.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
@@ -12,11 +12,15 @@ const OFF: Pref = { enabled: false, channels: [] };
 export function NotificationSettings() {
   const { data } = useNotificationPrefs();
   const save = useSaveNotificationPrefs();
-  const [draft, setDraft] = useState<NotificationPrefs>({});
+  const [draft, setDraft] = useState<NotificationPrefs>(data ?? {});
   // The server value is the starting point; local edits survive until the next server change.
-  useEffect(() => {
+  // The draft is copied during render, not in an effect, so the commit that reveals the table
+  // already holds the saved prefs.
+  const [synced, setSynced] = useState(data);
+  if (data !== synced) {
+    setSynced(data);
     if (data) setDraft(data);
-  }, [data]);
+  }
 
   const pref = (kind: string): Pref => draft[kind] ?? OFF;
   // Turning a kind on with no channel left would be a notification that goes nowhere, so macOS

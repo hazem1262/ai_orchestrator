@@ -1,6 +1,5 @@
 import { type Dirent, existsSync } from 'node:fs';
 import { open, readdir, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import type { PlanRef } from '@orc/api-contract';
 import { compileTicketRegex, DEFAULT_TICKET_REGEX, redact, type Session } from '@orc/core';
@@ -205,7 +204,7 @@ export function createPlanFinder(o: PlanFinderOptions): PlanFinder {
 
 export function createPlanFinderFromContext(
   ctx: Pick<DaemonContext, 'paths' | 'config'>,
-  home: string = homedir(),
+  home: string = ctx.paths.userHome,
 ): PlanFinder {
   return createPlanFinder({
     claudeHome: ctx.paths.claudeHome,

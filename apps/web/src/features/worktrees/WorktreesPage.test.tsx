@@ -106,3 +106,38 @@ describe('WorktreesPage', () => {
     );
   });
 });
+
+describe('WorktreesPage archive confirmation timing', () => {
+  // GitConfirmDialog resets `ack` in a passive effect keyed on the request. A user who ticks the
+  // external-worktree box in the first frame the dialog is on screen, before that effect has run,
+  // has the tick undone by the effect, so "Archive" stays disabled. The box is ticked here from a
+  // MutationObserver callback, which runs right after the commit that shows the dialog.
+  it('keeps the external acknowledgement ticked in the first frame the dialog is shown', async () => {
+    let ticked = false;
+    let checkedAfterTick: boolean | null = null;
+    const mo = new MutationObserver(() => {
+      if (ticked) return;
+      const box = screen.queryByLabelText('I understand this worktree was created outside the app');
+      if (!box) return;
+      ticked = true;
+      fireEvent.click(box);
+      checkedAfterTick = (box as HTMLInputElement).checked;
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    renderWithProviders(<WorktreesPage />, { api });
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive fix/SAF-2-ext' }));
+    await waitFor(() => expect(ticked).toBe(true));
+    mo.disconnect();
+    await new Promise((r) => setTimeout(r, 50));
+    // The tick itself lands: the box reads checked straight after the click.
+    expect(checkedAfterTick).toBe(true);
+    const box = screen.getByLabelText(
+      'I understand this worktree was created outside the app',
+    ) as HTMLInputElement;
+    const confirm = screen.getByRole('button', { name: 'Archive' }) as HTMLButtonElement;
+    expect({ ackChecked: box.checked, archiveDisabled: confirm.disabled }).toEqual({
+      ackChecked: true,
+      archiveDisabled: false,
+    });
+  });
+});

@@ -231,10 +231,10 @@ describe('session service', () => {
     const a = ctx.pty.attach(r.ptyId, (d) => {
       out += d;
     });
-    await vi.waitFor(() =>
-      expect(out).toContain(`fake-claude --dangerously-skip-permissions --resume s-live`),
-    );
-    expect(out).toContain(`cwd=${realpathSync(cwd)}`);
+    await vi.waitFor(() => {
+      expect(out).toContain(`fake-claude --dangerously-skip-permissions --resume s-live`);
+      expect(out).toContain(`cwd=${realpathSync(cwd)}`);
+    });
     a.detach();
     expect(ctx.pty.get(r.ptyId)).toMatchObject({
       sessionPk: 'claude:s-live',

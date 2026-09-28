@@ -39,28 +39,30 @@ export function SecretsHygienePanel() {
               : `${report.totalFindings} findings in ${filesWithFindings} files`}{' '}
             · scanned {new Date(report.scannedAt).toLocaleString()}
           </p>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="py-1 pr-2 font-medium">File</th>
-                <th className="py-1 pr-2 font-medium">Status</th>
-                <th className="py-1 font-medium">Findings</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.files.map((f) => (
-                <tr key={f.path} className="border-t align-top">
-                  <td className="py-1 pr-2 font-mono">{f.displayPath}</td>
-                  <td className="py-1 pr-2">{fileStatus(f)}</td>
-                  <td className="py-1">
-                    {f.findings.map((x) => (
-                      <div key={`${x.line}-${x.kind}`}>{`line ${x.line} · ${x.kind}`}</div>
-                    ))}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-1 pr-2 font-medium">File</th>
+                  <th className="py-1 pr-2 font-medium">Status</th>
+                  <th className="py-1 font-medium">Findings</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {report.files.map((f) => (
+                  <tr key={f.path} className="border-t align-top">
+                    <td className="break-all py-1 pr-2 font-mono">{f.displayPath}</td>
+                    <td className="py-1 pr-2">{fileStatus(f)}</td>
+                    <td className="py-1">
+                      {f.findings.map((x) => (
+                        <div key={`${x.line}-${x.kind}`}>{`line ${x.line} · ${x.kind}`}</div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </section>
