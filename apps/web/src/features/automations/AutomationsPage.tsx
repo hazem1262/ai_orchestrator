@@ -1,5 +1,13 @@
 import type { AutomationRunRequest, AutomationTrigger, AutomationWithStats } from '@orc/api-contract';
-import { Clock, GitPullRequest, Hand, MessageSquare, ShieldCheck, SquareKanban, Workflow } from 'lucide-react';
+import {
+  Clock,
+  GitPullRequest,
+  Hand,
+  MessageSquare,
+  ShieldCheck,
+  SquareKanban,
+  Workflow,
+} from 'lucide-react';
 import { useState } from 'react';
 import {
   useAutomationSettings,
@@ -15,7 +23,14 @@ import { Button } from '@/components/ui/button.tsx';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { cn } from '@/components/ui/cn.ts';
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty.tsx';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty.tsx';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.tsx';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip.tsx';
 import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
@@ -40,7 +55,11 @@ const TRIGGER_ICON: Record<AutomationTrigger['type'], typeof Clock> = {
 };
 
 type BudgetTone = 'ok' | 'warn' | 'over';
-const TONE_CLASS: Record<BudgetTone, string> = { ok: 'bg-success', warn: 'bg-warning', over: 'bg-destructive' };
+const TONE_CLASS: Record<BudgetTone, string> = {
+  ok: 'bg-success',
+  warn: 'bg-warning',
+  over: 'bg-destructive',
+};
 
 function budgetTone(spendUsd: number, budgetUsd: number): BudgetTone {
   if (budgetUsd <= 0) return 'ok';
@@ -151,6 +170,7 @@ function AutomationCard({
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
+              {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a disabled button fires no hover/focus, so the Tooltip needs a focusable wrapper */}
               <span tabIndex={0} className="inline-flex">
                 {runButton}
               </span>
@@ -205,7 +225,11 @@ export function AutomationsPage() {
   const canRun = disabledReason === null;
 
   const detail =
-    pane.kind === 'runs' ? <RunHistory key={pane.automation.id} automation={pane.automation} /> : <SuggestionsPanel />;
+    pane.kind === 'runs' ? (
+      <RunHistory key={pane.automation.id} automation={pane.automation} />
+    ) : (
+      <SuggestionsPanel />
+    );
 
   const empty = !isLoading && automations.length === 0;
   const list = empty ? (
@@ -216,8 +240,8 @@ export function AutomationsPage() {
         </EmptyMedia>
         <EmptyTitle>No automations yet</EmptyTitle>
         <EmptyDescription>
-          Run a template on a schedule, when a check fails on your PR, when a Linear ticket is assigned, or when
-          someone mentions the bot in Slack.
+          Run a template on a schedule, when a check fails on your PR, when a Linear ticket is assigned, or
+          when someone mentions the bot in Slack.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
@@ -270,8 +294,8 @@ export function AutomationsPage() {
         <Alert>
           <ShieldCheck className="size-4" aria-hidden />
           <AlertDescription>
-            Automations never merge, deploy or touch production. Each one has a monthly budget, and every run is
-            audited.
+            Automations never merge, deploy or touch production. Each one has a monthly budget, and every run
+            is audited.
           </AlertDescription>
         </Alert>
         {failure ? (

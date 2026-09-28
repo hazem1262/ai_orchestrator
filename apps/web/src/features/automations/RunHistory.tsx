@@ -101,7 +101,12 @@ export function RunHistory({
                 <TableCell>{formatCost(r.costUsd)}</TableCell>
                 <TableCell className="max-w-md whitespace-normal">
                   {r.prUrl ? (
-                    <a className="inline-flex items-center gap-1 underline" href={r.prUrl} target="_blank" rel="noreferrer">
+                    <a
+                      className="inline-flex items-center gap-1 underline"
+                      href={r.prUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       <GitPullRequest className="size-3.5" aria-hidden />
                       PR
                     </a>
@@ -183,7 +188,9 @@ export function RunHistory({
             <AlertDialogDescription>{approve.pending?.summary}</AlertDialogDescription>
           </AlertDialogHeader>
           {plan ? (
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">{plan}</pre>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+              {plan}
+            </pre>
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={approve.busy}>Cancel</AlertDialogCancel>

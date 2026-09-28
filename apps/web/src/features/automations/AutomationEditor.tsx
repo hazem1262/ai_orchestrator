@@ -51,7 +51,11 @@ export function AutomationEditor({
 
   return (
     <>
-      <form aria-label="Automation editor" onSubmit={submit} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+      <form
+        aria-label="Automation editor"
+        onSubmit={submit}
+        className="flex flex-1 flex-col gap-3 overflow-y-auto p-4"
+      >
         <h2 className="text-base font-semibold">{initial ? `Edit ${initial.name}` : 'New automation'}</h2>
         {!initial ? (
           <p className="text-xs text-muted-foreground">
