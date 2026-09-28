@@ -48,6 +48,7 @@ describe('Toaster', () => {
     });
     await screen.findByText('Saved');
     expect(document.querySelector('[data-sonner-toaster]')?.getAttribute('data-sonner-theme')).toBe('dark');
+    expect(screen.queryByRole('region', { name: /notifications/i })).toBeNull();
   });
 });
 

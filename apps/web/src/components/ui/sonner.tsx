@@ -9,6 +9,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme}
+      // Sonner's default region label, "Notifications", would share a name with the Settings panel.
+      containerAriaLabel="Status messages"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
