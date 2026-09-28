@@ -191,19 +191,19 @@ function LinkForm({ ticket }: { ticket: string }) {
 
 function DetailSkeleton() {
   return (
-    <div className="flex flex-col gap-2" aria-busy="true">
+    <div className="flex min-w-0 flex-col gap-2" aria-busy="true">
       <div role="status" aria-label="Loading stream" className="flex flex-col gap-2">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-80 max-w-full" />
       </div>
-      <Card className="flex flex-col gap-3 p-4">
+      <Card className="flex min-w-0 flex-col gap-3 p-4">
         <Skeleton className="h-5" />
         <Skeleton className="h-2" />
       </Card>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         {[0, 1, 2, 3].map((i) => (
-          <Card key={i} className="flex flex-col gap-2 p-4">
+          <Card key={i} className="flex min-w-0 flex-col gap-2 p-4">
             <Skeleton className="h-4 w-32" />
             {[0, 1, 2].map((k) => (
               <Skeleton key={k} className="h-4" style={{ width: `${80 - k * 15}%` }} />
@@ -275,7 +275,7 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
 
   return (
     <div className="flex flex-col gap-4 p-4">
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <StreamCrumbs ticket={stream.ticket} />
         <header className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -287,7 +287,7 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
         </header>
       </div>
 
-      <Card className="flex flex-col gap-3 p-4">
+      <Card className="flex min-w-0 flex-col gap-3 p-4">
         <StageStepper stage={stream.stage} />
         <div className="grid gap-3 border-t pt-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
           <div className="flex flex-col gap-1.5">
@@ -311,15 +311,15 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
         </div>
       </Card>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <section aria-label="Stream goal">
-          <Card className="flex flex-col gap-2 p-4">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+        <section aria-label="Stream goal" className="min-w-0">
+          <Card className="flex min-w-0 flex-col gap-2 p-4">
             <GoalEditor targetType="stream" targetId={stream.ticket} />
           </Card>
         </section>
 
-        <section aria-label="Next steps">
-          <Card className="flex flex-col gap-2 p-4">
+        <section aria-label="Next steps" className="min-w-0">
+          <Card className="flex min-w-0 flex-col gap-2 p-4">
             <CardTitle>What's next</CardTitle>
             {handoff ? (
               <div className="flex flex-col gap-2 text-sm">
@@ -332,7 +332,7 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
                   ))}
                 </ol>
                 {handoff.blockers.length > 0 ? (
-                  <p className="flex items-start gap-2 rounded-md bg-warning/15 px-2.5 py-2 font-medium text-warning-foreground">
+                  <p className="flex items-start gap-2 rounded-md bg-warning/15 px-2.5 py-2 font-medium text-warning">
                     <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                     <span className="min-w-0 break-words">Blocked: {handoff.blockers.join('; ')}</span>
                   </p>
@@ -346,8 +346,8 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
           </Card>
         </section>
 
-        <section aria-label="Pull requests">
-          <Card className="flex flex-col gap-2 p-4">
+        <section aria-label="Pull requests" className="min-w-0">
+          <Card className="flex min-w-0 flex-col gap-2 p-4">
             <CardTitle className="flex items-center gap-2">
               Pull requests <Badge variant="secondary">{prsDetailed.length}</Badge>
             </CardTitle>
@@ -376,8 +376,8 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
           </Card>
         </section>
 
-        <section aria-label="Linked work">
-          <Card className="flex flex-col gap-2 p-4">
+        <section aria-label="Linked work" className="min-w-0">
+          <Card className="flex min-w-0 flex-col gap-2 p-4">
             <CardTitle>Linked work</CardTitle>
             <ul className="flex flex-col gap-1 text-sm">
               {stream.sessionIds.map((pk) => (
@@ -400,7 +400,7 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
               {stream.plans.map((p) => (
                 <li key={p} className="flex min-w-0 items-center gap-2 text-muted-foreground">
                   <FileText className="size-4 shrink-0" aria-hidden />
-                  <span className="truncate" title={p}>
+                  <span className="min-w-0 flex-1 truncate" title={p}>
                     {p}
                   </span>
                 </li>
@@ -408,7 +408,7 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
               {stream.worktrees.map((w) => (
                 <li key={w} className="flex min-w-0 items-center gap-2 text-muted-foreground">
                   <FolderGit2 className="size-4 shrink-0" aria-hidden />
-                  <span className="truncate" title={w}>
+                  <span className="min-w-0 flex-1 truncate" title={w}>
                     {w}
                   </span>
                 </li>
@@ -424,8 +424,8 @@ export function StreamDetailPage({ ticket }: { ticket: string }) {
         </section>
       </div>
 
-      <section aria-label="Timeline">
-        <Card className="flex flex-col gap-2 p-4">
+      <section aria-label="Timeline" className="min-w-0">
+        <Card className="flex min-w-0 flex-col gap-2 p-4">
           <CardTitle>Timeline</CardTitle>
           <ol className="flex flex-col gap-2 text-sm">
             {timeline.map((i) => (
