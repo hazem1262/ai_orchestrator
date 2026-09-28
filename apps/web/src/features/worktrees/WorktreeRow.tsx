@@ -1,6 +1,15 @@
 import type { WorktreeView } from '@orc/core';
+import { Archive, Code2, FolderGit2, MoreHorizontal, Play, RefreshCw, SquareTerminal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.tsx';
+import { TableCell, TableRow } from '@/components/ui/table.tsx';
 
 export type WorktreeAction = 'vscode' | 'terminal' | 'run' | 'sync' | 'archive';
 
@@ -16,6 +25,11 @@ export function prLabel(w: WorktreeView): string | null {
   if (!s) return w.prUrl ? 'PR' : null;
   if (s.state !== 'open') return `#${s.pr.number} · ${s.state}`;
   return `#${s.pr.number} · ${CHECKS_LABEL[s.checks]}`;
+}
+
+/** True once the worktree carries a PR link — desktop always shows a cell, phone omits it entirely. */
+export function hasPr(w: WorktreeView): boolean {
+  return Boolean(w.prStatus?.pr.url ?? w.prUrl);
 }
 
 type ActionHandler = (a: WorktreeAction, w: WorktreeView) => void;
@@ -40,86 +54,128 @@ function PrCell({ w }: { w: WorktreeView }) {
       {pr}
     </a>
   ) : (
-    (pr ?? '—')
+    <span className="text-muted-foreground">—</span>
   );
 }
 
+/** The repo group's own header: a `heading` so screen readers can jump between groups, its path
+ *  truncated with a native tooltip so a long checkout path never wraps a phone card or table row. */
+export function RepoGroupHeading({ repo }: { repo: string }) {
+  return (
+    <h2
+      title={repo}
+      className="flex min-w-0 items-center gap-1.5 truncate font-mono text-sm font-semibold text-muted-foreground"
+    >
+      <FolderGit2 className="size-3.5 shrink-0" aria-hidden />
+      <span className="truncate">{repo}</span>
+    </h2>
+  );
+}
+
+/** IDE + Terminal are always one tap away; Run, Sync and Archive live behind one menu so the row
+ *  never outgrows a phone. Archive still goes through the app's own confirm-before-destroy dialog
+ *  (`GitConfirmDialog`, opened by the caller's mutation), which already asks the user before an
+ *  archive proceeds, including the extra acknowledgement for a worktree the app didn't create. */
 function Actions({ w, onAction }: { w: WorktreeView; onAction: ActionHandler }) {
   return (
-    <>
+    <div className="flex items-center justify-end gap-1">
       <Button
-        size="sm"
+        size="icon-sm"
         variant="ghost"
         onClick={() => onAction('vscode', w)}
         aria-label={`Open ${w.branch} in VS Code`}
       >
-        IDE
+        <Code2 />
       </Button>
       <Button
-        size="sm"
+        size="icon-sm"
         variant="ghost"
         onClick={() => onAction('terminal', w)}
         aria-label={`Open terminal in ${w.branch}`}
       >
-        Terminal
+        <SquareTerminal />
       </Button>
       {!w.isMain && (
-        <>
-          <Button size="sm" variant="ghost" onClick={() => onAction('run', w)} aria-label={`Run ${w.branch}`}>
-            Run
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onAction('sync', w)}
-            aria-label={`Sync ${w.branch} to main checkout`}
-          >
-            Sync
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onAction('archive', w)}
-            aria-label={`Archive ${w.branch}`}
-          >
-            Archive
-          </Button>
-        </>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon-sm" variant="ghost" aria-label={`More actions for ${w.branch}`}>
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem aria-label={`Run ${w.branch}`} onSelect={() => onAction('run', w)}>
+              <Play />
+              Run
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              aria-label={`Sync ${w.branch} to main checkout`}
+              onSelect={() => onAction('sync', w)}
+            >
+              <RefreshCw />
+              Sync to main checkout
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              aria-label={`Archive ${w.branch}`}
+              onSelect={() => onAction('archive', w)}
+            >
+              <Archive />
+              Archive…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
-    </>
+    </div>
   );
 }
 
 export function WorktreeRow({ w, onAction }: { w: WorktreeView; onAction: ActionHandler }) {
   return (
-    <tr className="border-b text-sm">
-      <td className="py-2 font-mono">{w.branch}</td>
-      <td>{w.ticket ?? '—'}</td>
-      <td className="space-x-1">
-        <StateBadges w={w} />
-      </td>
-      <td>
+    <TableRow>
+      <TableCell className="pl-3 font-mono">{w.branch}</TableCell>
+      <TableCell>
+        {w.ticket ? (
+          <Badge variant="outline" className="font-mono">
+            {w.ticket}
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell>
+        <span className="flex flex-wrap gap-1">
+          <StateBadges w={w} />
+        </span>
+      </TableCell>
+      <TableCell>
         <PrCell w={w} />
-      </td>
-      <td>{w.sessionPks.length}</td>
-      <td className="space-x-1 whitespace-nowrap text-right">
+      </TableCell>
+      <TableCell className="text-right font-mono text-xs tabular-nums">{w.sessionPks.length}</TableCell>
+      <TableCell className="pr-3">
         <Actions w={w} onAction={onAction} />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
-/** The phone layout of one worktree: the table row's fields stacked in a card. */
+/** The phone layout of one worktree: the table row's fields stacked in a card. Empty fields (no
+ *  ticket, no PR) are left out rather than printed as a dash, so a plain worktree stays a short
+ *  card instead of a row of "—"s. */
 export function WorktreeCard({ w, onAction }: { w: WorktreeView; onAction: ActionHandler }) {
   return (
     <article aria-label={w.branch} className="flex min-w-0 flex-col gap-1.5 rounded-lg border p-3 text-sm">
-      <p className="font-mono break-all">{w.branch}</p>
+      <p className="truncate font-mono" title={w.branch}>
+        {w.branch}
+      </p>
       <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         <StateBadges w={w} />
         {w.ticket ? <span>{w.ticket}</span> : null}
-        <span>
-          PR <PrCell w={w} />
-        </span>
+        {hasPr(w) ? (
+          <span>
+            PR <PrCell w={w} />
+          </span>
+        ) : null}
         <span>{`${w.sessionPks.length} sessions`}</span>
       </div>
       <div className="-ml-2 flex flex-wrap gap-1">
