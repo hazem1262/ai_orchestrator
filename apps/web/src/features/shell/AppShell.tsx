@@ -14,6 +14,7 @@ import { QuotaBars } from '@/features/limits/QuotaBars.tsx';
 import { MobileNav } from '@/features/mobile/MobileNav.tsx';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { CommandPalette } from '@/features/palette/CommandPalette.tsx';
+import { ThemeToggle } from '@/features/theme/ThemeToggle.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { usePaletteStore } from '@/stores/palette.ts';
 import { useProjectStore } from '@/stores/project.ts';
@@ -94,6 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
             New session
           </Button>
+          <ThemeToggle />
         </header>
         <main className="min-h-0 flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}
@@ -127,6 +129,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
           New session
         </Button>
+        <ThemeToggle />
       </header>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Main" className="flex w-40 shrink-0 flex-col gap-1 border-r p-2 text-sm">

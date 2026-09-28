@@ -8,6 +8,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180x180.png" />
+    <!-- Applies the saved theme before first paint; src/features/theme/ThemeProvider.tsx keeps it in step. -->
+    <script>
+      try {
+        const t = JSON.parse(localStorage.getItem('orc.theme') ?? '{}').state?.theme;
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch {
+        // unreadable storage: stay light until the app mounts
+      }
+    </script>
     <!-- Sets window.__ORC_TOKEN__; served by the daemon to loopback same-origin requests only. -->
     <script src="/bootstrap.js"></script>
   </head>
