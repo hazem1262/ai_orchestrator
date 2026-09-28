@@ -65,6 +65,12 @@ const NAVIGATION: PaletteItem[] = [
   },
   { id: 'nav:live', label: 'Live board', keywords: ['running'], action: { type: 'navigate', to: '/live' } },
   {
+    id: 'nav:worktrees',
+    label: 'Worktrees',
+    keywords: ['git', 'branch'],
+    action: { type: 'navigate', to: '/worktrees' },
+  },
+  {
     id: 'nav:audit',
     label: 'Audit log',
     keywords: ['actions'],
@@ -84,6 +90,12 @@ const NAVIGATION: PaletteItem[] = [
     keywords: ['cost', 'usage', 'spend'],
     shortcut: 'g u',
     action: { type: 'navigate', to: '/analytics' },
+  },
+  {
+    id: 'nav:automations',
+    label: 'Automations',
+    keywords: ['schedule', 'trigger', 'rule'],
+    action: { type: 'navigate', to: '/automations' },
   },
   {
     id: 'nav:settings',

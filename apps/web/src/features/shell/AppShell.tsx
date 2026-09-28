@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router';
+import { SearchIcon } from 'lucide-react';
 import { type FormEvent, lazy, type ReactNode, Suspense, useState } from 'react';
 import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
 import { useLiveEvents } from '@/api/live-events.ts';
@@ -92,7 +93,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             Orchestrator
           </Link>
           <InboxCount count={openInboxCount} />
-          <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto"
+            aria-label="Open command palette"
+            onClick={() => usePaletteStore.getState().setOpen(true)}
+          >
+            <SearchIcon aria-hidden />
+          </Button>
+          <Button size="sm" onClick={() => showLaunch()}>
             New session
           </Button>
           <ThemeToggle />
