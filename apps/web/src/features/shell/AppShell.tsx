@@ -88,8 +88,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isMobile) {
     return (
       <div className="flex h-dvh flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3">
-          <Link to="/inbox" className="font-semibold">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+          <Link to="/inbox" className="min-w-0 truncate font-semibold">
             Orchestrator
           </Link>
           <InboxCount count={openInboxCount} />
@@ -105,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button size="sm" onClick={() => showLaunch()}>
             New session
           </Button>
-          <ThemeToggle />
+          <ThemeToggle compact />
         </header>
         <main className="min-h-0 flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}

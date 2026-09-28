@@ -5,8 +5,8 @@ const NEXT: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'syst
 const LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const ICON: Record<Theme, string> = { system: '◐', light: '☀', dark: '☾' };
 
-/** Cycles system → light → dark. */
-export function ThemeToggle() {
+/** Cycles system → light → dark. `compact` shows the icon only (the label stays in `aria-label`). */
+export function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   return (
@@ -18,7 +18,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(NEXT[theme])}
     >
       <span aria-hidden="true">{ICON[theme]}</span>
-      {LABEL[theme]}
+      {compact ? null : LABEL[theme]}
     </Button>
   );
 }
