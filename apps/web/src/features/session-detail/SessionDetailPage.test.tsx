@@ -79,9 +79,9 @@ describe('SessionDetailPage', () => {
     expect(screen.getByText('prod')).toBeTruthy();
     expect(screen.getByText('$0.42 · 2.2k tokens')).toBeTruthy();
 
-    expect(screen.getByRole('tab', { name: 'Timeline' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Transcript' }).getAttribute('aria-selected')).toBe('true');
     expect(await screen.findByText('default')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Export ZIP' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeTruthy();
 
     const turn1 = await screen.findByRole('region', { name: 'Turn 1' });
     expect(within(turn1).getByText('check the notification service tests')).toBeTruthy();

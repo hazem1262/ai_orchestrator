@@ -229,7 +229,7 @@ describe('SessionDetailTabs', () => {
         onNavigate={onNavigate}
       />,
     );
-    expect(screen.getByRole('tab', { name: 'Timeline' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Transcript' }).getAttribute('aria-selected')).toBe('true');
     await userEvent.click(screen.getByRole('button', { name: 'timeline:main' }));
     expect(onNavigate).toHaveBeenLastCalledWith({ tab: 'files', file: '/r/a.ts' });
     await userEvent.click(screen.getByRole('tab', { name: 'Agents' }));

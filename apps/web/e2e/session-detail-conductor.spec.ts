@@ -55,7 +55,8 @@ test.describe('M3 exit: a subagent session is understandable without the termina
     await expect(page.getByText('"agentId":"ag1"').first()).toBeVisible();
 
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Export ZIP' }).click();
+    await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Export ZIP', exact: true }).click();
     expect((await download).suggestedFilename()).toBe('claude-s-subagents.zip');
   });
 

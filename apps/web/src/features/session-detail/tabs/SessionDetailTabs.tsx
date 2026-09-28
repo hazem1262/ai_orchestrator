@@ -1,22 +1,40 @@
 import type { Session } from '@orc/core';
 import { useState } from 'react';
 import { useSessionAgents } from '@/api/queries/session-detail.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { AgentsTree } from '../agents/AgentsTree.tsx';
 import { ConductorChain } from '../agents/ConductorChain.tsx';
 import { conductorChain, isConductorSession } from '../agents/conductor.ts';
 import { TrajectoryTimeline } from '../timeline/TrajectoryTimeline.tsx';
+import { ViewModeToggle } from '../timeline/ViewModeToggle.tsx';
+import { DiffTab } from './DiffTab.tsx';
 import { FilesTab } from './FilesTab.tsx';
 import { LinksTab } from './LinksTab.tsx';
 import { RawTab } from './RawTab.tsx';
+import { TerminalTab } from './TerminalTab.tsx';
 import { UsageTab } from './UsageTab.tsx';
 
-export type DetailTab = 'timeline' | 'agents' | 'usage' | 'files' | 'links' | 'raw';
+export const DETAIL_TAB_IDS = [
+  'timeline',
+  'terminal',
+  'diff',
+  'files',
+  'agents',
+  'usage',
+  'links',
+  'raw',
+] as const;
+export type DetailTab = (typeof DETAIL_TAB_IDS)[number];
+/** `timeline` keeps its URL value (`?tab=timeline`) so existing links still land on the transcript. */
 export const DETAIL_TABS: ReadonlyArray<{ id: DetailTab; label: string }> = [
-  { id: 'timeline', label: 'Timeline' },
+  { id: 'timeline', label: 'Transcript' },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'diff', label: 'Diff' },
+  { id: 'files', label: 'Files' },
   { id: 'agents', label: 'Agents' },
   { id: 'usage', label: 'Usage' },
-  { id: 'files', label: 'Files' },
   { id: 'links', label: 'Links' },
   { id: 'raw', label: 'Raw' },
 ];
@@ -56,50 +74,67 @@ export function SessionDetailTabs({ session, tab, agentId, file, onNavigate }: P
       onValueChange={(v) => {
         if (isDetailTab(v)) onNavigate({ tab: v });
       }}
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex min-w-0 flex-col gap-3"
     >
-      <TabsList className="px-3">
-        {DETAIL_TABS.map((t) => (
-          <TabsTrigger key={t.id} value={t.id}>
-            {t.label}
-            {t.id === 'agents' && agents.length > 0 ? ` (${agents.length})` : ''}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      <TabsContent value="timeline" className="min-h-0 flex-1 overflow-auto">
-        {agentId && (
-          <p className="flex items-center gap-2 px-3 pt-2 text-xs">
-            <span>
-              Subagent: {currentAgent ? currentAgent.description || currentAgent.agentType : agentId}
-            </span>
-            <button type="button" className="underline" onClick={() => onNavigate({ agent: null })}>
-              Back to main session
-            </button>
-          </p>
-        )}
-        <TrajectoryTimeline
-          source={source}
-          id={id}
-          agentId={agentId}
-          onOpenFile={(path) => onNavigate({ tab: 'files', file: path })}
-        />
+      <div className="-mx-4 overflow-x-auto px-4 md:mx-0 md:px-0">
+        <TabsList variant="default">
+          {DETAIL_TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id} className="px-3">
+              {t.label}
+              {t.id === 'agents' && agents.length > 0 ? ` (${agents.length})` : ''}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
+      <TabsContent value="timeline" className="flex h-[75dvh] min-h-96 flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <ViewModeToggle />
+          {agentId && (
+            <p className="flex min-w-0 items-center gap-2 text-xs">
+              <span className="truncate">
+                Subagent: {currentAgent ? currentAgent.description || currentAgent.agentType : agentId}
+              </span>
+              <Button variant="link" size="xs" onClick={() => onNavigate({ agent: null })}>
+                Back to main session
+              </Button>
+            </p>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden rounded-lg border">
+          <TrajectoryTimeline
+            source={source}
+            id={id}
+            agentId={agentId}
+            onOpenFile={(path) => onNavigate({ tab: 'files', file: path })}
+          />
+        </div>
       </TabsContent>
-      <TabsContent value="agents" className="min-h-0 flex-1 overflow-auto">
+      <TabsContent value="terminal">
+        <TerminalTab session={session} />
+      </TabsContent>
+      <TabsContent value="diff">
+        <DiffTab source={source} id={id} />
+      </TabsContent>
+      <TabsContent value="agents" className="overflow-auto">
         {chain && (
-          <div role="radiogroup" aria-label="Agents view" className="flex gap-3 px-3 pt-2 text-xs">
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            role="radiogroup"
+            aria-label="Agents view"
+            value={agentView}
+            onValueChange={(v) => {
+              if (v === 'tree' || v === 'chain') setAgentView(v);
+            }}
+            className="mb-2"
+          >
             {AGENT_VIEWS.map((v) => (
-              <label key={v.id} className="inline-flex cursor-pointer items-center gap-1">
-                <input
-                  type="radio"
-                  name={`orc-agents-view-${source}-${id}`}
-                  value={v.id}
-                  checked={agentView === v.id}
-                  onChange={() => setAgentView(v.id)}
-                />
+              <ToggleGroupItem key={v.id} value={v.id}>
                 {v.label}
-              </label>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
         )}
         {chain && agentView === 'chain' ? (
           <ConductorChain chain={chain} onOpenAgent={(a) => onNavigate({ tab: 'timeline', agent: a })} />
@@ -111,10 +146,10 @@ export function SessionDetailTabs({ session, tab, agentId, file, onNavigate }: P
           />
         )}
       </TabsContent>
-      <TabsContent value="usage" className="min-h-0 flex-1 overflow-auto">
+      <TabsContent value="usage" className="overflow-auto">
         <UsageTab source={source} id={id} />
       </TabsContent>
-      <TabsContent value="files" className="min-h-0 flex-1 overflow-auto">
+      <TabsContent value="files" className="overflow-auto">
         <FilesTab
           source={source}
           id={id}
@@ -123,10 +158,10 @@ export function SessionDetailTabs({ session, tab, agentId, file, onNavigate }: P
           onSelect={(p) => onNavigate({ file: p })}
         />
       </TabsContent>
-      <TabsContent value="links" className="min-h-0 flex-1 overflow-auto">
+      <TabsContent value="links" className="overflow-auto">
         <LinksTab source={source} id={id} />
       </TabsContent>
-      <TabsContent value="raw" className="min-h-0 flex-1 overflow-auto">
+      <TabsContent value="raw" className="overflow-auto">
         <RawTab source={source} id={id} agents={agents} />
       </TabsContent>
     </Tabs>

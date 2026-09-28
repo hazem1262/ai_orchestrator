@@ -40,7 +40,7 @@ test('finds sessions by keyword, shows prompts-only history and opens the detail
   await expect(
     page.getByRole('heading', { level: 1, name: 'Notification service test check' }),
   ).toBeVisible();
-  await expect(page.getByRole('tab', { name: 'Timeline' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Transcript' })).toHaveAttribute('aria-selected', 'true');
   const turn = page.getByRole('region', { name: 'Turn 1' });
   await expect(turn.getByRole('heading', { name: 'check the notification service tests' })).toBeVisible();
   await expect(turn.getByRole('button', { name: 'Bash ×1' })).toBeVisible();

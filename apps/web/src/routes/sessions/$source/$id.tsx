@@ -1,11 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { SessionDetailPage } from '@/features/session-detail/SessionDetailPage.tsx';
-import type { DetailNavigation } from '@/features/session-detail/tabs/SessionDetailTabs.tsx';
+import { DETAIL_TAB_IDS, type DetailNavigation } from '@/features/session-detail/tabs/SessionDetailTabs.tsx';
 import { isSource } from '@/lib/source.ts';
 
 const DetailSearch = z.object({
-  tab: z.enum(['timeline', 'agents', 'usage', 'files', 'links', 'raw']).optional().catch(undefined),
+  tab: z.enum(DETAIL_TAB_IDS).optional().catch(undefined),
   agent: z.string().optional().catch(undefined),
   file: z.string().optional().catch(undefined),
 });
