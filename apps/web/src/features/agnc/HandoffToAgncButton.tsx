@@ -18,25 +18,36 @@ export function HandoffToAgncButton({
   session: Session;
   confirm?: (message: string) => boolean;
 }) {
-  const status = useAgncStatus();
-  const handoff = useAgncHandoff();
-  if (session.source === 'agnc' || status.data?.enabled !== true) return null;
-  const source = session.source === 'codex' ? 'codex' : 'claude';
-  const title = session.name ?? session.firstPrompt ?? session.id;
-
+  const h = useHandoffToAgnc(session);
+  if (!h.available) return null;
   return (
     <span className="flex flex-wrap items-center gap-2 text-xs">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={handoff.busy}
-        onClick={() => {
-          if (confirm && !confirm(`Hand "${title}" off to AGNC?`)) return;
-          void handoff.run({ source, id: session.id });
-        }}
-      >
+      <Button size="sm" variant="outline" disabled={h.handoff.busy} onClick={() => h.start(confirm)}>
         Hand off to AGNC
       </Button>
+      <HandoffToAgncOutcome handoff={h.handoff} />
+    </span>
+  );
+}
+
+/** The request behind `HandoffToAgncButton`, for callers that trigger it from somewhere else (a menu item). */
+export function useHandoffToAgnc(session: Session) {
+  const status = useAgncStatus();
+  const handoff = useAgncHandoff();
+  const available = session.source !== 'agnc' && status.data?.enabled === true;
+  const source = session.source === 'codex' ? 'codex' : 'claude';
+  const title = session.name ?? session.firstPrompt ?? session.id;
+  const start = (confirm?: (message: string) => boolean) => {
+    if (confirm && !confirm(`Hand "${title}" off to AGNC?`)) return;
+    void handoff.run({ source, id: session.id });
+  };
+  return { available, handoff, start };
+}
+
+/** The created-session link, the error, and the daemon's confirmation dialog for a handoff. */
+export function HandoffToAgncOutcome({ handoff }: { handoff: ReturnType<typeof useAgncHandoff> }) {
+  return (
+    <>
       {handoff.data ? (
         handoff.data.url ? (
           <a href={handoff.data.url} target="_blank" rel="noopener" className="text-primary underline">
@@ -67,6 +78,6 @@ export function HandoffToAgncButton({
           </div>
         </GitDialog>
       ) : null}
-    </span>
+    </>
   );
 }
