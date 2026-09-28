@@ -36,7 +36,7 @@ export function AgncConnectCard({
   const err = status.error ?? connect.error ?? disconnect.error;
 
   return (
-    <Card aria-label="AGNC connector" className="flex flex-col gap-3 p-4 text-sm">
+    <Card aria-label="AGNC connector" className="flex min-w-0 flex-col gap-3 rounded-lg p-4 text-sm">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">AGNC</h3>
         {s ? <Badge variant={STATUS_VARIANT[s.status]}>{STATUS_LABEL[s.status]}</Badge> : null}

@@ -1,6 +1,8 @@
 import type { SecretsFileReport } from '@orc/api-contract';
 import { useSecretsReport } from '@/api/queries/safety.ts';
 import { Button } from '@/components/ui/button.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.tsx';
+import { SettingsCard } from '@/features/settings/SettingsCard.tsx';
 
 function fileStatus(f: SecretsFileReport): string {
   if (!f.exists) return f.error === 'forbidden' ? 'skipped (never read)' : 'not found';
@@ -14,13 +16,17 @@ export function SecretsHygienePanel() {
   const filesWithFindings = report ? report.files.filter((f) => f.findings.length > 0).length : 0;
 
   return (
-    <section aria-label="Secrets hygiene" className="flex flex-col gap-2">
-      <h2 className="text-base font-semibold">Secrets hygiene</h2>
-      <p className="text-sm text-muted-foreground">
-        Read-only scan of files known to hold plaintext credentials. Values are never shown. Rotate anything
-        listed here and move it to the Keychain or an environment variable. Paths are configured in{' '}
-        <code className="font-mono text-xs">safety.secretScanPaths</code>.
-      </p>
+    <SettingsCard
+      label="Secrets hygiene"
+      title="Secrets hygiene"
+      description={
+        <>
+          Read-only scan of files known to hold plaintext credentials. Values are never shown. Rotate anything
+          listed here and move it to the Keychain or an environment variable. Paths are configured in{' '}
+          <code className="font-mono text-xs">safety.secretScanPaths</code>.
+        </>
+      }
+    >
       <div>
         <Button size="sm" variant="outline" disabled={q.isFetching} onClick={() => void q.refetch()}>
           Rescan
@@ -39,32 +45,30 @@ export function SecretsHygienePanel() {
               : `${report.totalFindings} findings in ${filesWithFindings} files`}{' '}
             · scanned {new Date(report.scannedAt).toLocaleString()}
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-left text-muted-foreground">
-                  <th className="py-1 pr-2 font-medium">File</th>
-                  <th className="py-1 pr-2 font-medium">Status</th>
-                  <th className="py-1 font-medium">Findings</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.files.map((f) => (
-                  <tr key={f.path} className="border-t align-top">
-                    <td className="break-all py-1 pr-2 font-mono">{f.displayPath}</td>
-                    <td className="py-1 pr-2">{fileStatus(f)}</td>
-                    <td className="py-1">
-                      {f.findings.map((x) => (
-                        <div key={`${x.line}-${x.kind}`}>{`line ${x.line} · ${x.kind}`}</div>
-                      ))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">File</TableHead>
+                <TableHead className="text-muted-foreground">Status</TableHead>
+                <TableHead className="text-muted-foreground">Findings</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.files.map((f) => (
+                <TableRow key={f.path} className="align-top">
+                  <TableCell className="break-all whitespace-normal font-mono">{f.displayPath}</TableCell>
+                  <TableCell>{fileStatus(f)}</TableCell>
+                  <TableCell>
+                    {f.findings.map((x) => (
+                      <div key={`${x.line}-${x.kind}`}>{`line ${x.line} · ${x.kind}`}</div>
+                    ))}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </>
       )}
-    </section>
+    </SettingsCard>
   );
 }

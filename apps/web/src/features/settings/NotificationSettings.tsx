@@ -2,8 +2,11 @@ import type { NotificationPrefs } from '@orc/api-contract';
 import { useState } from 'react';
 import { useNotificationPrefs, useSaveNotificationPrefs } from '@/api/queries/archive.ts';
 import { Button } from '@/components/ui/button.tsx';
+import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.tsx';
 import { NOTIFY_KINDS } from './format.ts';
+import { SettingsCard } from './SettingsCard.tsx';
 
 type Pref = NotificationPrefs[string];
 
@@ -39,53 +42,51 @@ export function NotificationSettings() {
   };
 
   return (
-    <section aria-label="Notifications" className="flex flex-col gap-2">
-      <h2 className="text-base font-semibold">Notifications</h2>
-      <p className="text-sm text-muted-foreground">
-        One notification per session per state change. Web push and Slack DM arrive in Phase 6.
-      </p>
+    <SettingsCard
+      label="Notifications"
+      title="Notifications"
+      description="One notification per session per state change. Web push and Slack DM arrive in Phase 6."
+    >
       {/* Every box would read "off" until the prefs land, and a click in that window would be
           saved over the real value. */}
       {data === undefined ? <Skeleton className="h-64 max-w-md" /> : null}
-      <table hidden={data === undefined} className="w-full max-w-md text-sm">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="text-left font-medium">Item type</th>
-            <th className="font-medium">On</th>
-            <th className="font-medium">macOS</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table hidden={data === undefined} className="max-w-md">
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="text-muted-foreground">Item type</TableHead>
+            <TableHead className="w-16 text-center text-muted-foreground">On</TableHead>
+            <TableHead className="w-16 text-center text-muted-foreground">macOS</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {NOTIFY_KINDS.map(({ kind, label }) => {
             const p = pref(kind);
             return (
-              <tr key={kind}>
-                <td className="py-0.5">{label}</td>
-                <td className="text-center">
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
+              <TableRow key={kind}>
+                <TableCell className="whitespace-normal">{label}</TableCell>
+                <TableCell>
+                  <Checkbox
+                    className="mx-auto"
                     aria-label={`${label}: enabled`}
                     checked={p.enabled}
-                    onChange={(e) => setEnabled(kind, e.target.checked)}
+                    onCheckedChange={(v) => setEnabled(kind, v)}
                   />
-                </td>
-                <td className="text-center">
-                  <input
-                    type="checkbox"
-                    className="accent-primary"
+                </TableCell>
+                <TableCell>
+                  <Checkbox
+                    className="mx-auto"
                     aria-label={`${label}: macOS`}
                     checked={p.channels.includes('macos')}
                     disabled={!p.enabled}
-                    onChange={(e) => setMacos(kind, e.target.checked)}
+                    onCheckedChange={(v) => setMacos(kind, v)}
                   />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
-      <div className="flex items-center gap-2">
+        </TableBody>
+      </Table>
+      <div className="flex items-center gap-2 border-t pt-4">
         <Button size="sm" disabled={save.isPending} onClick={() => save.mutate(draft)}>
           Save notifications
         </Button>
@@ -96,6 +97,6 @@ export function NotificationSettings() {
           </span>
         ) : null}
       </div>
-    </section>
+    </SettingsCard>
   );
 }

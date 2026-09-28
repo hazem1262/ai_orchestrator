@@ -98,7 +98,7 @@ describe('NotificationSettings', () => {
     await screen.findByRole('checkbox', { name: 'Waiting for input: enabled' });
     await vi.waitFor(() =>
       expect(
-        (screen.getByRole('checkbox', { name: 'Waiting for input: macOS' }) as HTMLInputElement).disabled,
+        (screen.getByRole('checkbox', { name: 'Waiting for input: macOS' }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
     records.push(...mo.takeRecords());
@@ -109,7 +109,7 @@ describe('NotificationSettings', () => {
     expect(shown).toBeGreaterThanOrEqual(0);
     const changedAfterShown = records
       .slice(shown + 1)
-      .filter((r) => (r.target as Element).tagName === 'INPUT' && r.attributeName === 'disabled')
+      .filter((r) => (r.target as Element).tagName === 'BUTTON' && r.attributeName === 'disabled')
       .map(
         (r) =>
           `${(r.target as Element).getAttribute('aria-label')}: disabled ${r.oldValue === null ? 'off→on' : 'on→off'}`,
