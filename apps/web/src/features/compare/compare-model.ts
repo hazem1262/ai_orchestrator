@@ -32,7 +32,7 @@ export interface Highlights {
   smallestDiff: number | null;
 }
 
-const diffSize = (v: CompareVariantView) => (v.diff ? v.diff.insertions + v.diff.deletions : 0);
+export const diffSize = (v: CompareVariantView) => (v.diff ? v.diff.insertions + v.diff.deletions : 0);
 
 export function variantHighlights(vs: CompareVariantView[]): Highlights {
   const ok = vs.filter((v) => !v.error);
@@ -43,4 +43,24 @@ export function variantHighlights(vs: CompareVariantView[]): Highlights {
     greenTests: ok.filter((v) => v.tests && v.tests.failed === 0 && v.tests.passed > 0).map((v) => v.index),
     smallestDiff: bySize[0]?.index ?? null,
   };
+}
+
+/** The largest value of each metric across every variant, so a card's bar reads relative to the group. */
+export interface MetricMax {
+  cost: number;
+  duration: number;
+  diff: number;
+}
+
+export function metricMax(vs: CompareVariantView[]): MetricMax {
+  return {
+    cost: Math.max(0, ...vs.map((v) => v.costUsd ?? 0)),
+    duration: Math.max(0, ...vs.map((v) => v.durationMs ?? 0)),
+    diff: Math.max(0, ...vs.map(diffSize)),
+  };
+}
+
+/** A bar's fill fraction for `value` against `max`; 0 when there is nothing to compare against. */
+export function metricPct(value: number, max: number): number {
+  return max > 0 ? value / max : 0;
 }

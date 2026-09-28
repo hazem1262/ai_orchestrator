@@ -1,5 +1,5 @@
 import type { CompareGroup, CompareVariantInput, CompareView } from '@orc/api-contract';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setApiClientForTests } from '@/api/client.ts';
@@ -86,6 +86,8 @@ describe('ComparePage', () => {
     expect(screen.getByText('Cheapest')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Pick v2 codex' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Pick v1 claude:claude-opus-5' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Pick v1 as the winner?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Pick winner' }));
     await waitFor(() => expect(stubs.comparePickWinner).toHaveBeenCalledWith('g1', 0));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/review/claude/a'));
   });

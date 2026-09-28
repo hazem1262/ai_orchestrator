@@ -52,10 +52,10 @@ describe('ComparePage archive without a confirm prop', () => {
     setApiClientForTests(fakeApi({ compareGet: vi.fn(async () => decided), compareArchiveLosers }));
     renderP3(<ComparePage groupId="g1" navigate={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Archive the other variants' }));
-    const dialog = screen.getByRole('dialog', { name: 'Archive the other variants' });
+    const dialog = screen.getByRole('alertdialog', { name: 'Archive the other variants' });
     expect(within(dialog).getByText('/w/2')).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(compareArchiveLosers).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive the other variants' }));
