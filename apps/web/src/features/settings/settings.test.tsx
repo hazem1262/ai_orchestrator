@@ -85,6 +85,37 @@ describe('NotificationSettings', () => {
     expect(saved?.review).toEqual({ enabled: true, channels: [] });
     expect(saved?.plan_approval).toEqual({ enabled: true, channels: ['macos'] });
   });
+
+  // The table is unhidden in the same commit the prefs land in, but `draft` is only copied from
+  // them in a passive effect that runs after that commit. Every DOM mutation is recorded here, in
+  // order: once the table stops being hidden, no box may still change, or a click made before the
+  // effect runs acts on the empty draft (all "off") and the effect then overwrites it.
+  it('shows the saved prefs in the first commit that makes the table visible', async () => {
+    const records: MutationRecord[] = [];
+    const mo = new MutationObserver((rs) => records.push(...rs));
+    mo.observe(document.body, { attributes: true, subtree: true, attributeOldValue: true });
+    renderWithProviders(<NotificationSettings />, { api: api() });
+    await screen.findByRole('checkbox', { name: 'Waiting for input: enabled' });
+    await vi.waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: 'Waiting for input: macOS' }) as HTMLInputElement).disabled,
+      ).toBe(false),
+    );
+    records.push(...mo.takeRecords());
+    mo.disconnect();
+    const shown = records.findIndex(
+      (r) => r.attributeName === 'hidden' && (r.target as Element).tagName === 'TABLE',
+    );
+    expect(shown).toBeGreaterThanOrEqual(0);
+    const changedAfterShown = records
+      .slice(shown + 1)
+      .filter((r) => (r.target as Element).tagName === 'INPUT' && r.attributeName === 'disabled')
+      .map(
+        (r) =>
+          `${(r.target as Element).getAttribute('aria-label')}: disabled ${r.oldValue === null ? 'off→on' : 'on→off'}`,
+      );
+    expect(changedAfterShown).toEqual([]);
+  });
 });
 
 describe('HookSetup', () => {
