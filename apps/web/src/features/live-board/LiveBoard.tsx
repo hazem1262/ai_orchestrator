@@ -109,7 +109,9 @@ export function LiveBoard({ now }: { now?: () => number }) {
             <div
               key={g.key}
               className={
-                layout === 'grid' ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'flex flex-col gap-2'
+                layout === 'grid'
+                  ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3'
+                  : 'flex flex-col gap-2'
               }
             >
               {g.sessions.map((s) => card(s, layout === 'list'))}
