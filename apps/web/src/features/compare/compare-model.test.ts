@@ -1,6 +1,6 @@
 import type { CompareEstimate, CompareVariantView } from '@orc/api-contract';
 import { describe, expect, it } from 'vitest';
-import { budgetWarning, formatEstimate, variantHighlights } from './compare-model.ts';
+import { budgetWarning, formatEstimate, metricMax, metricPct, variantHighlights } from './compare-model.ts';
 
 const est = (over: Partial<CompareEstimate> = {}): CompareEstimate => ({
   variants: 3,
@@ -72,5 +72,22 @@ describe('compare model', () => {
       }),
     ]);
     expect(h).toEqual({ cheapest: 1, greenTests: [1], smallestDiff: 1 });
+  });
+
+  it('finds the largest cost, duration and diff size across the variants', () => {
+    const max = metricMax([
+      view(0, {
+        costUsd: 2,
+        durationMs: 500,
+        diff: { files: 1, insertions: 10, deletions: 0, untracked: 0 },
+      }),
+      view(1, { costUsd: 5, durationMs: 200, diff: { files: 1, insertions: 4, deletions: 1, untracked: 0 } }),
+    ]);
+    expect(max).toEqual({ cost: 5, duration: 500, diff: 10 });
+  });
+
+  it('scales a bar to the group max, and to 0 when there is nothing to compare against', () => {
+    expect(metricPct(5, 10)).toBe(0.5);
+    expect(metricPct(0, 0)).toBe(0);
   });
 });
