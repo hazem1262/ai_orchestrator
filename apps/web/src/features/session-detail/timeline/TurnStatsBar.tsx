@@ -7,7 +7,7 @@ const EXPLAIN =
 export function TurnStatsBar({ stats }: { stats: TurnStats | undefined }) {
   if (!stats) return null;
   return (
-    <p data-testid="turn-stats" title={EXPLAIN} className="text-xs text-neutral-500">
+    <p data-testid="turn-stats" title={EXPLAIN} className="text-xs text-muted-foreground">
       {statsSummary(stats).join(' · ')}
     </p>
   );

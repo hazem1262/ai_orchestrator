@@ -34,15 +34,15 @@ export function TerminalDock() {
   const exited = new Set((ptys.data ?? []).filter((p) => p.exitedAt !== null).map((p) => p.id));
 
   return (
-    <section aria-label="Terminals" className="flex h-full flex-col bg-[#0b0d10] text-white">
-      <div className="flex items-center gap-1 border-b border-white/10 px-2 py-1 text-xs">
+    <section aria-label="Terminals" className="flex h-full flex-col bg-terminal text-terminal-foreground">
+      <div className="flex items-center gap-1 border-b border-terminal-foreground/10 px-2 py-1 text-xs">
         <div role="tablist" className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
           {tabs.map((t, i) => {
             const title = exited.has(t.ptyId) ? `${t.title} (exited)` : t.title;
             return (
               <div
                 key={t.ptyId}
-                className={cn('flex items-center rounded', t.ptyId === active && 'bg-white/10')}
+                className={cn('flex items-center rounded', t.ptyId === active && 'bg-terminal-foreground/10')}
               >
                 <button
                   type="button"
@@ -68,7 +68,12 @@ export function TerminalDock() {
           })}
         </div>
         {active && !confirming ? (
-          <Button size="sm" variant="ghost" className="text-white" onClick={() => setConfirming(true)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-terminal-foreground"
+            onClick={() => setConfirming(true)}
+          >
             Stop
           </Button>
         ) : null}
@@ -81,7 +86,12 @@ export function TerminalDock() {
             >
               Confirm stop
             </Button>
-            <Button size="sm" variant="ghost" className="text-white" onClick={() => setConfirming(false)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-terminal-foreground"
+              onClick={() => setConfirming(false)}
+            >
               Cancel
             </Button>
           </>

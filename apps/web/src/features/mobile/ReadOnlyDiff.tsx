@@ -1,7 +1,7 @@
 const lineClass = (line: string): string => {
-  if (line.startsWith('+')) return 'text-green-700 dark:text-green-400';
-  if (line.startsWith('-')) return 'text-red-700 dark:text-red-400';
-  if (line.startsWith('@@')) return 'text-sky-700 dark:text-sky-400';
+  if (line.startsWith('+')) return 'text-success';
+  if (line.startsWith('-')) return 'text-destructive';
+  if (line.startsWith('@@')) return 'text-info';
   return 'opacity-80';
 };
 

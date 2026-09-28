@@ -35,11 +35,11 @@ export function AgentsTree({ agents, rootLabel, onOpenAgent }: Props) {
     });
 
   if (agents.length === 0)
-    return <p className="p-3 text-sm text-neutral-500">This session started no subagents.</p>;
+    return <p className="p-3 text-sm text-muted-foreground">This session started no subagents.</p>;
 
   return (
     <div className="grid gap-3 p-3 lg:grid-cols-[1fr_280px]">
-      <div className="h-[560px] rounded border border-neutral-200" data-testid="agents-tree">
+      <div className="h-[560px] rounded border border-border" data-testid="agents-tree">
         <ReactFlow
           nodes={nodes}
           edges={edges}

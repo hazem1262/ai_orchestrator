@@ -98,7 +98,7 @@ export function CommandPalette() {
       onOpenChange={(v) => (v ? setOpen(true) : close())}
       label="Command palette"
       overlayClassName="fixed inset-0 z-40 bg-black/20"
-      contentClassName="fixed left-1/2 top-24 z-50 w-[640px] max-w-[95vw] -translate-x-1/2 rounded-lg border border-neutral-200 bg-white shadow-xl"
+      contentClassName="fixed left-1/2 top-24 z-50 w-[640px] max-w-[95vw] -translate-x-1/2 rounded-lg border border-border bg-popover shadow-xl"
     >
       {plan ? (
         <div className="p-3 text-sm">
@@ -116,20 +116,20 @@ export function CommandPalette() {
             value={query}
             onValueChange={setQuery}
             placeholder="Jump to a session, ticket, PR or plan, or run an action…"
-            className="w-full border-b border-neutral-200 px-3 py-2 outline-none"
+            className="w-full border-b border-border px-3 py-2 outline-none"
           />
           {error && (
-            <p role="alert" className="px-3 py-1 text-xs text-red-600">
+            <p role="alert" className="px-3 py-1 text-xs text-destructive">
               {error}
             </p>
           )}
           <Command.List className="max-h-[60vh] overflow-auto p-1">
-            <Command.Empty className="p-3 text-sm text-neutral-500">No results.</Command.Empty>
+            <Command.Empty className="p-3 text-sm text-muted-foreground">No results.</Command.Empty>
             {sections.map((section) => (
               <Command.Group
                 key={section.heading}
                 heading={section.heading}
-                className="text-xs text-neutral-500"
+                className="text-xs text-muted-foreground"
               >
                 {section.items.map((it) => (
                   <Command.Item
@@ -137,10 +137,10 @@ export function CommandPalette() {
                     value={`${it.label} ${it.id}`}
                     keywords={it.keywords}
                     onSelect={() => run(it.action)}
-                    className="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-neutral-900 data-[selected=true]:bg-neutral-100"
+                    className="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 text-sm text-foreground data-[selected=true]:bg-muted"
                   >
                     <span>{it.label}</span>
-                    <span className="ml-2 flex items-center gap-2 text-xs text-neutral-500">
+                    <span className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
                       {it.hint && <span>{it.hint}</span>}
                       {it.shortcut && <kbd>{formatKeys(it.shortcut)}</kbd>}
                     </span>

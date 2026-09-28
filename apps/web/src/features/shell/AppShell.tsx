@@ -61,7 +61,7 @@ function Workspace({ children }: { children: ReactNode }) {
           <Panel id="dock" defaultSize="40" minSize="10">
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center bg-[#0b0d10] text-xs text-white/60">
+                <div className="flex h-full items-center justify-center bg-terminal text-xs text-terminal-foreground/60">
                   Loading terminal…
                 </div>
               }

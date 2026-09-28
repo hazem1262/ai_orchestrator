@@ -87,11 +87,11 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
     <div className="relative h-full w-full">
       <div ref={hostRef} className="h-full w-full p-1" data-testid={`terminal-${ptyId}`} />
       {exitCode !== undefined ? (
-        <p className="absolute right-2 bottom-1 rounded bg-black/70 px-2 text-xs text-white">
+        <p className="absolute right-2 bottom-1 rounded bg-terminal/70 px-2 text-xs text-terminal-foreground">
           Process exited (code {exitCode ?? '?'})
         </p>
       ) : status !== 'open' ? (
-        <p className="absolute right-2 bottom-1 rounded bg-black/70 px-2 text-xs text-white">
+        <p className="absolute right-2 bottom-1 rounded bg-terminal/70 px-2 text-xs text-terminal-foreground">
           {status === 'connecting' ? 'Connecting…' : 'Reconnecting…'}
         </p>
       ) : null}

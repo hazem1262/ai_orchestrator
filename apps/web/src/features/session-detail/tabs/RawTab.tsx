@@ -50,17 +50,17 @@ export function RawTab({ source, id, agents }: { source: Source; id: string; age
       {q.isError && <p role="alert">Raw transcript unavailable (archived or remote session).</p>}
       <ol className="space-y-1 font-mono">
         {lines.map((l) => (
-          <li key={l.offset} className="border-b border-neutral-100">
+          <li key={l.offset} className="border-b border-border">
             <button
               type="button"
-              className="mr-2 text-neutral-400"
+              className="mr-2 text-muted-foreground"
               onClick={() => toggle(l.offset)}
               aria-label={`Toggle line at ${l.offset}`}
             >
               {l.offset}
             </button>
-            {l.partial && <span className="mr-1 rounded bg-amber-100 px-1">partial</span>}
-            {l.truncated && <span className="mr-1 rounded bg-amber-100 px-1">truncated</span>}
+            {l.partial && <span className="mr-1 rounded bg-warning/15 px-1">partial</span>}
+            {l.truncated && <span className="mr-1 rounded bg-warning/15 px-1">truncated</span>}
             {expanded.has(l.offset) ? (
               <pre className="whitespace-pre-wrap">{pretty(l.text)}</pre>
             ) : (

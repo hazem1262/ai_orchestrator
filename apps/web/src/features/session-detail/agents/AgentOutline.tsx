@@ -41,7 +41,7 @@ export function AgentOutline({ agents, collapsed, onToggle, onOpenAgent }: Props
             >
               {label}
             </button>
-            <span className="ml-2 text-xs text-neutral-500">{a.status}</span>
+            <span className="ml-2 text-xs text-muted-foreground">{a.status}</span>
             {children.length > 0 && !isCollapsed && renderLevel(a.id)}
           </li>
         );
