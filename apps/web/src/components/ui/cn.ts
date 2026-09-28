@@ -5,6 +5,10 @@
  * swapping to a different kit later touches only this folder. There is no private package and no
  * registry auth involved: `pnpm install` works on a clean machine with no tokens.
  */
-export function cn(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(' ');
+import { type ClassValue, clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+/** Joins class values and lets a later Tailwind class override an earlier one it conflicts with. */
+export function cn(...inputs: ClassValue[]): string {
+  return twMerge(clsx(inputs));
 }
