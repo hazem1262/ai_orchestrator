@@ -5,9 +5,11 @@ import { redactedApiError } from '../redact-out.ts';
 import type { OrcApp } from '../types.ts';
 
 export function registerSafetyRoutes(app: OrcApp, ctx: DaemonContext, opts: { home?: string } = {}): void {
-  const scanner = createSecretsScanner({ config: ctx.config, home: opts.home });
+  // Built per request, not at registration: the route census builds the app from a stub context
+  // that has no `paths`.
+  const scanner = () => createSecretsScanner({ config: ctx.config, home: opts.home ?? ctx.paths.userHome });
 
-  app.get('/api/safety/secrets', async (c) => c.json(await scanner.scan()));
+  app.get('/api/safety/secrets', async (c) => c.json(await scanner().scan()));
 
   app.post('/api/safety/deny-check', async (c) => {
     const parsed = DenyCheckRequest.safeParse(await c.req.json().catch(() => null));

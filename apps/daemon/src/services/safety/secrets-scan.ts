@@ -1,5 +1,4 @@
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { OrcConfig, SecretsFileReport, SecretsReport } from '@orc/api-contract';
 import { scanTextForSecrets } from '@orc/core';
@@ -52,13 +51,13 @@ export interface SecretsScanner {
  */
 export function createSecretsScanner(deps: {
   config: () => OrcConfig;
-  home?: string;
+  home: string;
   maxBytes?: number;
   now?: () => Date;
 }): SecretsScanner {
   return {
     async scan() {
-      const home = deps.home ?? homedir();
+      const home = deps.home;
       const maxBytes = deps.maxBytes ?? 1024 * 1024;
       const paths = await expandScanPaths(deps.config().safety.secretScanPaths, home);
       const files: SecretsFileReport[] = [];

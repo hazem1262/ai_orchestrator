@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OrcConfig } from '@orc/api-contract';
 import { Hono } from 'hono';
@@ -112,5 +112,19 @@ describe('plans routes', () => {
       (await get(`/api/plans/content?path=${encodeURIComponent(join(planRoot, 'missing.md'))}`)).status,
     ).toBe(404);
     expect((await get('/api/plans/content')).status).toBe(400);
+  });
+});
+
+describe('plan roots', () => {
+  it('expands ~ in planRoots from the configured user home, not os.homedir()', async () => {
+    const cfg = OrcConfig.parse({ links: { planRoots: ['~/Wakecap/plans'] } });
+    const finder = createPlanFinderFromContext({
+      paths: { ...t.ctx.paths, userHome: home },
+      config: () => cfg,
+    });
+    const found = await finder.search('sla', 10);
+    expect(found.map((p) => p.path)).toEqual([join(planRoot, '2026/SAF-1787-sla.md')]);
+    expect(finder.isAllowed(join(planRoot, 'other.md'))).toBe(true);
+    expect(finder.isAllowed(join(homedir(), 'Wakecap/plans/other.md'))).toBe(false);
   });
 });
