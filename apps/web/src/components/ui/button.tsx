@@ -9,7 +9,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
   secondary: 'bg-muted text-foreground hover:bg-border',
   outline: 'border bg-background hover:bg-muted',
   ghost: 'hover:bg-muted',
-  destructive: 'bg-destructive text-primary-foreground hover:opacity-90',
+  destructive: 'bg-destructive text-destructive-foreground hover:opacity-90',
 };
 const SIZES: Record<ButtonSize, string> = {
   default: 'h-9 px-3 text-sm',

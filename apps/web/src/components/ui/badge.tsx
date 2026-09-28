@@ -7,9 +7,9 @@ const VARIANTS: Record<BadgeVariant, string> = {
   default: 'bg-primary text-primary-foreground',
   secondary: 'bg-muted text-foreground',
   outline: 'border text-foreground',
-  destructive: 'bg-destructive text-primary-foreground',
-  success: 'bg-success text-primary-foreground',
-  warning: 'bg-warning text-foreground',
+  destructive: 'bg-destructive text-destructive-foreground',
+  success: 'bg-success text-success-foreground',
+  warning: 'bg-warning text-warning-foreground',
 };
 
 export interface BadgeProps extends ComponentProps<'span'> {
