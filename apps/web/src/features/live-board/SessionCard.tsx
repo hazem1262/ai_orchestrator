@@ -1,26 +1,16 @@
-import type { Session, Source } from '@orc/core';
+import type { Session } from '@orc/core';
 import { Link } from '@tanstack/react-router';
-import { useKill } from '@/api/queries/launch.ts';
+import { Bot, CornerDownRight, FolderGit2, Hand, Layers, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge.tsx';
-import { Button } from '@/components/ui/button.tsx';
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card.tsx';
 import { cn } from '@/components/ui/cn.ts';
 import { formatCost } from '@/lib/format.ts';
-import { useTerminalStore } from '@/stores/terminals.ts';
-import { OpenInButton } from './OpenInButton.tsx';
 import { PrChip } from './PrChip.tsx';
+import { SessionActions } from './SessionActions.tsx';
 import { StageBar } from './StageBar.tsx';
-import {
-  formatDuration,
-  hasDrift,
-  isAttention,
-  permissionBadge,
-  resumeCommand,
-  STATUS_LABEL,
-  shortPath,
-} from './sort.ts';
+import { formatDuration, hasDrift, isAttention, permissionBadge, STATUS_LABEL, shortPath } from './sort.ts';
+import { EDGE, SOFT, SourceBadge, STATUS_TONE, StatusBadge } from './status.tsx';
 import { TestChip } from './TestChip.tsx';
-
-const SOURCE_LABEL: Record<Source, string> = { claude: 'Claude', codex: 'Codex', agnc: 'AGNC' };
 
 export interface SessionCardProps {
   session: Session;
@@ -31,138 +21,146 @@ export interface SessionCardProps {
 }
 
 export function SessionCard({ session: s, now, compact = false, pinned, onTogglePin }: SessionCardProps) {
-  const kill = useKill();
-  const openTerminal = useTerminalStore((t) => t.open);
   const live = s.live;
   if (!live) return null;
 
   const attention = isAttention(live.status);
+  const tone = STATUS_TONE[live.status];
   const title = s.name ?? s.id;
   const cwd = s.cwds.at(-1) ?? s.startCwd;
   const perm = permissionBadge(s.permissionMode);
-  const ptyId = live.ptyId;
-
-  const onStop = () => {
-    if (window.confirm(`Stop "${title}" (pid ${live.pid ?? '?'}) in ${cwd}?`)) {
-      kill.mutate({ source: s.source, id: s.id });
-    }
-  };
+  const hasChips = s.tickets.length > 0 || s.prs.length > 0 || s.lastTest !== null;
 
   return (
-    <article
+    <Card
+      role="article"
       aria-label={`${title} — ${STATUS_LABEL[live.status]}`}
       data-status={live.status}
       data-attention={attention ? 'true' : 'false'}
-      className={cn(
-        'flex min-w-0 flex-col gap-1.5 rounded-lg border p-3',
-        attention && 'border-warning shadow-sm',
-      )}
+      className={cn('relative flex min-w-0 flex-col', attention && EDGE[tone])}
     >
-      <header className="flex items-center gap-2">
-        <Badge variant="outline">{SOURCE_LABEL[s.source]}</Badge>
+      <CardHeader className={cn('gap-2', compact && 'pb-2')}>
+        <div className="flex min-w-0 items-center gap-2">
+          <SourceBadge source={s.source} />
+          <StatusBadge status={live.status} />
+          <span
+            className="ml-auto font-mono text-xs tabular-nums text-muted-foreground"
+            title={`since ${live.since}`}
+          >
+            {formatDuration(now - Date.parse(live.since))}
+          </span>
+        </div>
         <Link
           to="/sessions/$source/$id"
           params={{ source: s.source, id: s.id }}
-          className="min-w-0 flex-1 truncate font-medium hover:underline"
+          className="line-clamp-2 min-w-0 rounded-sm text-base leading-snug font-semibold tracking-tight break-words hover:underline"
           title={title}
         >
           {title}
         </Link>
-        <Badge
-          variant={attention ? 'warning' : 'secondary'}
-          className={attention ? 'animate-pulse' : undefined}
-        >
-          {STATUS_LABEL[live.status]}
-        </Badge>
-        <span className="text-xs tabular-nums text-muted-foreground" title={live.since}>
-          {formatDuration(now - Date.parse(live.since))}
-        </span>
-      </header>
+      </CardHeader>
 
-      {live.waitingFor ? <p className="text-sm text-foreground">{live.waitingFor}</p> : null}
-
-      <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground" title={cwd}>
-        <span className="truncate">{shortPath(cwd)}</span>
-        {hasDrift(s) ? (
-          <span role="img" aria-label="cwd drift" title={`moved from ${s.startCwd}`}>
-            ↪
-          </span>
+      <CardContent className={cn('flex flex-1 flex-col gap-3', compact && 'gap-2 pb-3')}>
+        {live.waitingFor ? (
+          <p
+            className={cn(
+              'flex items-start gap-2 rounded-md px-2.5 py-2 text-sm font-medium',
+              SOFT[tone === 'neutral' || tone === 'info' ? 'warning' : tone],
+            )}
+          >
+            <Hand className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 break-words">{live.waitingFor}</span>
+          </p>
         ) : null}
-      </p>
 
-      {compact ? null : (
-        <>
-          {live.currentTool ? (
-            <p className="text-xs">
-              <span className="text-muted-foreground">tool </span>
-              <code>{live.currentTool}</code>
+        <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          <p className="flex min-w-0 items-center gap-1.5 font-mono" title={cwd}>
+            <FolderGit2 className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{shortPath(cwd)}</span>
+            {hasDrift(s) ? (
+              <span
+                role="img"
+                aria-label="cwd drift"
+                title={`moved from ${s.startCwd}`}
+                className="shrink-0 text-warning"
+              >
+                <CornerDownRight className="size-3.5" aria-hidden />
+              </span>
+            ) : null}
+          </p>
+          {!compact && live.currentTool ? (
+            <p className="flex items-center gap-1.5">
+              <Wrench className="size-3.5 shrink-0" aria-hidden />
+              <span>tool</span>
+              <code className="rounded-sm bg-muted px-1 font-mono text-foreground">{live.currentTool}</code>
             </p>
           ) : null}
-          {s.lastPrompt ? <p className="line-clamp-2 text-sm">{s.lastPrompt}</p> : null}
-          {s.tickets.length > 0 || s.prs.length > 0 ? (
-            <div className="flex flex-wrap gap-1 text-xs">
-              {s.tickets.map((t) => (
-                <Badge key={t} variant="outline">
-                  {t}
-                </Badge>
-              ))}
-              {s.prs.map((p) => (
-                <PrChip key={p.url} pr={p} />
-              ))}
-            </div>
-          ) : null}
-          <StageBar stage={live.stage} />
-        </>
-      )}
+        </div>
 
-      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        {s.usage.costUsd === null ? null : <span>{formatCost(s.usage.costUsd)}</span>}
-        {live.contextFill === null ? null : <span>{`ctx ${Math.round(live.contextFill * 100)}%`}</span>}
-        <TestChip result={s.lastTest} />
-        {live.backgroundJobs > 0 ? <Badge variant="secondary">{`${live.backgroundJobs} jobs`}</Badge> : null}
-        {perm ? <Badge variant={perm === 'bypass' ? 'destructive' : 'outline'}>{perm}</Badge> : null}
-        {live.runningSubagents > 0 ? (
-          <Badge variant="secondary">{`${live.runningSubagents} agents`}</Badge>
-        ) : null}
-      </div>
-
-      <footer className="flex flex-wrap items-center gap-1 pt-1">
-        {live.ownership === 'owned' && ptyId ? (
-          <Button size="sm" onClick={() => openTerminal(ptyId, title)}>
-            Terminal
-          </Button>
-        ) : null}
-        <Link
-          to="/sessions/$source/$id"
-          params={{ source: s.source, id: s.id }}
-          className="px-2 text-xs underline"
-        >
-          Details
-        </Link>
-        <Link
-          to="/review/$source/$id"
-          params={{ source: s.source, id: s.id }}
-          className="px-2 text-xs underline"
-        >
-          Diff
-        </Link>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => void navigator.clipboard?.writeText(resumeCommand(s))}
-        >
-          Copy resume
-        </Button>
-        <OpenInButton session={s} />
-        <Button size="sm" variant="ghost" onClick={onTogglePin}>
-          {pinned ? 'Unpin' : 'Pin'}
-        </Button>
-        {live.status === 'ended' ? null : (
-          <Button size="sm" variant="destructive" onClick={onStop}>
-            Stop
-          </Button>
+        {compact ? null : (
+          <>
+            {s.lastPrompt ? (
+              <p className="line-clamp-2 text-sm break-words text-muted-foreground">{s.lastPrompt}</p>
+            ) : null}
+            {hasChips ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {s.tickets.map((t) => (
+                  <Badge key={t} variant="outline" className="font-mono">
+                    {t}
+                  </Badge>
+                ))}
+                {s.prs.map((p) => (
+                  <PrChip key={p.url} pr={p} />
+                ))}
+                <TestChip result={s.lastTest} />
+              </div>
+            ) : null}
+            <StageBar stage={live.stage} />
+          </>
         )}
-      </footer>
-    </article>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+          {s.usage.costUsd === null ? null : (
+            <span className="text-foreground">{formatCost(s.usage.costUsd)}</span>
+          )}
+          {live.contextFill === null ? null : (
+            <span className="flex items-center gap-1.5">
+              <span aria-hidden className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
+                <span
+                  className={cn(
+                    'block h-full rounded-full',
+                    live.contextFill > 0.7 ? 'bg-warning' : 'bg-primary/70',
+                  )}
+                  style={{ width: `${Math.round(live.contextFill * 100)}%` }}
+                />
+              </span>
+              <span>{`ctx ${Math.round(live.contextFill * 100)}%`}</span>
+            </span>
+          )}
+          {compact ? <TestChip result={s.lastTest} /> : null}
+          {live.runningSubagents > 0 ? (
+            <span className="flex items-center gap-1">
+              <Bot className="size-3.5" aria-hidden />
+              <span>{`${live.runningSubagents} agents`}</span>
+            </span>
+          ) : null}
+          {live.backgroundJobs > 0 ? (
+            <span className="flex items-center gap-1">
+              <Layers className="size-3.5" aria-hidden />
+              <span>{`${live.backgroundJobs} jobs`}</span>
+            </span>
+          ) : null}
+          {perm ? (
+            <Badge variant="secondary" className={perm === 'bypass' ? SOFT.danger : SOFT.neutral}>
+              {perm}
+            </Badge>
+          ) : null}
+        </div>
+      </CardContent>
+
+      <CardFooter className="px-4 py-2.5">
+        <SessionActions session={s} pinned={pinned} onTogglePin={onTogglePin} />
+      </CardFooter>
+    </Card>
   );
 }
