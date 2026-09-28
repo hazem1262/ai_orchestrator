@@ -24,7 +24,15 @@ import { formatUsd } from '@/features/limits/format.ts';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useStreamViewStore } from '@/stores/streams.ts';
-import { cleanTitle, formatActivity, groupByStage, STAGE_LABELS, STAGE_ORDER, streamHref } from './stages.ts';
+import {
+  cleanTitle,
+  formatActivity,
+  groupByStage,
+  STAGE_BADGE_VARIANT,
+  STAGE_LABELS,
+  STAGE_ORDER,
+  streamHref,
+} from './stages.ts';
 
 const PAGE_SIZE = 15;
 
@@ -51,7 +59,7 @@ function StreamCard({ s, showStage = false }: { s: WorkStream; showStage?: boole
         <a className="truncate font-medium underline" href={streamHref(s.ticket)}>
           {s.ticket}
         </a>
-        {showStage ? <Badge variant="outline">{STAGE_LABELS[s.stage]}</Badge> : null}
+        {showStage ? <Badge variant={STAGE_BADGE_VARIANT[s.stage]}>{STAGE_LABELS[s.stage]}</Badge> : null}
         <span className="ml-auto shrink-0 text-xs text-muted-foreground">{formatUsd(s.costUsd)}</span>
       </div>
       <a
@@ -93,7 +101,7 @@ function StreamTable({ streams }: { streams: WorkStream[] }) {
               </a>
             </TableCell>
             <TableCell>
-              <Badge variant="outline">{STAGE_LABELS[s.stage]}</Badge>
+              <Badge variant={STAGE_BADGE_VARIANT[s.stage]}>{STAGE_LABELS[s.stage]}</Badge>
             </TableCell>
             <TableCell className="text-xs text-muted-foreground">{counts(s)}</TableCell>
             <TableCell className="text-right">{formatUsd(s.costUsd)}</TableCell>

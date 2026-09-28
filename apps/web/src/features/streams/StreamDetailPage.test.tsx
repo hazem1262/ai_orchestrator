@@ -155,4 +155,40 @@ describe('StreamDetailPage', () => {
     expect(client.streamsUnlink).toHaveBeenCalledWith('SAF-1787', { kind: 'session', ref: 'claude:s1' });
     expect(screen.getByText(/claude:s9 \(unlinked\)/)).toBeTruthy();
   });
+
+  it('links back to Streams and shows a budget bar sized to the spend', async () => {
+    setApiClientForTests(api());
+    renderP3(<StreamDetailPage ticket="SAF-1787" />);
+    await screen.findByRole('heading', { name: /SAF-1787/ });
+    expect(screen.getByRole('link', { name: 'Streams' })).toHaveAttribute('href', '/streams');
+    const bar = screen.getByRole('progressbar', { name: 'Budget' });
+    expect(bar).toHaveAttribute('aria-valuenow', '25');
+  });
+
+  it('strips XML-ish prompt wrappers from the stream title, and falls back for no title', async () => {
+    setApiClientForTests(
+      api({
+        streamsGet: vi.fn(async () => ({
+          ...detail,
+          stream: {
+            ...detail.stream,
+            title: '<command-message>marauder is running…</command-message>\n\nExclude weekends',
+          },
+        })),
+      }),
+    );
+    renderP3(<StreamDetailPage ticket="SAF-1787" />);
+    expect(await screen.findByText('Exclude weekends')).toBeTruthy();
+    expect(screen.queryByText(/<command-message>/)).toBeNull();
+  });
+
+  it('shows an alert with a retry when the stream fails to load', async () => {
+    const streamsGet = vi.fn().mockRejectedValueOnce(new Error('boom')).mockResolvedValue(detail);
+    setApiClientForTests(api({ streamsGet }));
+    const user = userEvent.setup();
+    renderP3(<StreamDetailPage ticket="SAF-1787" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load SAF-1787.');
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByRole('heading', { name: /SAF-1787/ });
+  });
 });

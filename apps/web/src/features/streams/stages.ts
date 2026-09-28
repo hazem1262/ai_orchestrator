@@ -1,4 +1,5 @@
 import type { StreamStage, WorkStream } from '@orc/core';
+import type { BadgeVariant } from '@/components/ui/badge.tsx';
 
 export const STAGE_ORDER: readonly StreamStage[] = [
   'planned',
@@ -18,6 +19,17 @@ export const STAGE_LABELS: Record<StreamStage, string> = {
   merged: 'Merged',
   backmerged: 'Backmerged',
   released: 'Released',
+};
+
+/** Badge tone for each stage: neutral while planned, primary while active, warning in review, success once shipped. */
+export const STAGE_BADGE_VARIANT: Record<StreamStage, BadgeVariant> = {
+  planned: 'outline',
+  implementing: 'default',
+  in_review: 'warning',
+  pr_open: 'warning',
+  merged: 'success',
+  backmerged: 'success',
+  released: 'success',
 };
 
 export function stageIndex(s: StreamStage): number {
