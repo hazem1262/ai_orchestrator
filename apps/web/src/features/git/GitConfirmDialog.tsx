@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { GitDialog } from './GitDialog.tsx';
@@ -25,8 +25,13 @@ export function GitConfirmDialog<V>({
 }: Props<V>) {
   const ackId = useId();
   const [ack, setAck] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new request resets the acknowledgement.
-  useEffect(() => setAck(false), [request]);
+  // A new request resets the acknowledgement during render, so a tick made in the first frame
+  // the dialog is shown is never undone by a later effect.
+  const [ackFor, setAckFor] = useState(request);
+  if (request !== ackFor) {
+    setAckFor(request);
+    setAck(false);
+  }
   if (!request) return null;
   const external = request.details.external === true;
   const files = Array.isArray(request.details.files) ? (request.details.files as string[]) : [];
