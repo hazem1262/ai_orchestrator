@@ -69,10 +69,14 @@ describe('chart options', () => {
       friction: {},
       goalCategories: {},
     };
-    const oo = outcomesOption(o) as { series: Array<{ data: Array<{ name: string; value: number }> }> };
-    expect(oo.series[0]?.data).toEqual([
-      { name: 'fully_achieved', value: 2 },
-      { name: 'mostly_achieved', value: 1 },
+    // Names are humanized (sentence case, no underscores) now instead of the raw snake_case
+    // recap keys — that was the analytics audit's snake_case-labels finding.
+    const oo = outcomesOption(o) as {
+      series: Array<{ data: Array<{ name: string; value: number }> }>;
+    };
+    expect(oo.series[0]?.data.map((d) => ({ name: d.name, value: d.value }))).toEqual([
+      { name: 'Fully achieved', value: 2 },
+      { name: 'Mostly achieved', value: 1 },
     ]);
   });
 });
