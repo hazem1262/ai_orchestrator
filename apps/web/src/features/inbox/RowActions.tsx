@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu.tsx';
 import { Kbd } from '@/components/ui/kbd.tsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx';
-import { type InboxGroup, isTriageable, sessionRef } from './kinds.ts';
+import { type InboxGroup, isTriageable, offersApprove, sessionRef } from './kinds.ts';
 import { snoozePresets } from './snooze.ts';
 import type { InboxTriage } from './useInboxTriage.ts';
 
@@ -122,12 +122,12 @@ export function RowActions({ group, now, pty, triage, onOpen, onTerminal }: RowA
               </DropdownMenuTrigger>
             </IconTip>
             <DropdownMenuContent align="end">
-              {item.kind === 'plan_approval' ? null : (
+              {offersApprove(item) ? (
                 <DropdownMenuItem disabled={triage.busy} onSelect={() => triage.approve(group)}>
                   <ThumbsUp />
                   Approve
                 </DropdownMenuItem>
-              )}
+              ) : null}
               <DropdownMenuItem onSelect={() => void copyReason(item.reason)}>
                 <Copy />
                 Copy text

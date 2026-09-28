@@ -10,7 +10,7 @@ import { inboxItemFixture } from '../../test/factories.ts';
 import { createFakeApi, type FakeApi } from '../../test/fake-api.ts';
 import { renderWithProviders } from '../../test/render.tsx';
 import { InboxPage } from './InboxPage.tsx';
-import { groupItems } from './kinds.ts';
+import { APPROVABLE_KINDS, groupItems, offersApprove } from './kinds.ts';
 
 const NOW = new Date(2026, 8, 2, 14, 0, 0);
 
@@ -60,6 +60,28 @@ async function openMenu(trigger: HTMLElement) {
   return screen.findByRole('menu');
 }
 
+/** A plan approval and an automation result: the two kinds the daemon's approve endpoint accepts. */
+function addApprovalItems() {
+  state.plan = inboxItemFixture({
+    id: 'plan',
+    kind: 'plan_approval',
+    reason: 'Plan ready: tidy the sort',
+    sessionId: 'claude:s9',
+    dedupeKey: 'plan_approval:s9',
+    payload: { plan: '1. Move sortLive', owned: true },
+  });
+  state.auto = inboxItemFixture({
+    id: 'auto',
+    kind: 'automation_result',
+    reason: 'Nightly audit finished',
+    dedupeKey: 'automation_result:nightly',
+    payload: {},
+  });
+}
+
+const rowOf = (reason: string) =>
+  rows().find((r) => r.querySelector('[data-reason]')?.textContent === reason) as HTMLElement;
+
 const rows = () => within(screen.getByRole('list', { name: 'Inbox items' })).getAllByRole('listitem');
 
 // jsdom lacks pointer capture, which Radix menus and Sonner's swipe handler call on pointerdown.
@@ -87,6 +109,28 @@ describe('groupItems', () => {
       ['w', ['w']],
     ]);
     expect(groupItems([pr('a', 's1'), { ...pr('b', 's2'), ticket: 'SAF-10' }])).toHaveLength(2);
+  });
+});
+
+describe('offersApprove', () => {
+  it('is true only for open or snoozed automation results; plans answer from their panel', () => {
+    expect([...APPROVABLE_KINDS].sort()).toEqual(['automation_result', 'plan_approval']);
+    const kinds = [
+      'waiting',
+      'review',
+      'plan_approval',
+      'blocked',
+      'error',
+      'tests_red',
+      'budget',
+      'automation_result',
+      'supervisor_escalation',
+      'pr_event',
+      'reminder',
+    ] as const;
+    expect(kinds.filter((kind) => offersApprove(inboxItemFixture({ kind })))).toEqual(['automation_result']);
+    expect(offersApprove(inboxItemFixture({ kind: 'automation_result', state: 'snoozed' }))).toBe(true);
+    expect(offersApprove(inboxItemFixture({ kind: 'automation_result', state: 'done' }))).toBe(false);
   });
 });
 
@@ -135,15 +179,30 @@ describe('InboxPage triage', () => {
     );
   });
 
-  it('offers Approve on desktop through the row menu', async () => {
+  it('offers Approve on desktop only for kinds the daemon approves, and never for plans', async () => {
+    addApprovalItems();
     const fake = api();
     renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: fake });
-    await screen.findByText('Waiting on input');
+    await screen.findByText('Nightly audit finished');
+    const menuItems = async (reason: string) => {
+      const menu = await openMenu(within(rowOf(reason)).getByRole('button', { name: 'More actions' }));
+      const names = within(menu)
+        .getAllByRole('menuitem')
+        .map((m) => m.textContent);
+      await userEvent.keyboard('{Escape}');
+      return names;
+    };
+    expect(await menuItems('Waiting on input')).not.toContain('Approve');
+    expect(await menuItems('PR #237 checks failed')).not.toContain('Approve');
+    expect(await menuItems('Plan ready: tidy the sort')).not.toContain('Approve');
+    expect(await menuItems('Nightly audit finished')).toContain('Approve');
+
     const menu = await openMenu(
-      within(rows()[1] as HTMLElement).getByRole('button', { name: 'More actions' }),
+      within(rowOf('Nightly audit finished')).getByRole('button', { name: 'More actions' }),
     );
     await userEvent.click(within(menu).getByRole('menuitem', { name: 'Approve' }));
-    await vi.waitFor(() => expect(fake.inboxApprove).toHaveBeenCalledWith('w'));
+    await vi.waitFor(() => expect(fake.inboxApprove).toHaveBeenCalledWith('auto'));
+    expect(fake.inboxApprove).toHaveBeenCalledTimes(1);
   });
 
   it('expands a plan approval row when it is selected', async () => {
@@ -192,7 +251,7 @@ describe('InboxPage at phone width', () => {
     }));
   });
 
-  it('renders cards with Approve, Done, Snooze 1h and the later snooze presets', async () => {
+  it('renders cards with Done, Snooze 1h and the later snooze presets', async () => {
     const fake = api();
     renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: fake });
     const card = await screen.findByRole('article', { name: 'Waiting: Waiting on input' });
@@ -208,8 +267,19 @@ describe('InboxPage at phone width', () => {
     await vi.waitFor(() =>
       expect(fake.inboxSnooze).toHaveBeenCalledWith('w', new Date(2026, 8, 2, 15, 0, 0).toISOString()),
     );
-    const prCard = screen.getByRole('article', { name: /PR #237/ });
-    await userEvent.click(within(prCard).getByRole('button', { name: 'Approve' }));
-    await vi.waitFor(() => expect(fake.inboxApprove).toHaveBeenCalledWith('p1'));
+  });
+
+  it('shows Approve only on cards whose kind the daemon approves, and not on plans', async () => {
+    addApprovalItems();
+    const fake = api();
+    renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: fake });
+    const auto = await screen.findByRole('article', { name: 'Automation: Nightly audit finished' });
+    const approveOn = (name: RegExp) =>
+      within(screen.getByRole('article', { name })).queryByRole('button', { name: 'Approve' });
+    expect(approveOn(/Waiting on input/)).toBeNull();
+    expect(approveOn(/PR #237/)).toBeNull();
+    expect(approveOn(/Plan ready: tidy the sort/)).toBeNull();
+    await userEvent.click(within(auto).getByRole('button', { name: 'Approve' }));
+    await vi.waitFor(() => expect(fake.inboxApprove).toHaveBeenCalledWith('auto'));
   });
 });

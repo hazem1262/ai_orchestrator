@@ -87,6 +87,23 @@ export function sessionRef(item: InboxItem): { source: Source; id: string } | nu
 
 export const isTriageable = (item: InboxItem) => item.state === 'open' || item.state === 'snoozed';
 
+/**
+ * The kinds `POST /api/inbox/:id/approve` accepts: the route in apps/daemon/src/http/routes/session-actions.ts
+ * calls `approve()` in apps/daemon/src/services/remote/session-actions.ts, which answers 409
+ * `not_approvable` for every other kind.
+ */
+export const APPROVABLE_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
+  'plan_approval',
+  'automation_result',
+]);
+
+/**
+ * Whether a row offers the one-click Approve. A plan approval is answered from its expanded panel
+ * ("Approve plan", with a confirm step) instead.
+ */
+export const offersApprove = (item: InboxItem) =>
+  isTriageable(item) && APPROVABLE_KINDS.has(item.kind) && item.kind !== 'plan_approval';
+
 /** Kinds with a panel of their own (plan text, PR links) under the row. */
 export const hasDetail = (item: InboxItem) =>
   isTriageable(item) && (item.kind === 'plan_approval' || item.kind === 'pr_event');

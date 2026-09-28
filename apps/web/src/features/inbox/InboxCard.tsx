@@ -8,7 +8,7 @@ import { DropdownMenuTrigger } from '@/components/ui/dropdown-menu.tsx';
 import { formatDuration } from '@/features/live-board/sort.ts';
 import { InboxItemActions } from './InboxItemActions.tsx';
 import { DuplicateCount, KindBadge } from './KindBadge.tsx';
-import { hasDetail, type InboxGroup, isTriageable, kindMeta, sessionRef } from './kinds.ts';
+import { hasDetail, type InboxGroup, isTriageable, kindMeta, offersApprove, sessionRef } from './kinds.ts';
 import { SnoozeMenu } from './RowActions.tsx';
 import { snoozePresets } from './snooze.ts';
 import type { InboxTriage } from './useInboxTriage.ts';
@@ -60,12 +60,12 @@ export function InboxCard({
         <div className="flex flex-wrap items-center gap-2">
           {isTriageable(item) ? (
             <>
-              {item.kind === 'plan_approval' ? null : (
+              {offersApprove(item) ? (
                 <Button disabled={triage.busy} onClick={() => triage.approve(group)}>
                   <ThumbsUp />
                   Approve
                 </Button>
-              )}
+              ) : null}
               <Button variant="outline" disabled={triage.busy} onClick={() => triage.done(group)}>
                 <Check />
                 Done

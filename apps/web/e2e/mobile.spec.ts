@@ -29,7 +29,8 @@ test('phone layout shows the inbox, the bottom nav and a reply composer', async 
   try {
     const card = page.getByRole('article', { name: /fake session: ready for review/ }).first();
     await expect(card).toBeVisible({ timeout: 8000 });
-    await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible();
+    // The daemon approves only plan approvals and automation results, so a review card offers no Approve.
+    await expect(card.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
     await expect(card.getByRole('button', { name: 'Snooze 1h' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Done' })).toBeVisible();
     await expect(card.getByRole('link', { name: 'Open session' })).toHaveAttribute(
