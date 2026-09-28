@@ -161,9 +161,7 @@ describe('CheckpointTimeline', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(rewind).not.toHaveBeenCalledWith('c1', { confirm: true });
     fireEvent.click(screen.getByRole('button', { name: 'Rewind to turn 1' }));
-    fireEvent.click(
-      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rewind' }),
-    );
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rewind' }));
     await waitFor(() => expect(rewind).toHaveBeenLastCalledWith('c1', { confirm: true }));
   });
 

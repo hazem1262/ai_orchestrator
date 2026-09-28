@@ -58,9 +58,7 @@ export function CheckpointTimeline({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1 p-2 pt-0">
-        {list.isSuccess && turns.length === 0 && (
-          <p className="text-muted-foreground">No checkpoints yet.</p>
-        )}
+        {list.isSuccess && turns.length === 0 && <p className="text-muted-foreground">No checkpoints yet.</p>}
         <ol className="space-y-1">
           {turns.map((c) => (
             <li key={c.id} className="flex items-center gap-1">
@@ -101,7 +99,11 @@ export function CheckpointTimeline({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={rewind.busy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={rewind.busy} onClick={() => void rewind.confirm()}>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={rewind.busy}
+              onClick={() => void rewind.confirm()}
+            >
               Rewind
             </AlertDialogAction>
           </AlertDialogFooter>

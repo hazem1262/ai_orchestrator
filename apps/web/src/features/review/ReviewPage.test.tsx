@@ -3,8 +3,8 @@ import type { DiffResult, ReviewSummary } from '@orc/core';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
 import { sessionFixture } from '@/test/factories.ts';
+import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
 import { renderWithProviders } from '@/test/render.tsx';
 import { ReviewPage } from './ReviewPage.tsx';
 
