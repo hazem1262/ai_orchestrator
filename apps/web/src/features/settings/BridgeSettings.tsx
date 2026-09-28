@@ -21,7 +21,7 @@ export function BridgeSettings() {
       {s ? (
         <>
           <p className="flex flex-wrap items-center gap-2">
-            Settings file: <code className="font-mono text-xs">{s.settingsPath}</code>
+            Settings file: <code className="min-w-0 break-all font-mono text-xs">{s.settingsPath}</code>
             {s.installed ? (
               <Badge variant="success">installed</Badge>
             ) : (
