@@ -5,9 +5,9 @@ import type { AgentNodeData } from './layout.ts';
 export type AgentFlowNode = Node<AgentNodeData, 'agent'>;
 
 const TONE: Record<string, string> = {
-  running: 'border-sky-400 bg-sky-50',
-  error: 'border-red-400 bg-red-50',
-  done: 'border-neutral-300 bg-white',
+  running: 'border-info/60 bg-info/10',
+  error: 'border-destructive/60 bg-destructive/10',
+  done: 'border-border bg-card',
 };
 
 export function AgentCard({ data }: NodeProps<AgentFlowNode>) {
@@ -24,7 +24,7 @@ export function AgentCard({ data }: NodeProps<AgentFlowNode>) {
       </div>
       {a && (
         <>
-          <div className="text-neutral-500">
+          <div className="text-muted-foreground">
             {a.agentType}
             {a.background ? ' · background' : ''}
             {data.step ? ` · ${data.step}` : ''}
@@ -36,7 +36,9 @@ export function AgentCard({ data }: NodeProps<AgentFlowNode>) {
           </div>
         </>
       )}
-      {data.collapsed && <div className="text-neutral-500">+{data.childCount} hidden (double-click)</div>}
+      {data.collapsed && (
+        <div className="text-muted-foreground">+{data.childCount} hidden (double-click)</div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );

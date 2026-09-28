@@ -53,7 +53,10 @@ export function SessionCard({ session: s, now, compact = false, pinned, onToggle
       aria-label={`${title} — ${STATUS_LABEL[live.status]}`}
       data-status={live.status}
       data-attention={attention ? 'true' : 'false'}
-      className={cn('flex flex-col gap-1.5 rounded-lg border p-3', attention && 'border-warning shadow-sm')}
+      className={cn(
+        'flex min-w-0 flex-col gap-1.5 rounded-lg border p-3',
+        attention && 'border-warning shadow-sm',
+      )}
     >
       <header className="flex items-center gap-2">
         <Badge variant="outline">{SOURCE_LABEL[s.source]}</Badge>

@@ -3,9 +3,9 @@ import { shortPath } from './format.ts';
 
 const MARK: Record<DeliverableFile['status'], string> = { applied: '', failed: ' ✗', pending: ' …' };
 const TONE: Record<DeliverableFile['status'], string> = {
-  applied: 'border-emerald-300 bg-emerald-50',
-  failed: 'border-red-300 bg-red-50 line-through',
-  pending: 'border-amber-300 bg-amber-50',
+  applied: 'border-success/40 bg-success/10',
+  failed: 'border-destructive/40 bg-destructive/10 line-through',
+  pending: 'border-warning/40 bg-warning/10',
 };
 
 export function DeliverablesRow({

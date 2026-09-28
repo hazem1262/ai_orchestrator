@@ -1,10 +1,10 @@
 import type { ChainStepView } from './conductor.ts';
 
 const TONE: Record<ChainStepView['status'], string> = {
-  pending: 'border-dashed border-neutral-300 text-neutral-400',
-  running: 'border-sky-400 bg-sky-50',
-  done: 'border-emerald-400 bg-emerald-50',
-  error: 'border-red-400 bg-red-50',
+  pending: 'border-dashed border-border text-muted-foreground',
+  running: 'border-info/60 bg-info/10',
+  done: 'border-success/60 bg-success/10',
+  error: 'border-destructive/60 bg-destructive/10',
 };
 
 export function ConductorChain({

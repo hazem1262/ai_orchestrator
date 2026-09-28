@@ -22,14 +22,16 @@ export function FilesTab({ source, id, startCwd, selectedPath, onSelect }: Props
     );
   const files = q.data ?? [];
   if (files.length === 0)
-    return <p className="p-3 text-sm text-neutral-500">No files were edited by tools in this session.</p>;
+    return (
+      <p className="p-3 text-sm text-muted-foreground">No files were edited by tools in this session.</p>
+    );
   const selected = files.find((f) => f.path === selectedPath) ?? null;
 
   return (
     <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <table className="w-full self-start text-sm">
         <thead>
-          <tr className="text-left text-xs text-neutral-500">
+          <tr className="text-left text-xs text-muted-foreground">
             <th>File</th>
             <th>Edits</th>
             <th>Failed</th>
@@ -39,7 +41,7 @@ export function FilesTab({ source, id, startCwd, selectedPath, onSelect }: Props
         </thead>
         <tbody>
           {files.map((f) => (
-            <tr key={f.path} className={f.path === selectedPath ? 'bg-neutral-100' : ''}>
+            <tr key={f.path} className={f.path === selectedPath ? 'bg-muted' : ''}>
               <td>
                 <button
                   type="button"
@@ -61,24 +63,24 @@ export function FilesTab({ source, id, startCwd, selectedPath, onSelect }: Props
       {selected && (
         <section aria-label="File changes" className="text-xs">
           <h3 className="mb-1 font-mono">{selected.path}</h3>
-          <p className="mb-2 text-neutral-500">
+          <p className="mb-2 text-muted-foreground">
             Tool-level edit snippets. The full diff view arrives with Review &amp; Merge (Phase 4).
           </p>
           {selected.changes.map((c) => (
             <article
               key={`${c.agentId ?? 'main'}-${c.seq}-${c.path}`}
-              className="mb-3 rounded border border-neutral-200 p-2"
+              className="mb-3 rounded border border-border p-2"
             >
               <header className="mb-1">
                 turn {c.turn} · {c.tool} · {c.status} · {new Date(c.ts).toLocaleTimeString()}
               </header>
               {c.oldText !== null && (
-                <pre data-testid="change-old" className="whitespace-pre-wrap bg-red-50 p-1">
+                <pre data-testid="change-old" className="whitespace-pre-wrap bg-destructive/10 p-1">
                   {c.oldText}
                 </pre>
               )}
               {c.newText !== null && (
-                <pre data-testid="change-new" className="whitespace-pre-wrap bg-emerald-50 p-1">
+                <pre data-testid="change-new" className="whitespace-pre-wrap bg-success/10 p-1">
                   {c.newText}
                 </pre>
               )}

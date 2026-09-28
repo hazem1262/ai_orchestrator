@@ -11,7 +11,7 @@ export function TestChip({ result }: { result: TestResult | null }) {
       title={result.command}
       className={cn(
         'rounded px-1.5 py-0.5 font-mono text-xs',
-        failed ? 'bg-destructive text-primary-foreground' : 'bg-success/20 text-foreground',
+        failed ? 'bg-destructive text-destructive-foreground' : 'bg-success/20 text-foreground',
       )}
     >
       {testChipText(result)}

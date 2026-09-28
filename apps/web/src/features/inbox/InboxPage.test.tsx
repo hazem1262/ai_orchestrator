@@ -1,5 +1,6 @@
 import type { InboxItem } from '@orc/core';
 import { cleanup, fireEvent, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setApiClientForTests } from '../../api/client.ts';
 import { useLaunchStore } from '../../stores/launch.ts';
@@ -148,7 +149,7 @@ describe('InboxPage', () => {
   it('shows done items with Reopen', async () => {
     renderWithProviders(<InboxPage now={() => NOW.getTime()} />, { api: api() });
     await screen.findByText('Alpha: waiting — input needed');
-    fireEvent.click(screen.getByRole('tab', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Done' }));
     await screen.findByText('Old');
     expect(inboxList).toHaveBeenLastCalledWith({
       state: ['done', 'auto_resolved'],

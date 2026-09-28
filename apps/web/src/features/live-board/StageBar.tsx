@@ -19,7 +19,7 @@ export function StageBar({ stage }: { stage: Stage | null }) {
           className={cn(
             'flex-1 rounded px-1 text-center',
             i < current && 'bg-success/40',
-            i === current && 'bg-success text-primary-foreground',
+            i === current && 'bg-success text-success-foreground',
             i > current && 'bg-muted text-muted-foreground',
           )}
         >

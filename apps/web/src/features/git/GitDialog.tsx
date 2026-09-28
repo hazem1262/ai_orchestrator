@@ -1,6 +1,11 @@
-import { type ReactNode, useEffect, useId } from 'react';
+import type { ReactNode } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog.tsx';
+import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
 
-/** The modal frame the phase 4 git dialogs share: a backdrop, a labelled dialog box, Escape closes. */
+/**
+ * The modal frame the phase 4 git dialogs share. The caller mounts it to open it and unmounts it
+ * to close it; Escape and a click outside call `onClose`, and focus returns to the opener.
+ */
 export function GitDialog({
   title,
   description,
@@ -12,34 +17,24 @@ export function GitDialog({
   onClose: () => void;
   children: ReactNode;
 }) {
-  const titleId = useId();
-  const descId = useId();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  const returnFocus = useFocusReturn(true);
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-8">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descId : undefined}
-        className="flex w-full max-w-lg flex-col gap-3 overflow-auto rounded-lg border bg-background p-4 shadow-xl"
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        onCloseAutoFocus={returnFocus}
+        {...(description ? {} : { 'aria-describedby': undefined })}
+        className="top-8 max-h-[calc(100%-4rem)] translate-y-0 gap-3 overflow-auto sm:max-w-lg"
       >
-        <h2 id={titleId} className="text-lg font-semibold">
-          {title}
-        </h2>
-        {description ? (
-          <p id={descId} className="text-sm text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
+        <DialogTitle className="text-lg font-semibold">{title}</DialogTitle>
+        {description ? <DialogDescription>{description}</DialogDescription> : null}
         {children}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

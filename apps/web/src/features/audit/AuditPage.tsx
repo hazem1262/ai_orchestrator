@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 
 export interface AuditSearch {
@@ -53,6 +54,87 @@ function without<K extends keyof AuditSearch>(
   return next;
 }
 
+function AuditTarget({ entry }: { entry: AuditEntry }) {
+  const pk = entry.target ? PK_RE.exec(entry.target) : null;
+  return pk ? (
+    <a
+      className="text-primary underline-offset-2 hover:underline"
+      href={`/sessions/${pk[1]}/${encodeURIComponent(pk[2] ?? '')}`}
+    >
+      {entry.target}
+    </a>
+  ) : (
+    (entry.target ?? '—')
+  );
+}
+
+function AuditDetails({ entry }: { entry: AuditEntry }) {
+  return (
+    <>
+      {entry.error && (
+        <p data-testid={`audit-error-${entry.id}`} className="mb-1 text-destructive">
+          {entry.error}
+        </p>
+      )}
+      <pre
+        data-testid={`audit-params-${entry.id}`}
+        className="whitespace-pre-wrap wrap-anywhere rounded-md border bg-muted p-2 font-mono text-xs"
+      >
+        {JSON.stringify(entry.params, null, 2)}
+      </pre>
+    </>
+  );
+}
+
+function DetailsButton({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  return (
+    <Button type="button" size="sm" variant="ghost" aria-expanded={expanded} onClick={onToggle}>
+      Details
+    </Button>
+  );
+}
+
+/** The phone layout of the log: one card per entry instead of a six-column table. */
+function AuditCards({
+  entries,
+  open,
+  toggle,
+}: {
+  entries: AuditEntry[];
+  open: ReadonlySet<string>;
+  toggle: (id: string) => void;
+}) {
+  return (
+    <ul className="flex flex-col gap-2 text-sm">
+      {entries.map((e) => (
+        <li key={e.id} className="flex min-w-0 flex-col gap-1 rounded-lg border p-3">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs">{e.action}</span>
+            <Badge variant={RESULT_VARIANT[e.result]} className="ml-auto">
+              {e.result}
+            </Badge>
+          </div>
+          <p className="font-mono text-xs break-all">
+            <AuditTarget entry={e} />
+          </p>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span title={e.actorDetail ?? undefined}>{e.actor}</span>
+            <span title={e.ts}>{new Date(e.ts).toLocaleString()}</span>
+            <span className="ml-auto">
+              <DetailsButton expanded={open.has(e.id)} onToggle={() => toggle(e.id)} />
+            </span>
+          </div>
+          {open.has(e.id) && (
+            <div>
+              <AuditDetails entry={e} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function AuditPage({
   search,
   onSearch,
@@ -65,6 +147,7 @@ export function AuditPage({
   const currentProject = useProjectStore((s) => s.projectId);
   const projectOnlyId = useId();
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const isMobile = useIsMobile();
   const toggle = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -155,7 +238,8 @@ export function AuditPage({
       {q.data && q.data.length === 0 && (
         <p className="text-sm text-muted-foreground">No audit entries match these filters.</p>
       )}
-      {q.data && q.data.length > 0 && (
+      {q.data && q.data.length > 0 && isMobile && <AuditCards entries={q.data} open={open} toggle={toggle} />}
+      {q.data && q.data.length > 0 && !isMobile && (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
@@ -171,7 +255,6 @@ export function AuditPage({
           </thead>
           <tbody>
             {q.data.map((e) => {
-              const pk = e.target ? PK_RE.exec(e.target) : null;
               return (
                 <Fragment key={e.id}>
                   <tr className="border-t">
@@ -183,46 +266,19 @@ export function AuditPage({
                     </td>
                     <td className="py-1 pr-2 font-mono text-xs">{e.action}</td>
                     <td className="py-1 pr-2 font-mono text-xs">
-                      {pk ? (
-                        <a
-                          className="text-primary underline-offset-2 hover:underline"
-                          href={`/sessions/${pk[1]}/${encodeURIComponent(pk[2] ?? '')}`}
-                        >
-                          {e.target}
-                        </a>
-                      ) : (
-                        (e.target ?? '—')
-                      )}
+                      <AuditTarget entry={e} />
                     </td>
                     <td className="py-1 pr-2">
                       <Badge variant={RESULT_VARIANT[e.result]}>{e.result}</Badge>
                     </td>
                     <td className="py-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-expanded={open.has(e.id)}
-                        onClick={() => toggle(e.id)}
-                      >
-                        Details
-                      </Button>
+                      <DetailsButton expanded={open.has(e.id)} onToggle={() => toggle(e.id)} />
                     </td>
                   </tr>
                   {open.has(e.id) && (
                     <tr>
                       <td colSpan={6} className="pb-2">
-                        {e.error && (
-                          <p data-testid={`audit-error-${e.id}`} className="mb-1 text-destructive">
-                            {e.error}
-                          </p>
-                        )}
-                        <pre
-                          data-testid={`audit-params-${e.id}`}
-                          className="whitespace-pre-wrap rounded-md border bg-muted p-2 font-mono text-xs"
-                        >
-                          {JSON.stringify(e.params, null, 2)}
-                        </pre>
+                        <AuditDetails entry={e} />
                       </td>
                     </tr>
                   )}

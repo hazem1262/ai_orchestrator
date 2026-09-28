@@ -57,8 +57,8 @@ describe('ReplyComposer', () => {
 describe('ReadOnlyDiff', () => {
   it('marks added and removed lines and offers no editing', () => {
     renderWithClient(<ReadOnlyDiff unified={'@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n unchanged'} />);
-    expect(screen.getByText('-const a = 1;').className).toContain('text-red');
-    expect(screen.getByText('+const a = 2;').className).toContain('text-green');
+    expect(screen.getByText('-const a = 1;').className).toContain('text-destructive');
+    expect(screen.getByText('+const a = 2;').className).toContain('text-success');
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ export function StepInspector({ step, onClose }: { step: ToolStep; onClose: () =
   return (
     <aside
       aria-label="Step inspector"
-      className="w-[420px] shrink-0 overflow-auto border-l border-neutral-200 p-3 text-sm"
+      className="w-[420px] shrink-0 overflow-auto border-l border-border p-3 text-sm"
     >
       <header className="mb-2 flex items-center justify-between">
         <h3 className="font-semibold">{call.tool ?? 'tool'}</h3>
@@ -40,16 +40,16 @@ export function StepInspector({ step, onClose }: { step: ToolStep; onClose: () =
         {result?.kind === 'error' || result?.text?.trimStart().startsWith('<tool_use_error>') ? (
           <>
             <dt>Status</dt>
-            <dd className="text-red-600">failed</dd>
+            <dd className="text-destructive">failed</dd>
           </>
         ) : null}
       </dl>
       <h4 className="mt-3 font-medium">Input</h4>
-      <pre data-testid="step-input" className="whitespace-pre-wrap break-all rounded bg-neutral-50 p-2">
+      <pre data-testid="step-input" className="whitespace-pre-wrap break-all rounded bg-muted p-2">
         {JSON.stringify(call.input, null, 2)}
       </pre>
       <h4 className="mt-3 font-medium">Output</h4>
-      <pre data-testid="step-output" className="whitespace-pre-wrap break-all rounded bg-neutral-50 p-2">
+      <pre data-testid="step-output" className="whitespace-pre-wrap break-all rounded bg-muted p-2">
         {result?.text ? result.text.slice(0, MAX_OUTPUT) : '—'}
       </pre>
     </aside>

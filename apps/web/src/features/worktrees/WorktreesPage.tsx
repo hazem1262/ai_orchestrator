@@ -5,10 +5,11 @@ import { useDiscoverWorktrees, useWorktrees, worktreeKeys } from '@/api/queries/
 import { Button } from '@/components/ui/button.tsx';
 import { GitConfirmDialog } from '@/features/git/GitConfirmDialog.tsx';
 import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
 import { CreateWorktreeDialog } from './CreateWorktreeDialog.tsx';
-import { type WorktreeAction, WorktreeRow } from './WorktreeRow.tsx';
+import { type WorktreeAction, WorktreeCard, WorktreeRow } from './WorktreeRow.tsx';
 
 type ArchiveVars = { path: string; confirmExternal: boolean };
 
@@ -18,6 +19,7 @@ export function WorktreesPage() {
   const discover = useDiscoverWorktrees();
   const openTerminal = useTerminalStore((s) => s.open);
   const [creating, setCreating] = useState(false);
+  const isMobile = useIsMobile();
 
   const archive = useConfirmedMutation(
     (v: ArchiveVars, confirm: boolean) =>
@@ -82,26 +84,34 @@ export function WorktreesPage() {
       )}
       {groups.map(([repo, rows]) => (
         <section key={repo} className="space-y-1">
-          <h2 className="font-mono text-sm font-semibold">{repo}</h2>
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground">
-                <th className="font-medium">Branch</th>
-                <th className="font-medium">Ticket</th>
-                <th className="font-medium">State</th>
-                <th className="font-medium">PR</th>
-                <th className="font-medium">Sessions</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+          <h2 className="font-mono text-sm font-semibold break-all">{repo}</h2>
+          {isMobile ? (
+            <div className="flex flex-col gap-2">
               {rows.map((w) => (
-                <WorktreeRow key={w.path} w={w} onAction={onAction} />
+                <WorktreeCard key={w.path} w={w} onAction={onAction} />
               ))}
-            </tbody>
-          </table>
+            </div>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="font-medium">Branch</th>
+                  <th className="font-medium">Ticket</th>
+                  <th className="font-medium">State</th>
+                  <th className="font-medium">PR</th>
+                  <th className="font-medium">Sessions</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((w) => (
+                  <WorktreeRow key={w.path} w={w} onAction={onAction} />
+                ))}
+              </tbody>
+            </table>
+          )}
         </section>
       ))}
       <CreateWorktreeDialog

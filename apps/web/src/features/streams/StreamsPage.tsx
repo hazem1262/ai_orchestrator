@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
 import { formatUsd } from '@/features/limits/format.ts';
+import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useStreamViewStore } from '@/stores/streams.ts';
 import { formatActivity, groupByStage, STAGE_LABELS, STAGE_ORDER, streamHref } from './stages.ts';
@@ -22,14 +23,15 @@ function counts(s: WorkStream): string {
   ].join(' · ');
 }
 
-function StreamCard({ s }: { s: WorkStream }) {
+function StreamCard({ s, showStage = false }: { s: WorkStream; showStage?: boolean }) {
   return (
-    <article className="flex flex-col gap-0.5 rounded border p-2 text-sm">
+    <article className="flex min-w-0 flex-col gap-0.5 rounded border p-2 text-sm">
       <div className="flex items-center justify-between gap-2">
         <a className="font-medium underline" href={streamHref(s.ticket)}>
           {s.ticket}
         </a>
-        <span>{formatUsd(s.costUsd)}</span>
+        {showStage ? <Badge variant="outline">{STAGE_LABELS[s.stage]}</Badge> : null}
+        <span className={showStage ? 'ml-auto' : undefined}>{formatUsd(s.costUsd)}</span>
       </div>
       {s.title ? <p className="truncate text-muted-foreground">{s.title}</p> : null}
       <p className="text-xs text-muted-foreground">{counts(s)}</p>
@@ -73,9 +75,20 @@ function StreamTable({ streams }: { streams: WorkStream[] }) {
   );
 }
 
+/** The phone layout of the list view: one card per stream instead of a six-column table. */
+function StreamCards({ streams }: { streams: WorkStream[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {streams.map((s) => (
+        <StreamCard key={s.ticket} s={s} showStage />
+      ))}
+    </div>
+  );
+}
+
 function StreamBoard({ streams }: { streams: WorkStream[] }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2">
+    <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
       {groupByStage(streams).map((col) => (
         <section key={col.stage} aria-label={col.label} className="flex w-56 shrink-0 flex-col gap-2">
           <h2 className="text-xs font-semibold text-muted-foreground">
@@ -99,6 +112,7 @@ export function StreamsPage() {
   const q = useStreams({ ...(projectId ? { projectId } : {}), ...(stage ? { stage } : {}) });
   const refresh = useRefreshStreams();
   const streams = q.data ?? [];
+  const isMobile = useIsMobile();
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -156,7 +170,13 @@ export function StreamsPage() {
         </p>
       ) : null}
 
-      {view === 'list' ? <StreamTable streams={streams} /> : <StreamBoard streams={streams} />}
+      {view === 'kanban' ? (
+        <StreamBoard streams={streams} />
+      ) : isMobile ? (
+        <StreamCards streams={streams} />
+      ) : (
+        <StreamTable streams={streams} />
+      )}
     </div>
   );
 }

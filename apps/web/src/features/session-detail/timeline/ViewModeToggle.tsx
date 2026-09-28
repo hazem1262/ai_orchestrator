@@ -13,12 +13,12 @@ export function ViewModeToggle() {
     <div
       role="radiogroup"
       aria-label="View mode"
-      className="inline-flex rounded border border-neutral-200 text-xs"
+      className="inline-flex rounded border border-border text-xs"
     >
       {MODES.map((m) => (
         <label
           key={m.id}
-          className={`cursor-pointer px-2 py-1 has-[:focus-visible]:outline ${mode === m.id ? 'bg-neutral-900 text-white' : ''}`}
+          className={`cursor-pointer px-2 py-1 has-[:focus-visible]:outline ${mode === m.id ? 'bg-foreground text-background' : ''}`}
         >
           <input
             type="radio"

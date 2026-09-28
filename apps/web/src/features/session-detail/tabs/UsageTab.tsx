@@ -54,14 +54,15 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
         Could not load usage.
       </p>
     );
-  if (points.length === 0) return <p className="p-3 text-sm text-neutral-500">No model usage recorded.</p>;
+  if (points.length === 0)
+    return <p className="p-3 text-sm text-muted-foreground">No model usage recorded.</p>;
 
   return (
     <div className="p-3">
       <div
         role="radiogroup"
         aria-label="Metric"
-        className="mb-2 inline-flex rounded border border-neutral-200 text-xs"
+        className="mb-2 inline-flex rounded border border-border text-xs"
       >
         {METRICS.map((m) => {
           const disabled = m.id === 'cost' && !costAvailable;
@@ -69,7 +70,7 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
             <label
               key={m.id}
               title={disabled ? 'No cost data for this session' : undefined}
-              className={`px-2 py-1 has-[:focus-visible]:outline ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${effective === m.id ? 'bg-neutral-900 text-white' : ''}`}
+              className={`px-2 py-1 has-[:focus-visible]:outline ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${effective === m.id ? 'bg-foreground text-background' : ''}`}
             >
               <input
                 type="radio"
@@ -85,7 +86,7 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
           );
         })}
       </div>
-      <p data-testid="usage-totals" className="mb-2 text-xs text-neutral-600">
+      <p data-testid="usage-totals" className="mb-2 text-xs text-muted-foreground">
         {`cache read ${formatTokens(totals.cacheRead)} · cache write ${formatTokens(totals.cacheWrite)} · input ${formatTokens(totals.input)} · output ${formatTokens(totals.output)} · cache hit ${formatPct(denom > 0 ? totals.cacheRead / denom : null)}`}
       </p>
       <div ref={ref} data-testid="usage-chart" className="h-[420px] w-full" />

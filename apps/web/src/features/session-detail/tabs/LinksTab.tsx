@@ -12,7 +12,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-const Empty = () => <p className="text-xs text-neutral-500">None</p>;
+const Empty = () => <p className="text-xs text-muted-foreground">None</p>;
 const LINK = 'text-primary underline';
 
 export function LinksTab({ source, id }: { source: Source; id: string }) {
@@ -80,7 +80,7 @@ export function LinksTab({ source, id }: { source: Source; id: string }) {
                   >
                     {p.title}
                   </button>
-                  <span className="ml-2 text-xs text-neutral-500">
+                  <span className="ml-2 text-xs text-muted-foreground">
                     {p.source} · matched by {p.reason}
                   </span>
                 </li>
@@ -114,7 +114,7 @@ export function LinksTab({ source, id }: { source: Source; id: string }) {
       {planPath && (
         <section aria-label="Plan" className="text-xs">
           <h3 className="mb-1 font-mono">{planPath}</h3>
-          <pre data-testid="plan-content" className="whitespace-pre-wrap rounded bg-neutral-50 p-2">
+          <pre data-testid="plan-content" className="whitespace-pre-wrap rounded bg-muted p-2">
             {plan.data?.text ?? (plan.isError ? 'Could not load the plan.' : 'Loading…')}
           </pre>
         </section>

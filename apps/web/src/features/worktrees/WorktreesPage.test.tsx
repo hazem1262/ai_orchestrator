@@ -121,7 +121,7 @@ describe('WorktreesPage archive confirmation timing', () => {
       if (!box) return;
       ticked = true;
       fireEvent.click(box);
-      checkedAfterTick = (box as HTMLInputElement).checked;
+      checkedAfterTick = box.getAttribute('aria-checked') === 'true';
     });
     mo.observe(document.body, { childList: true, subtree: true });
     renderWithProviders(<WorktreesPage />, { api });
@@ -131,11 +131,14 @@ describe('WorktreesPage archive confirmation timing', () => {
     await new Promise((r) => setTimeout(r, 50));
     // The tick itself lands: the box reads checked straight after the click.
     expect(checkedAfterTick).toBe(true);
-    const box = screen.getByLabelText(
-      'I understand this worktree was created outside the app',
-    ) as HTMLInputElement;
+    const box = screen.getByRole('checkbox', {
+      name: 'I understand this worktree was created outside the app',
+    });
     const confirm = screen.getByRole('button', { name: 'Archive' }) as HTMLButtonElement;
-    expect({ ackChecked: box.checked, archiveDisabled: confirm.disabled }).toEqual({
+    expect({
+      ackChecked: box.getAttribute('aria-checked') === 'true',
+      archiveDisabled: confirm.disabled,
+    }).toEqual({
       ackChecked: true,
       archiveDisabled: false,
     });

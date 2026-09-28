@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router';
+import { SearchIcon } from 'lucide-react';
 import { type FormEvent, lazy, type ReactNode, Suspense, useState } from 'react';
 import { Group, Panel, Separator as PanelSeparator } from 'react-resizable-panels';
 import { useLiveEvents } from '@/api/live-events.ts';
@@ -14,6 +15,7 @@ import { QuotaBars } from '@/features/limits/QuotaBars.tsx';
 import { MobileNav } from '@/features/mobile/MobileNav.tsx';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { CommandPalette } from '@/features/palette/CommandPalette.tsx';
+import { ThemeToggle } from '@/features/theme/ThemeToggle.tsx';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { usePaletteStore } from '@/stores/palette.ts';
 import { useProjectStore } from '@/stores/project.ts';
@@ -60,7 +62,7 @@ function Workspace({ children }: { children: ReactNode }) {
           <Panel id="dock" defaultSize="40" minSize="10">
             <Suspense
               fallback={
-                <div className="flex h-full items-center justify-center bg-[#0b0d10] text-xs text-white/60">
+                <div className="flex h-full items-center justify-center bg-terminal text-xs text-terminal-foreground/60">
                   Loading terminal…
                 </div>
               }
@@ -86,14 +88,24 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isMobile) {
     return (
       <div className="flex h-dvh flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3">
-          <Link to="/inbox" className="font-semibold">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+          <Link to="/inbox" className="min-w-0 truncate font-semibold">
             Orchestrator
           </Link>
           <InboxCount count={openInboxCount} />
-          <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto"
+            aria-label="Open command palette"
+            onClick={() => usePaletteStore.getState().setOpen(true)}
+          >
+            <SearchIcon aria-hidden />
+          </Button>
+          <Button size="sm" onClick={() => showLaunch()}>
             New session
           </Button>
+          <ThemeToggle compact />
         </header>
         <main className="min-h-0 flex-1 overflow-auto pb-[calc(4rem+env(safe-area-inset-bottom))]">
           {children}
@@ -127,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Button size="sm" className="ml-auto" onClick={() => showLaunch()}>
           New session
         </Button>
+        <ThemeToggle />
       </header>
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Main" className="flex w-40 shrink-0 flex-col gap-1 border-r p-2 text-sm">

@@ -13,7 +13,11 @@ import { HideToggle, LabelEditor } from './LabelEditor.tsx';
 import { Snippet } from './Snippet.tsx';
 
 export const SESSION_ROW_HEIGHT = 64;
-const GRID = 'grid grid-cols-[2.25rem_minmax(0,1fr)_8.5rem_4.5rem_4.5rem_13rem_11rem]';
+// Below md only the pin, Session and actions columns stay; the Session column never collapses.
+const GRID =
+  'grid grid-cols-[2.25rem_minmax(0,1fr)_auto] md:grid-cols-[2.25rem_minmax(0,1fr)_8.5rem_4.5rem_4.5rem_13rem_11rem]';
+const DESKTOP_ONLY = new Set(['lastActivityAt', 'durationMs', 'costUsd', 'chips']);
+const priorityClass = (columnId: string) => (DESKTOP_ONLY.has(columnId) ? ' max-md:hidden' : '');
 
 const AVAILABILITY_VARIANT: Record<SessionListItem['availability'], BadgeVariant> = {
   resumable: 'success',
@@ -193,7 +197,11 @@ export function SessionTable({
             <tr key={group.id} role="row" className={`${GRID} border-b`}>
               {group.headers.map((header) => (
                 // biome-ignore lint/a11y/useSemanticElements: scope="col" alone doesn't restore the role display:grid strips
-                <th key={header.id} role="columnheader" className="px-2 py-1.5 text-left font-medium">
+                <th
+                  key={header.id}
+                  role="columnheader"
+                  className={`px-2 py-1.5 text-left font-medium${priorityClass(header.column.id)}`}
+                >
                   {header.isPlaceholder ? null : <table.FlexRender header={header} />}
                 </th>
               ))}
@@ -217,7 +225,7 @@ export function SessionTable({
               >
                 {row.getAllCells().map((cell) => (
                   // biome-ignore lint/a11y/noRedundantRoles: display:grid strips the implicit cell role
-                  <td key={cell.id} role="cell" className="min-w-0 px-2">
+                  <td key={cell.id} role="cell" className={`min-w-0 px-2${priorityClass(cell.column.id)}`}>
                     <table.FlexRender cell={cell} />
                   </td>
                 ))}
