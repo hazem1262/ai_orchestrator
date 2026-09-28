@@ -1,11 +1,22 @@
 import { ApiRequestError, ProjectConfig } from '@orc/api-contract';
 import type { Project } from '@orc/core';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { createFakeApi } from '../../test/fake-api.ts';
 import { renderWithProviders } from '../../test/render.tsx';
 import { ProjectSettings } from './ProjectSettings.tsx';
+
+/** Opens a project's edit sheet from the list and returns queries scoped to it. */
+async function openEditor(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Edit ${name}` }));
+  return within(await screen.findByRole('dialog', { name: `Edit ${name}` }));
+}
+
+async function closeEditor() {
+  await userEvent.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+}
 
 const projects: Project[] = [
   {
@@ -48,10 +59,22 @@ function api(update = vi.fn(async (id: string) => configs[id] ?? configs.forza))
 }
 
 describe('ProjectSettings', () => {
+  it('lists projects and edits one in a sheet that returns focus to its Edit button', async () => {
+    renderWithProviders(<ProjectSettings />, { api: api() });
+    const list = within(await screen.findByRole('list'));
+    expect(list.getByText(/~\/Wakecap · 5 sessions/)).toBeTruthy();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const edit = screen.getByRole('button', { name: 'Edit Forza' });
+    const forza = await openEditor('Forza');
+    expect(forza.getByLabelText('Name')).toHaveProperty('value', 'Forza');
+    await closeEditor();
+    expect(document.activeElement).toBe(edit);
+  });
+
   it('saves only the changed fields of one project', async () => {
     const update = vi.fn(async (id: string) => configs[id] ?? configs.forza);
     renderWithProviders(<ProjectSettings />, { api: api(update) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     const save = forza.getByRole('button', { name: 'Save' });
     expect(save).toHaveProperty('disabled', true);
     await userEvent.clear(forza.getByLabelText('Name'));
@@ -61,7 +84,9 @@ describe('ProjectSettings', () => {
     expect(save).toHaveProperty('disabled', false);
     await userEvent.click(save);
     expect(update).toHaveBeenCalledWith('forza', { name: 'Forza App', hidden: true, openIn: 'terminal' });
-    const wakecap = within(screen.getByRole('group', { name: /wakecap/i }));
+    // A successful save closes the sheet; the other project's form holds its own saved values.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const wakecap = await openEditor('Wakecap');
     expect(wakecap.getByLabelText('Ticket regex')).toHaveProperty('value', 'SAF-\\d+');
   });
 
@@ -72,7 +97,7 @@ describe('ProjectSettings', () => {
   it('rejects an invalid ticket regex client-side and never contacts the server', async () => {
     const update = vi.fn(async (id: string) => configs[id] ?? configs.forza);
     renderWithProviders(<ProjectSettings />, { api: api(update) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     const save = forza.getByRole('button', { name: 'Save' });
     await userEvent.type(forza.getByLabelText('Ticket regex'), '(');
     expect(await forza.findByRole('alert')).toHaveProperty(
@@ -96,7 +121,7 @@ describe('ProjectSettings', () => {
       );
     });
     renderWithProviders(<ProjectSettings />, { api: api(update as never) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     await userEvent.clear(forza.getByLabelText('Name'));
     await userEvent.type(forza.getByLabelText('Name'), 'Forza App');
     await userEvent.click(forza.getByRole('button', { name: 'Save' }));
@@ -115,7 +140,7 @@ describe('ProjectSettings', () => {
       throw new TypeError('Failed to fetch');
     });
     renderWithProviders(<ProjectSettings />, { api: api(update as never) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     await userEvent.click(forza.getByLabelText('Hidden'));
     await userEvent.click(forza.getByRole('button', { name: 'Save' }));
     const alert = await forza.findByRole('alert');
@@ -137,22 +162,24 @@ describe('ProjectSettings', () => {
         projectsUpdate: vi.fn(async (id: string) => configs[id] ?? configs.forza) as never,
       }),
     });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     const alert = await forza.findByRole('alert');
     expect(alert.textContent).toContain('network blip');
-    // wakecap's row is unaffected — the failure is scoped to the one project.
-    const wakecap = within(screen.getByRole('group', { name: /wakecap/i }));
-    expect(wakecap.getByLabelText('Ticket regex')).toHaveProperty('value', 'SAF-\\d+');
 
     const callsBefore = getConfig.mock.calls.length;
     await userEvent.click(forza.getByRole('button', { name: 'Retry' }));
     expect(getConfig.mock.calls.length).toBeGreaterThan(callsBefore);
+
+    // wakecap is unaffected — the failure is scoped to the one project.
+    await closeEditor();
+    const wakecap = await openEditor('Wakecap');
+    expect(wakecap.getByLabelText('Ticket regex')).toHaveProperty('value', 'SAF-\\d+');
   });
 
   it('rejects a non-absolute path prefix client-side', async () => {
     const update = vi.fn(async (id: string) => configs[id] ?? configs.forza);
     renderWithProviders(<ProjectSettings />, { api: api(update) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     const save = forza.getByRole('button', { name: 'Save' });
     const paths = forza.getByLabelText('Paths');
     await userEvent.clear(paths);
@@ -168,7 +195,7 @@ describe('ProjectSettings', () => {
   it('accepts a valid absolute path prefix that contains spaces', async () => {
     const update = vi.fn(async (id: string) => configs[id] ?? configs.forza);
     renderWithProviders(<ProjectSettings />, { api: api(update) });
-    const forza = within(await screen.findByRole('group', { name: /forza/i }));
+    const forza = await openEditor('Forza');
     const save = forza.getByRole('button', { name: 'Save' });
     const paths = forza.getByLabelText('Paths');
     await userEvent.clear(paths);

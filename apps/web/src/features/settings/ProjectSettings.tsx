@@ -1,14 +1,24 @@
 import type { ProjectConfig } from '@orc/api-contract';
 import type { Project } from '@orc/core';
 import { compileTicketRegex } from '@orc/core/browser';
-import { useId, useMemo, useState } from 'react';
+import { FolderOpen, Pencil } from 'lucide-react';
+import { type FormEvent, useId, useMemo, useState } from 'react';
 import { useProjectConfig, useProjects, useUpdateProject } from '@/api/queries/projects.ts';
+import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
+import { cn } from '@/components/ui/cn.ts';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
+import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
+import { shortenPath } from '@/lib/format.ts';
 import { buildProjectPatch, type ProjectFormValues } from './project-patch.ts';
+import { SettingsCard } from './SettingsCard.tsx';
 
 const OPEN_IN: ProjectFormValues['openIn'][] = ['vscode', 'terminal', 'finder'];
 /** Mirrors the daemon's `ServiceError` message (apps/daemon/src/http/routes/projects.ts) so the
@@ -28,7 +38,7 @@ function firstRelativePrefix(text: string): string | null {
   return nonEmptyLines(text).find((p) => !p.startsWith('/')) ?? null;
 }
 
-function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: number }) {
+function ProjectForm({ cfg, onSaved }: { cfg: ProjectConfig; onSaved(): void }) {
   const update = useUpdateProject();
   const id = useId();
   const [values, setValues] = useState<ProjectFormValues>({
@@ -55,68 +65,64 @@ function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: 
   const dirty = Object.keys(patch).length > 0;
   const canSave = dirty && !regexInvalid && !prefixesInvalid && !update.isPending;
 
-  const regexErrorId = `${id}-regex-error`;
-  const prefixesErrorId = `${id}-prefixes-error`;
-  const formErrorId = `${id}-form-error`;
+  const f = (name: string) => `${id}-${name}`;
+  const regexErrorId = f('regex-error');
+  const prefixesErrorId = f('prefixes-error');
 
-  const submit = () => {
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
     if (!canSave) return;
-    update.mutate({ id: cfg.id, patch });
+    update.mutate({ id: cfg.id, patch }, { onSuccess: onSaved });
   };
 
   return (
-    <fieldset className="grid grid-cols-[8rem_1fr] items-start gap-2 rounded-lg border p-4">
-      <legend className="px-1 text-sm font-medium">
-        {cfg.id} · {sessionCount} sessions
-      </legend>
+    <form onSubmit={submit} className="flex flex-1 flex-col gap-5 px-4 pb-4">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={f('name')}>Name</Label>
+        <Input id={f('name')} value={values.name} onChange={(e) => set('name', e.target.value)} />
+      </div>
 
-      <label htmlFor={`${id}-name`} className="pt-1 text-sm">
-        Name
-      </label>
-      <Input id={`${id}-name`} value={values.name} onChange={(e) => set('name', e.target.value)} />
-
-      <label htmlFor={`${id}-prefixes`} className="pt-1 text-sm">
-        Paths
-      </label>
-      <div className="flex flex-col gap-1">
-        <textarea
-          id={`${id}-prefixes`}
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={f('prefixes')}>Paths</Label>
+        <Textarea
+          id={f('prefixes')}
           rows={Math.max(2, values.prefixes.split('\n').length)}
-          className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
+          className="font-mono text-xs md:text-xs"
           value={values.prefixes}
           onChange={(e) => set('prefixes', e.target.value)}
           aria-invalid={prefixesInvalid ? true : undefined}
-          aria-describedby={prefixesInvalid ? prefixesErrorId : undefined}
+          aria-describedby={prefixesInvalid ? prefixesErrorId : f('prefixes-hint')}
         />
         {prefixesInvalid ? (
           <p id={prefixesErrorId} role="alert" className="text-sm text-destructive">
             Paths must be absolute — "{invalidPrefix}" does not start with "/"
           </p>
-        ) : null}
+        ) : (
+          <p id={f('prefixes-hint')} className="text-xs text-muted-foreground">
+            One absolute path per line. Sessions under these folders belong to this project.
+          </p>
+        )}
       </div>
 
-      <label htmlFor={`${id}-open`} className="pt-1 text-sm">
-        Open in
-      </label>
-      <NativeSelect
-        id={`${id}-open`}
-        value={values.openIn}
-        onChange={(e) => set('openIn', e.target.value as ProjectFormValues['openIn'])}
-        className="w-40"
-      >
-        {OPEN_IN.map((o) => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </NativeSelect>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={f('open')}>Open in</Label>
+        <NativeSelect
+          id={f('open')}
+          value={values.openIn}
+          onChange={(e) => set('openIn', e.target.value as ProjectFormValues['openIn'])}
+        >
+          {OPEN_IN.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
 
-      <label htmlFor={`${id}-regex`} className="pt-1 text-sm">
-        Ticket regex
-      </label>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={f('regex')}>Ticket regex</Label>
         <Input
-          id={`${id}-regex`}
+          id={f('regex')}
           className="font-mono"
           value={values.ticketRegex}
           onChange={(e) => set('ticketRegex', e.target.value)}
@@ -130,63 +136,117 @@ function ProjectForm({ cfg, sessionCount }: { cfg: ProjectConfig; sessionCount: 
         ) : null}
       </div>
 
-      <label htmlFor={`${id}-hidden`} className="text-sm">
-        Hidden
-      </label>
-      <Checkbox id={`${id}-hidden`} checked={values.hidden} onCheckedChange={(v) => set('hidden', v)} />
+      <div className="flex items-start gap-2">
+        <Checkbox
+          id={f('hidden')}
+          className="mt-0.5"
+          checked={values.hidden}
+          onCheckedChange={(v) => set('hidden', v)}
+        />
+        <div className="flex flex-col gap-1">
+          <Label htmlFor={f('hidden')}>Hidden</Label>
+          <p className="text-xs text-muted-foreground">Hides the project in lists. Nothing is deleted.</p>
+        </div>
+      </div>
 
-      <div />
-      <div className="flex items-center gap-3">
-        <Button disabled={!canSave} onClick={submit}>
-          Save
-        </Button>
+      <div className="mt-auto flex flex-wrap items-center justify-end gap-3 border-t pt-4">
         {update.isError ? (
-          <p id={formErrorId} role="alert" className="text-sm text-destructive">
+          <p role="alert" className="mr-auto text-sm text-destructive">
             {update.error.message}
           </p>
         ) : null}
+        <Button type="submit" disabled={!canSave}>
+          Save
+        </Button>
       </div>
-    </fieldset>
+    </form>
   );
 }
 
-function ProjectRow({ project }: { project: Project }) {
+function ProjectEditor({ project, onSaved }: { project: Project; onSaved(): void }) {
   const { data: cfg, isError, error, refetch, isFetching } = useProjectConfig(project.id);
   if (isError) {
     return (
-      <fieldset className="rounded-lg border p-4">
-        <legend className="px-1 text-sm font-medium">{project.name}</legend>
-        <div className="flex items-center justify-between gap-3">
-          <p role="alert" className="text-sm text-destructive">
-            Couldn't load settings for {project.name}:{' '}
-            {error instanceof Error ? error.message : 'unknown error'}
-          </p>
-          <Button variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
-            Retry
-          </Button>
-        </div>
-      </fieldset>
+      <div className="flex flex-col items-start gap-3 px-4">
+        <p role="alert" className="text-sm text-destructive">
+          Couldn't load settings for {project.name}:{' '}
+          {error instanceof Error ? error.message : 'unknown error'}
+        </p>
+        <Button variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+          Retry
+        </Button>
+      </div>
     );
   }
-  if (!cfg) return <Skeleton className="h-48" />;
+  if (!cfg) return <Skeleton className="mx-4 h-64" />;
   // Remounting on a config change (id unchanged, content changed) resets local edits to the
   // last confirmed server value — only happens after a successful save, never after a failure.
-  return <ProjectForm key={JSON.stringify(cfg)} cfg={cfg} sessionCount={project.sessionCount} />;
+  return <ProjectForm key={JSON.stringify(cfg)} cfg={cfg} onSaved={onSaved} />;
+}
+
+function ProjectRow({ project, onEdit }: { project: Project; onEdit(): void }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+      <div className={cn('min-w-0 flex-1 basis-40', project.hidden && 'opacity-70')}>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+          {project.name}
+          <span className="font-mono text-xs font-normal text-muted-foreground">{project.id}</span>
+          {project.hidden ? <Badge variant="secondary">hidden</Badge> : null}
+        </p>
+        <p className="truncate font-mono text-xs text-muted-foreground">
+          {project.pathPrefixes.map(shortenPath).join(', ')} · {project.sessionCount} sessions
+        </p>
+      </div>
+      <Button size="sm" variant="outline" aria-label={`Edit ${project.name}`} onClick={onEdit}>
+        <Pencil aria-hidden />
+        Edit
+      </Button>
+    </li>
+  );
 }
 
 export function ProjectSettings() {
   const { data: projects, isLoading } = useProjects();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = (projects ?? []).find((p) => p.id === editingId) ?? null;
+  const returnFocus = useFocusReturn(editing !== null);
+  const close = () => setEditingId(null);
   return (
-    <section className="flex max-w-3xl flex-col gap-4 p-4">
-      <h1 className="text-lg font-semibold">Projects</h1>
-      <p className="text-sm text-muted-foreground">
-        Projects are detected from your session history. Hiding a project only hides it here; nothing is
-        deleted.
-      </p>
+    <SettingsCard
+      label="Projects"
+      title="Projects"
+      description="Projects are detected from your session history. Hiding a project only hides it here; nothing is deleted."
+    >
       {isLoading ? <Skeleton className="h-48" /> : null}
-      {(projects ?? []).map((p) => (
-        <ProjectRow key={p.id} project={p} />
-      ))}
-    </section>
+      {projects && projects.length === 0 ? (
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FolderOpen aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No projects detected yet</EmptyTitle>
+            <EmptyDescription>Projects appear once sessions have run in a folder.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : null}
+      {projects && projects.length > 0 ? (
+        <ul className="-my-2 flex flex-col divide-y">
+          {projects.map((p) => (
+            <ProjectRow key={p.id} project={p} onEdit={() => setEditingId(p.id)} />
+          ))}
+        </ul>
+      ) : null}
+      <Sheet open={editing !== null} onOpenChange={(open) => !open && close()}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md" onCloseAutoFocus={returnFocus}>
+          <SheetHeader>
+            <SheetTitle>Edit {editing?.name}</SheetTitle>
+            <SheetDescription className="font-mono">
+              {editing ? `${editing.id} · ${editing.sessionCount} sessions` : null}
+            </SheetDescription>
+          </SheetHeader>
+          {editing ? <ProjectEditor key={editing.id} project={editing} onSaved={close} /> : null}
+        </SheetContent>
+      </Sheet>
+    </SettingsCard>
   );
 }
