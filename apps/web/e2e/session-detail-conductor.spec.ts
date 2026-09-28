@@ -61,9 +61,16 @@ test.describe('M3 exit: a subagent session is understandable without the termina
 
   test('palette jumps to the session and every app action is in the audit log', async ({ page, request }) => {
     await page.goto('/history');
-    await page.keyboard.press('ControlOrMeta+k');
-    await page.getByRole('combobox').fill('SUPRT-1557');
-    await page.getByRole('option', { name: /investigate SUPRT-1557/ }).click();
+    // The hotkey listener mounts after the page loads, so a press can land before it is there.
+    // Press again until the palette opens; a press only goes out while the palette is closed, so a
+    // slow open is never toggled shut.
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    await expect(async () => {
+      if (!(await palette.isVisible())) await page.keyboard.press('ControlOrMeta+k');
+      await expect(palette).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 15_000 });
+    await palette.getByRole('combobox').fill('SUPRT-1557');
+    await palette.getByRole('option', { name: /investigate SUPRT-1557/ }).click();
     await expect(page).toHaveURL(/\/sessions\/claude\/s-subagents/);
 
     const auth = { 'x-orc-token': await tokenOf(page) };
