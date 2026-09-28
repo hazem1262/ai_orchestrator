@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeApi, type FakeApi } from '@/test/fake-api.ts';
+import { sessionFixture } from '@/test/factories.ts';
 import { renderWithProviders } from '@/test/render.tsx';
 import { ReviewPage } from './ReviewPage.tsx';
 
@@ -91,6 +92,7 @@ function client(owned: boolean): FakeApi {
     reviewComments: reviewComments as unknown as FakeApi['reviewComments'],
     diffRevert: diffRevert as unknown as FakeApi['diffRevert'],
     sessionsLaunch: vi.fn(async () => ({ ptyId: 'pty-new', sessionId: null })),
+    sessionsGet: async () => sessionFixture({ id: 's1', name: 'Fix the flaky retry test' }),
   });
 }
 
@@ -100,12 +102,13 @@ describe('ReviewPage', () => {
   it('shows the file tree with counts and toggles split/unified', async () => {
     renderWithProviders(<ReviewPage source="claude" id="s1" />, { api: client(true) });
     const tree = await screen.findByRole('navigation', { name: 'Changed files' });
-    expect(within(tree).getByText('src/a.ts')).toBeDefined();
-    expect(within(tree).getByText('+1 −1')).toBeDefined();
+    const row = within(tree).getByText('src/a.ts').closest('li') as HTMLElement;
+    expect(within(row).getByText('+1')).toBeDefined();
+    expect(within(row).getByText('−1')).toBeDefined();
     fireEvent.click(within(tree).getByLabelText('Viewed src/a.ts'));
     expect(within(tree).getByRole('checkbox', { name: 'Viewed src/a.ts' })).toBeChecked();
     expect(screen.getByTestId('diffview').dataset.mode).toBe('1');
-    fireEvent.click(screen.getByRole('button', { name: 'Unified' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Unified' }));
     expect(screen.getByTestId('diffview').dataset.mode).toBe('2');
   });
 
@@ -152,5 +155,28 @@ describe('ReviewPage', () => {
         confirm: true,
       }),
     );
+  });
+
+  it('shows a breadcrumb back to the session and a Review page title', async () => {
+    renderWithProviders(<ReviewPage source="claude" id="s1" />, { api: client(true) });
+    const crumbs = await screen.findByRole('navigation', { name: 'breadcrumb' });
+    const back = within(crumbs).getByRole('link', { name: 'Fix the flaky retry test' });
+    expect(back.getAttribute('href')).toBe('/sessions/claude/s1');
+    expect(within(crumbs).getByText('Review')).toBeDefined();
+    expect(screen.getByRole('heading', { name: 'Review' })).toBeDefined();
+  });
+
+  it('shows an alert with a way back when the review fails to load', async () => {
+    const api = createFakeApi({
+      reviewGet: async () => {
+        throw new Error('not a git checkout');
+      },
+      sessionsGet: async () => sessionFixture({ id: 's1', name: 'Fix the flaky retry test' }),
+    });
+    renderWithProviders(<ReviewPage source="claude" id="s1" />, { api });
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('not a git checkout')).toBeDefined();
+    const back = screen.getByRole('link', { name: 'Back to the session' });
+    expect(back.getAttribute('href')).toBe('/sessions/claude/s1');
   });
 });
