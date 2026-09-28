@@ -68,6 +68,21 @@ describe('daemon confirmation flow', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
+  it('leaves the run awaiting approval when the plan dialog is cancelled', async () => {
+    const automationsApprove = vi.fn(async (_id: string, confirm?: boolean) => {
+      if (confirm === false) throw needsConfirm('Approve the plan and let "Fix CI" implement it.');
+      return { ...run, status: 'running' as const };
+    });
+    setApiClientForTests(fakeApi({ automationsRuns: vi.fn(async () => [run]), automationsApprove }));
+    renderP3(<RunHistory automation={auto} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve plan' }));
+    await screen.findByRole('alertdialog', { name: 'Approve plan?' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(automationsApprove).toHaveBeenCalledTimes(1);
+    expect(automationsApprove).toHaveBeenCalledWith('r1', false);
+  });
+
   it('deletes an automation only after the 409 summary is confirmed', async () => {
     const automationsDelete = vi.fn(async (_id: string, confirm?: boolean) => {
       if (confirm !== true) throw needsConfirm('Delete the automation "Fix CI" and its run history');

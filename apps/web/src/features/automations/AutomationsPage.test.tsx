@@ -173,6 +173,27 @@ describe('AutomationsPage', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(stubs.automationsSave).not.toHaveBeenCalled();
   });
+
+  it('opens the New automation form in a Sheet and closes it once saved', async () => {
+    const stubs = api();
+    renderWithClient(<AutomationsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New automation' }));
+    const sheet = await screen.findByRole('dialog', { name: 'New automation' });
+    fireEvent.change(within(sheet).getByLabelText('Name'), { target: { value: 'Nightly cleanup' } });
+    fireEvent.change(within(sheet).getByLabelText('Template'), { target: { value: 'fix-ci' } });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(stubs.automationsSave).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('shows a real empty state with one primary action to create an automation', async () => {
+    api({ automationsList: vi.fn(async () => []) });
+    renderWithClient(<AutomationsPage />);
+    expect(await screen.findByText('No automations yet')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'New automation' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'New automation' }));
+    expect(await screen.findByRole('dialog', { name: 'New automation' })).toBeTruthy();
+  });
 });
 
 describe('RunHistory', () => {
