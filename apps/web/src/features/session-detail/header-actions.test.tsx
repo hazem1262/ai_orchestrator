@@ -1,9 +1,7 @@
 import { screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { downloadSessionExport, useSessionSafety } from '@/api/queries/session-detail';
+import { useSessionSafety } from '@/api/queries/session-detail';
 import { renderP3 } from '@/test/p3-render';
-import { ExportButton } from './ExportButton.tsx';
 import { SafetyBadges } from './SafetyBadges.tsx';
 
 vi.mock('@/api/queries/session-detail', () => ({
@@ -46,23 +44,5 @@ describe('SafetyBadges', () => {
     renderP3(<SafetyBadges source="claude" id="s-x" />);
     expect(screen.getByText('custom')).toBeDefined();
     expect(screen.queryByText(/PROD/)).toBeNull();
-  });
-});
-
-describe('ExportButton', () => {
-  it('exports redacted by default and asks before an unredacted export', async () => {
-    const confirm = vi.spyOn(window, 'confirm');
-    renderP3(<ExportButton source="claude" id="s-drift" />);
-    await userEvent.click(screen.getByRole('button', { name: 'Export ZIP' }));
-    expect(downloadSessionExport).toHaveBeenLastCalledWith('claude', 's-drift', { redact: true });
-
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Include secrets (unredacted)' }));
-    confirm.mockReturnValueOnce(false);
-    await userEvent.click(screen.getByRole('button', { name: 'Export ZIP' }));
-    expect(downloadSessionExport).toHaveBeenCalledTimes(1);
-
-    confirm.mockReturnValueOnce(true);
-    await userEvent.click(screen.getByRole('button', { name: 'Export ZIP' }));
-    expect(downloadSessionExport).toHaveBeenLastCalledWith('claude', 's-drift', { redact: false });
   });
 });

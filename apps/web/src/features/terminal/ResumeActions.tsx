@@ -23,7 +23,8 @@ async function copyToClipboard(text: string): Promise<void> {
   }
 }
 
-export function ResumeActions({ target, compact = false }: { target: ResumeTarget; compact?: boolean }) {
+/** The resume, fork and pop-out requests behind `ResumeActions`, for callers that lay the buttons out themselves. */
+export function useResumeRunner(target: ResumeTarget) {
   const resume = useResumeSession();
   const open = useTerminalStore((s) => s.open);
   const close = useTerminalStore((s) => s.close);
@@ -62,11 +63,31 @@ export function ResumeActions({ target, compact = false }: { target: ResumeTarge
     }
   }
 
+  return {
+    live,
+    ownedPty,
+    endedElsewhere,
+    runningElsewhere,
+    unavailable,
+    message,
+    showTerminal: () => {
+      if (ownedPty) open(ownedPty, title);
+    },
+    resume: () => void run({ mode: 'embedded', ...SIZE }, null),
+    fork: () => void run({ mode: 'embedded', fork: true, ...SIZE }, 'Fork'),
+    popOut: () => void run(ownedPty ? { mode: 'external', popOut: true } : { mode: 'external' }, null),
+  };
+}
+
+export function ResumeActions({ target, compact = false }: { target: ResumeTarget; compact?: boolean }) {
+  const { live, ownedPty, endedElsewhere, runningElsewhere, unavailable, message, ...act } =
+    useResumeRunner(target);
+
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex gap-1">
         {ownedPty ? (
-          <Button size="sm" onClick={() => open(ownedPty, title)}>
+          <Button size="sm" onClick={act.showTerminal}>
             Show terminal
           </Button>
         ) : (
@@ -74,7 +95,7 @@ export function ResumeActions({ target, compact = false }: { target: ResumeTarge
             size="sm"
             disabled={unavailable || runningElsewhere}
             title={target.availability !== 'resumable' ? `Not resumable (${target.availability})` : undefined}
-            onClick={() => void run({ mode: 'embedded', ...SIZE }, null)}
+            onClick={act.resume}
           >
             {endedElsewhere ? 'Adopt' : 'Resume'}
           </Button>
@@ -85,7 +106,7 @@ export function ResumeActions({ target, compact = false }: { target: ResumeTarge
               size="sm"
               variant="outline"
               disabled={unavailable || target.source !== 'claude'}
-              onClick={() => void run({ mode: 'embedded', fork: true, ...SIZE }, 'Fork')}
+              onClick={act.fork}
             >
               Fork
             </Button>
@@ -93,9 +114,7 @@ export function ResumeActions({ target, compact = false }: { target: ResumeTarge
               size="sm"
               variant="outline"
               disabled={unavailable || runningElsewhere}
-              onClick={() =>
-                void run(ownedPty ? { mode: 'external', popOut: true } : { mode: 'external' }, null)
-              }
+              onClick={act.popOut}
             >
               Pop out
             </Button>

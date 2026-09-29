@@ -1,3 +1,4 @@
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { useViewModeStore, type ViewMode } from '@/stores/view-mode.ts';
 
 const MODES: Array<{ id: ViewMode; label: string }> = [
@@ -6,31 +7,28 @@ const MODES: Array<{ id: ViewMode; label: string }> = [
   { id: 'verbose', label: 'Verbose' },
 ];
 
+const isViewMode = (v: string): v is ViewMode => MODES.some((m) => m.id === v);
+
 export function ViewModeToggle() {
   const mode = useViewModeStore((s) => s.mode);
   const setMode = useViewModeStore((s) => s.setMode);
   return (
-    <div
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
       role="radiogroup"
       aria-label="View mode"
-      className="inline-flex rounded border border-border text-xs"
+      value={mode}
+      onValueChange={(v) => {
+        if (isViewMode(v)) setMode(v);
+      }}
     >
       {MODES.map((m) => (
-        <label
-          key={m.id}
-          className={`cursor-pointer px-2 py-1 has-[:focus-visible]:outline ${mode === m.id ? 'bg-foreground text-background' : ''}`}
-        >
-          <input
-            type="radio"
-            name="orc-view-mode"
-            value={m.id}
-            checked={mode === m.id}
-            onChange={() => setMode(m.id)}
-            className="sr-only"
-          />
+        <ToggleGroupItem key={m.id} value={m.id}>
           {m.label}
-        </label>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
