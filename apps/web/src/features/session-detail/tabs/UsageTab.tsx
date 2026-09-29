@@ -1,6 +1,7 @@
 import type { Source } from '@orc/core';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { useSessionUsageSeries } from '@/api/queries/session-detail.ts';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { formatPct, formatTokens } from '../timeline/format.ts';
 import { hasCost, tokenSplitByModel, type UsageMetric } from './usage-option.ts';
 
@@ -42,33 +43,32 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
 
   return (
     <div className="p-3">
-      <div
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
         role="radiogroup"
         aria-label="Metric"
-        className="mb-2 inline-flex rounded border border-border text-xs"
+        value={effective}
+        onValueChange={(v) => {
+          if (v === 'cost' || v === 'tokens') setMetric(v);
+        }}
+        className="mb-2"
       >
         {METRICS.map((m) => {
           const disabled = m.id === 'cost' && !costAvailable;
           return (
-            <label
+            <ToggleGroupItem
               key={m.id}
+              value={m.id}
+              disabled={disabled}
               title={disabled ? 'No cost data for this session' : undefined}
-              className={`px-2 py-1 has-[:focus-visible]:outline ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${effective === m.id ? 'bg-foreground text-background' : ''}`}
             >
-              <input
-                type="radio"
-                name={`orc-usage-metric-${source}-${id}`}
-                value={m.id}
-                checked={effective === m.id}
-                disabled={disabled}
-                onChange={() => setMetric(m.id)}
-                className="sr-only"
-              />
               {m.label}
-            </label>
+            </ToggleGroupItem>
           );
         })}
-      </div>
+      </ToggleGroup>
       <p data-testid="usage-totals" className="mb-2 text-xs text-muted-foreground">
         {`cache read ${formatTokens(totals.cacheRead)} · cache write ${formatTokens(totals.cacheWrite)} · input ${formatTokens(totals.input)} · output ${formatTokens(totals.output)} · cache hit ${formatPct(denom > 0 ? totals.cacheRead / denom : null)}`}
       </p>

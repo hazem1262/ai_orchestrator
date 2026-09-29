@@ -9,6 +9,7 @@ import { CardContent, CardHeader, CardTitle } from '@/components/ui/card.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 import { GitConfirmDialog } from '@/features/git/GitConfirmDialog.tsx';
 import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
@@ -16,8 +17,7 @@ import { useTerminalStore } from '@/stores/terminals.ts';
 type Method = 'merge' | 'squash' | 'rebase';
 
 const INVALIDATE = [['review'], ['diff'], ['worktrees']] as const;
-const TEXTAREA =
-  'w-full rounded-md border bg-background px-2 py-1 font-mono text-xs outline-none focus:ring-2 focus:ring-primary';
+const TEXTAREA = 'font-mono text-xs md:text-xs';
 
 export function ShipPanel({ summary: s }: { summary: ReviewSummary }) {
   const draftId = useId();
@@ -84,7 +84,7 @@ export function ShipPanel({ summary: s }: { summary: ReviewSummary }) {
         <CardTitle className="text-sm">Ship</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 p-2 pt-0">
-        <textarea
+        <Textarea
           aria-label="Commit message"
           className={TEXTAREA}
           rows={2}
@@ -107,7 +107,7 @@ export function ShipPanel({ summary: s }: { summary: ReviewSummary }) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
-            <textarea
+            <Textarea
               aria-label="PR body"
               className={TEXTAREA}
               rows={6}

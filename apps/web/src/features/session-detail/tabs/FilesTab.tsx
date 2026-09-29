@@ -1,5 +1,7 @@
 import type { Source } from '@orc/core';
 import { useSessionFiles } from '@/api/queries/session-detail.ts';
+import { Button } from '@/components/ui/button.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.tsx';
 
 interface Props {
   source: Source;
@@ -29,37 +31,38 @@ export function FilesTab({ source, id, startCwd, selectedPath, onSelect }: Props
 
   return (
     <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <table className="w-full self-start text-sm">
-        <thead>
-          <tr className="text-left text-xs text-muted-foreground">
-            <th>File</th>
-            <th>Edits</th>
-            <th>Failed</th>
-            <th>Turns</th>
-            <th>Agents</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="self-start">
+        <TableHeader>
+          <TableRow className="text-xs">
+            <TableHead>File</TableHead>
+            <TableHead>Edits</TableHead>
+            <TableHead>Failed</TableHead>
+            <TableHead>Turns</TableHead>
+            <TableHead>Agents</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {files.map((f) => (
-            <tr key={f.path} className={f.path === selectedPath ? 'bg-muted' : ''}>
-              <td>
-                <button
-                  type="button"
-                  className="font-mono text-xs underline"
+            <TableRow key={f.path} data-state={f.path === selectedPath ? 'selected' : undefined}>
+              <TableCell>
+                <Button
+                  variant="link"
+                  size="xs"
+                  className="h-auto p-0 font-mono text-foreground underline"
                   title={f.path}
                   onClick={() => onSelect(f.path)}
                 >
                   {rel(f.path, startCwd)}
-                </button>
-              </td>
-              <td>{f.ops}</td>
-              <td>{f.failedOps}</td>
-              <td>{f.turns.join(', ')}</td>
-              <td>{f.agentIds.map((a) => a ?? 'main').join(', ')}</td>
-            </tr>
+                </Button>
+              </TableCell>
+              <TableCell>{f.ops}</TableCell>
+              <TableCell>{f.failedOps}</TableCell>
+              <TableCell>{f.turns.join(', ')}</TableCell>
+              <TableCell>{f.agentIds.map((a) => a ?? 'main').join(', ')}</TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       {selected && (
         <section aria-label="File changes" className="text-xs">
           <h3 className="mb-1 font-mono">{selected.path}</h3>

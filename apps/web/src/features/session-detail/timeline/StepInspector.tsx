@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.tsx';
 import { formatMs, formatTokens } from './format.ts';
 import type { ToolStep } from './group-events.ts';
 
@@ -14,9 +15,9 @@ export function StepInspector({ step, onClose }: { step: ToolStep; onClose: () =
     >
       <header className="mb-2 flex items-center justify-between">
         <h3 className="font-semibold">{call.tool ?? 'tool'}</h3>
-        <button type="button" aria-label="Close inspector" onClick={onClose} className="px-2">
+        <Button variant="ghost" size="icon-xs" aria-label="Close inspector" onClick={onClose}>
           ×
-        </button>
+        </Button>
       </header>
       <dl className="grid grid-cols-[110px_1fr] gap-x-2 gap-y-1">
         <dt>Started</dt>

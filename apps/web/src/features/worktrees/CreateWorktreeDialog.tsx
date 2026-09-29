@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 import { GitConfirmDialog } from '@/features/git/GitConfirmDialog.tsx';
 import { GitDialog } from '@/features/git/GitDialog.tsx';
 import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
@@ -159,8 +160,8 @@ function CreateWorktreeForm({ repos, onClose }: { repos: string[]; onClose: () =
             </div>
             {launch && (
               <>
-                <textarea
-                  className="min-h-20 rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
+                <Textarea
+                  className="min-h-20"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   aria-label="Prompt"

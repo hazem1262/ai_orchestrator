@@ -145,9 +145,13 @@ function AutomationCard({
       <CardHeader className="flex-row items-center gap-2 pb-2">
         <ToggleSwitch label={`Enable ${a.name}`} checked={a.enabled} onCheckedChange={onToggle} />
         <CardTitle className="min-w-0 flex-1 truncate text-sm font-medium">
-          <button type="button" className="hover:underline" onClick={onEdit}>
+          <Button
+            variant="link"
+            className="block h-auto max-w-full truncate p-0 text-sm font-medium text-foreground"
+            onClick={onEdit}
+          >
             {a.name}
-          </button>
+          </Button>
         </CardTitle>
         {!a.enabled ? <Badge variant="secondary">Off</Badge> : null}
       </CardHeader>

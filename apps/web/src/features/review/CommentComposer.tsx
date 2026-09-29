@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 
 export function CommentComposer({ onSubmit, onCancel }: { onSubmit(body: string): void; onCancel(): void }) {
   const [body, setBody] = useState('');
   return (
     <div className="space-y-1 border-y bg-muted p-2">
-      <textarea
+      <Textarea
         aria-label="Comment"
-        className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
+        className="bg-background"
         rows={3}
         value={body}
         onChange={(e) => setBody(e.target.value)}

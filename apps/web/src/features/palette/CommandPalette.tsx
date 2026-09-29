@@ -8,6 +8,7 @@ import { useProjects } from '@/api/queries/projects.ts';
 import { usePlanContent, usePlans } from '@/api/queries/safety.ts';
 import { useSessions } from '@/api/queries/sessions.ts';
 import { useTemplates } from '@/api/queries/templates.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { formatKeys } from '@/features/hotkeys/registry.ts';
 import { useLaunchStore } from '@/stores/launch.ts';
 import { usePaletteStore } from '@/stores/palette.ts';
@@ -102,9 +103,14 @@ export function CommandPalette() {
     >
       {plan ? (
         <div className="p-3 text-sm">
-          <button type="button" onClick={() => setPlan(null)} className="mb-2 underline">
+          <Button
+            variant="link"
+            size="xs"
+            onClick={() => setPlan(null)}
+            className="mb-2 h-auto p-0 underline"
+          >
             Back
-          </button>
+          </Button>
           <h2 className="mb-1 font-semibold">{plan.title}</h2>
           <pre data-testid="palette-plan" className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-xs">
             {planContent.data?.text ?? 'Loading…'}

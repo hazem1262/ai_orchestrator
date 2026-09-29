@@ -55,14 +55,15 @@ export function TerminalDock() {
                 >
                   {title}
                 </button>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
                   aria-label={`Close ${t.title}`}
                   onClick={() => close(t.ptyId)}
-                  className="px-1 opacity-60 hover:opacity-100"
+                  className="opacity-60 hover:bg-transparent hover:text-inherit hover:opacity-100"
                 >
                   ×
-                </button>
+                </Button>
               </div>
             );
           })}

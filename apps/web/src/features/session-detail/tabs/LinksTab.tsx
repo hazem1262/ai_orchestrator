@@ -2,6 +2,7 @@ import type { Source } from '@orc/core';
 import { type ReactNode, useState } from 'react';
 import { usePlanContent } from '@/api/queries/safety.ts';
 import { useSessionLinks } from '@/api/queries/session-detail.ts';
+import { Button } from '@/components/ui/button.tsx';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -72,14 +73,14 @@ export function LinksTab({ source, id }: { source: Source; id: string }) {
             <ul>
               {l.plans.map((p) => (
                 <li key={p.path}>
-                  <button
-                    type="button"
-                    className="underline"
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 text-foreground underline"
                     title={p.path}
                     onClick={() => setPlanPath(p.path)}
                   >
                     {p.title}
-                  </button>
+                  </Button>
                   <span className="ml-2 text-xs text-muted-foreground">
                     {p.source} · matched by {p.reason}
                   </span>

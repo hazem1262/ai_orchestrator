@@ -3,6 +3,7 @@ import { useId, useState } from 'react';
 import { getApiClient } from '@/api/client.ts';
 import { performStepUp, withStepUp } from '@/api/step-up.ts';
 import { Button } from '@/components/ui/button.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -47,9 +48,9 @@ export function ReplyComposer({
       <label htmlFor={fieldId} className="text-sm font-medium">
         Reply to this session
       </label>
-      <textarea
+      <Textarea
         id={fieldId}
-        className="w-full rounded-md border bg-background px-2 py-2 text-base"
+        className="text-base md:text-base"
         rows={3}
         value={text}
         onChange={(e) => setText(e.target.value)}

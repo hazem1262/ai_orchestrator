@@ -3,6 +3,7 @@ import { useId, useState } from 'react';
 import { useAgncEvents, useAgncMessages, useAgncPrompt } from '@/api/queries/agnc.ts';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 import { GitDialog } from '@/features/git/GitDialog.tsx';
 import { formatDateTime } from '@/lib/format.ts';
 
@@ -75,12 +76,7 @@ export function AgncSessionPanel({ session }: { session: Session }) {
         <label className="text-sm font-medium" htmlFor={promptId}>
           Prompt
         </label>
-        <textarea
-          id={promptId}
-          className="min-h-20 rounded-md border bg-background p-2 text-sm"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
+        <Textarea id={promptId} className="min-h-20" value={text} onChange={(e) => setText(e.target.value)} />
         <div>
           <Button type="submit" size="sm" disabled={prompt.busy || !text.trim()}>
             Send to AGNC

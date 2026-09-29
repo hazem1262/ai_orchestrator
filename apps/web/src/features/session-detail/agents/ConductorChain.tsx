@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button.tsx';
 import type { ChainStepView } from './conductor.ts';
 
 const TONE: Record<ChainStepView['status'], string> = {
@@ -27,14 +28,14 @@ export function ConductorChain({
           </div>
           <div>{s.status}</div>
           {s.agents.map((a) => (
-            <button
+            <Button
               key={a.id}
-              type="button"
-              className="block truncate underline"
+              variant="link"
+              className="block h-auto truncate p-0 text-left text-foreground underline"
               onClick={() => onOpenAgent(a.id)}
             >
               {a.description || a.agentType}
-            </button>
+            </Button>
           ))}
         </li>
       ))}

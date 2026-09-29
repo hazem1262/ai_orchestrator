@@ -4,6 +4,7 @@ import { getApiClient } from '@/api/client.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 import { GitDialog } from '@/features/git/GitDialog.tsx';
 import { type Confirmation, errorText, readConfirmation } from './ShareDialog.tsx';
 
@@ -87,9 +88,8 @@ export function FollowUpDialog({
             </span>
             <span className="flex flex-col gap-1">
               <label htmlFor={`${id}-description`}>Description</label>
-              <textarea
+              <Textarea
                 id={`${id}-description`}
-                className="rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}

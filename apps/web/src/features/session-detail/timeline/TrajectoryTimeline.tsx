@@ -2,6 +2,7 @@ import type { DeliverableFile, Source, TurnStats } from '@orc/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSessionDeliverables, useSessionStats } from '@/api/queries/session-detail.ts';
 import { useSessionEvents } from '@/api/queries/sessions.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { useViewModeStore } from '@/stores/view-mode.ts';
 import { DeliverablesRow } from './DeliverablesRow.tsx';
 import { formatMs, inputSummary, statsSummary } from './format.ts';
@@ -175,13 +176,14 @@ export function TrajectoryTimeline({ source, id, agentId, onOpenFile }: Props) {
           );
         })}
         {events.hasNextPage && (
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             disabled={events.isFetchingNextPage}
             onClick={() => void events.fetchNextPage()}
           >
             {events.isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </button>
+          </Button>
         )}
       </div>
       {selected && <StepInspector step={selected} onClose={() => setSelected(null)} />}

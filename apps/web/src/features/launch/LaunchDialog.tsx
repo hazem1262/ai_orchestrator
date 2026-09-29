@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button.tsx';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.tsx';
+import { Textarea } from '@/components/ui/textarea.tsx';
 import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
 import { CompareLaunchSection } from '@/features/compare/CompareLaunchSection.tsx';
 import { type LaunchDraft, LaunchPhase4Fields } from '@/features/launch/LaunchPhase4Fields.tsx';
@@ -150,20 +152,25 @@ function LaunchForm({
     <>
       <DialogTitle className="text-lg font-semibold">New session</DialogTitle>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <fieldset className="flex gap-3 text-sm">
-          <legend className="sr-only">Source</legend>
-          {(['claude', 'codex'] as const).map((s) => (
-            <label key={s} className="flex items-center gap-1">
-              <input
-                type="radio"
-                name="source"
-                className="accent-primary"
-                checked={source === s}
-                onChange={() => setSource(s)}
-              />
-              {s === 'claude' ? 'Claude' : 'Codex'}
-            </label>
-          ))}
+        <fieldset className="text-sm">
+          <legend id={`${titleId}-source`} className="sr-only">
+            Source
+          </legend>
+          <RadioGroup
+            aria-labelledby={`${titleId}-source`}
+            className="flex gap-3"
+            value={source}
+            onValueChange={(v) => {
+              if (v === 'claude' || v === 'codex') setSource(v);
+            }}
+          >
+            {(['claude', 'codex'] as const).map((s) => (
+              <div key={s} className="flex items-center gap-1.5">
+                <RadioGroupItem id={`${titleId}-source-${s}`} value={s} />
+                <label htmlFor={`${titleId}-source-${s}`}>{s === 'claude' ? 'Claude' : 'Codex'}</label>
+              </div>
+            ))}
+          </RadioGroup>
         </fieldset>
 
         <label className={FIELD} htmlFor={`${titleId}-project`}>
@@ -256,9 +263,9 @@ function LaunchForm({
         <label className={FIELD} htmlFor={`${titleId}-prompt`}>
           Prompt
         </label>
-        <textarea
+        <Textarea
           id={`${titleId}-prompt`}
-          className="min-h-24 rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary"
+          className="min-h-24"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
