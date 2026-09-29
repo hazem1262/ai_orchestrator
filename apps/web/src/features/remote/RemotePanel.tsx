@@ -1,4 +1,5 @@
 import { type AwayMode, RemoteConfigBody, type RemoteDevice, type RemoteStatus } from '@orc/api-contract';
+import { OctagonAlert, TriangleAlert } from 'lucide-react';
 import { useId, useState } from 'react';
 import { getApiClient } from '@/api/client.ts';
 import {
@@ -10,10 +11,13 @@ import {
   useSaveRemoteConfig,
   useSetAway,
 } from '@/api/queries/remote.ts';
+import { Alert, AlertDescription } from '@/components/ui/alert.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
+import { Separator } from '@/components/ui/separator.tsx';
 import { formatDateTime } from '@/lib/format.ts';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -30,10 +34,13 @@ export function RemotePanel() {
   return (
     <div className="flex flex-col gap-4 text-sm">
       {s?.funnelDetected && (
-        <p role="alert" className="rounded-md border border-destructive p-2 text-destructive">
-          Tailscale Funnel is enabled, so remote access is blocked. Run{' '}
-          <code className="font-mono">tailscale funnel --https=443 off</code>.
-        </p>
+        <Alert variant="destructive" className="border-destructive/50">
+          <OctagonAlert aria-hidden />
+          <AlertDescription>
+            Tailscale Funnel is enabled, so remote access is blocked. Run{' '}
+            <code className="font-mono">tailscale funnel --https=443 off</code>.
+          </AlertDescription>
+        </Alert>
       )}
       {status.error && (
         <p role="alert" className="text-destructive">
@@ -43,9 +50,13 @@ export function RemotePanel() {
       {status.isLoading && <p className="text-muted-foreground">Loading remote status…</p>}
       {s && <StatusLine status={s} />}
       {s && <ConfigForm key={`${s.enabled}|${s.origin}|${s.allowedLogin}`} status={s} />}
+      <Separator />
       <PairingSection enabled={s?.enabled ?? false} />
+      <Separator />
       <DevicesSection />
+      <Separator />
       <AwaySection />
+      <Separator />
       <p className="text-muted-foreground">
         Setup steps are in <span className="font-mono">docs/setup-remote-and-connectors.md</span>. Never run{' '}
         <code className="font-mono">tailscale funnel</code>: it would expose the app to the internet.
@@ -68,10 +79,13 @@ function StatusLine({ status: s }: { status: RemoteStatus }) {
         Allowed Tailscale login: <strong className="text-foreground">{s.allowedLogin ?? 'not set'}</strong>
       </p>
       {s.enabled && !s.allowedLogin && (
-        <p className="rounded-md border border-warning p-2">
-          Remote requests stay denied until an allowed Tailscale login is set. The tailnet is shared with
-          other devices, so only this one login may reach the app.
-        </p>
+        <Alert role="status" className="border-warning/40 bg-warning/10">
+          <TriangleAlert aria-hidden className="text-warning" />
+          <AlertDescription className="text-pretty text-foreground">
+            Remote requests stay denied until an allowed Tailscale login is set. The tailnet is shared with
+            other devices, so only this one login may reach the app.
+          </AlertDescription>
+        </Alert>
       )}
       {s.isRemote && (
         <p className="text-muted-foreground">
@@ -115,8 +129,8 @@ function ConfigForm({ status: s }: { status: RemoteStatus }) {
         save.mutate(body.data);
       }}
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-origin`}>Tailscale origin</label>
+      <div className="flex min-w-0 flex-col gap-2">
+        <Label htmlFor={`${id}-origin`}>Tailscale origin</Label>
         <Input
           id={`${id}-origin`}
           value={origin}
@@ -125,8 +139,8 @@ function ConfigForm({ status: s }: { status: RemoteStatus }) {
           autoComplete="off"
         />
       </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-login`}>Allowed Tailscale login</label>
+      <div className="flex min-w-0 flex-col gap-2">
+        <Label htmlFor={`${id}-login`}>Allowed Tailscale login</Label>
         <Input
           id={`${id}-login`}
           value={login}
@@ -140,7 +154,7 @@ function ConfigForm({ status: s }: { status: RemoteStatus }) {
       </div>
       <div className="flex items-center gap-2 md:col-span-2">
         <Checkbox id={`${id}-enabled`} checked={enabled} onCheckedChange={setEnabled} />
-        <label htmlFor={`${id}-enabled`}>Allow remote access over Tailscale</label>
+        <Label htmlFor={`${id}-enabled`}>Allow remote access over Tailscale</Label>
       </div>
       <div className="flex items-center gap-2 md:col-span-2">
         <Button type="submit" size="sm" disabled={save.isPending}>

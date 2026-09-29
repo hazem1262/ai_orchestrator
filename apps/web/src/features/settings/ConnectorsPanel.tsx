@@ -10,6 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
 
 const INFO: Record<ConnectorId, { name: string; tokenHint: string; help: string }> = {
   linear: {
@@ -64,7 +65,7 @@ function ConnectorCard({ status }: { status: ConnectorStatus }) {
   return (
     <section
       aria-label={`${info.name} connector`}
-      className="flex flex-col gap-3 rounded-lg border p-4 text-sm"
+      className="flex min-w-0 flex-col gap-3 rounded-lg border p-4 text-sm"
     >
       <header className="flex items-center justify-between">
         <h3 className="font-semibold">{info.name}</h3>
@@ -100,7 +101,7 @@ function ConnectorCard({ status }: { status: ConnectorStatus }) {
           }}
         >
           <p className="text-xs text-muted-foreground">{info.help}</p>
-          <label htmlFor={f('token')}>Token</label>
+          <Label htmlFor={f('token')}>Token</Label>
           <Input
             id={f('token')}
             type="password"
@@ -147,14 +148,14 @@ function ConnectorCard({ status }: { status: ConnectorStatus }) {
             );
           }}
         >
-          <label htmlFor={f('client-id')}>Client ID</label>
+          <Label htmlFor={f('client-id')}>Client ID</Label>
           <Input
             id={f('client-id')}
             autoComplete="off"
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
           />
-          <label htmlFor={f('client-secret')}>Client secret</label>
+          <Label htmlFor={f('client-secret')}>Client secret</Label>
           <Input
             id={f('client-secret')}
             type="password"

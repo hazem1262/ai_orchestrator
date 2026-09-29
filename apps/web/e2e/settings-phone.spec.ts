@@ -63,31 +63,63 @@ async function overflowingElements(page: Page): Promise<Offender[]> {
   });
 }
 
-test('settings fit a 390px phone screen with no sideways overflow', async ({ page }) => {
-  await page.goto('/settings');
-  // Wait for the panels that load data, so their lists and tables are on the page.
-  for (const name of ['Transcript archive', 'Notifications', 'Secrets hygiene', 'Limits & budgets']) {
-    await expect(page.getByRole('region', { name })).toBeVisible();
-  }
-  await expect(page.getByTestId('secrets-summary')).toBeVisible();
-  await page.waitForLoadState('networkidle');
+/** Per section: the regions whose data must be on the page before its width is measured. */
+const SECTIONS: Array<{ id: string; heading: string; wait: string[] }> = [
+  { id: 'projects', heading: 'Projects', wait: ['Projects'] },
+  { id: 'notifications', heading: 'Notifications', wait: ['Notifications'] },
+  { id: 'recaps', heading: 'LLM recaps', wait: ['LLM recaps'] },
+  { id: 'limits', heading: 'Limits & budgets', wait: ['Limits & budgets'] },
+  { id: 'supervisor', heading: 'Supervisor (opt-in)', wait: [] },
+  { id: 'connectors', heading: 'Connectors', wait: [] },
+  { id: 'remote', heading: 'Remote & mobile', wait: [] },
+  {
+    id: 'advanced',
+    heading: 'Transcript archive',
+    wait: ['Transcript archive', 'Real-time bridge', 'Secrets hygiene'],
+  },
+];
 
-  const offenders = await overflowingElements(page);
-  const byPanel = [...new Set(offenders.map((o) => o.panel))];
-  console.log(`overflowing panels: ${JSON.stringify(byPanel)}`);
-  for (const o of offenders) console.log(JSON.stringify(o));
+for (const section of SECTIONS) {
+  test(`settings section "${section.id}" fits a 390px phone screen with no sideways overflow`, async ({
+    page,
+  }) => {
+    await page.goto(`/settings?section=${section.id}`);
+    await expect(page.getByRole('heading', { level: 2, name: section.heading })).toBeVisible();
+    // Wait for the panels that load data, so their lists and tables are on the page.
+    for (const name of section.wait) {
+      await expect(page.getByRole('region', { name })).toBeVisible();
+    }
+    if (section.id === 'advanced') await expect(page.getByTestId('secrets-summary')).toBeVisible();
+    await page.waitForLoadState('networkidle');
 
-  const widths = await page.evaluate(() => {
-    const main = document.querySelector('main');
-    return {
-      scrollWidth: document.documentElement.scrollWidth,
-      innerWidth: window.innerWidth,
-      mainScrollWidth: main?.scrollWidth ?? 0,
-      mainClientWidth: main?.clientWidth ?? 0,
-    };
+    const offenders = await overflowingElements(page);
+    const byPanel = [...new Set(offenders.map((o) => o.panel))];
+    console.log(`overflowing panels: ${JSON.stringify(byPanel)}`);
+    for (const o of offenders) console.log(JSON.stringify(o));
+
+    const widths = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      return {
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+        mainScrollWidth: main?.scrollWidth ?? 0,
+        mainClientWidth: main?.clientWidth ?? 0,
+      };
+    });
+    console.log(`widths: ${JSON.stringify(widths)}`);
+    expect.soft(widths.scrollWidth, 'document scrolls sideways').toBeLessThanOrEqual(widths.innerWidth);
+    expect.soft(widths.mainScrollWidth, 'main scrolls sideways').toBeLessThanOrEqual(widths.mainClientWidth);
+    expect(offenders, 'elements wider than the viewport').toEqual([]);
   });
-  console.log(`widths: ${JSON.stringify(widths)}`);
-  expect.soft(widths.scrollWidth, 'document scrolls sideways').toBeLessThanOrEqual(widths.innerWidth);
-  expect.soft(widths.mainScrollWidth, 'main scrolls sideways').toBeLessThanOrEqual(widths.mainClientWidth);
-  expect(offenders, 'elements wider than the viewport').toEqual([]);
+}
+
+test('the phone section picker switches sections and writes ?section= to the URL', async ({ page }) => {
+  await page.goto('/settings');
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Projects' })).toBeVisible();
+  // The desktop side list is hidden at phone width; the picker is the way in.
+  await expect(page.getByRole('button', { name: 'Limits & budgets' })).toBeHidden();
+  await page.getByRole('combobox', { name: 'Settings section' }).selectOption('limits');
+  await expect(page).toHaveURL(/[?&]section=limits\b/);
+  await expect(page.getByRole('heading', { level: 2, name: 'Limits & budgets' })).toBeVisible();
 });

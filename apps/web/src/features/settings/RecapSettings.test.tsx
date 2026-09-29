@@ -37,7 +37,7 @@ describe('RecapSettings', () => {
     renderP3(<RecapSettings />);
     await user.click(await screen.findByLabelText('Enable automatic recaps'));
     await user.selectOptions(screen.getByLabelText('Trigger'), 'on_idle');
-    await user.selectOptions(screen.getByLabelText('Engine'), 'anthropic-api');
+    await user.click(screen.getByRole('radio', { name: 'Anthropic API' }));
     await user.clear(screen.getByLabelText('Monthly budget (USD)'));
     await user.type(screen.getByLabelText('Monthly budget (USD)'), '35');
     await user.clear(screen.getByLabelText('Output language'));
@@ -80,7 +80,9 @@ describe('RecapSettings', () => {
     setApiClientForTests(api());
     const user = userEvent.setup();
     renderP3(<RecapSettings />);
-    await user.selectOptions(await screen.findByLabelText('Engine'), 'anthropic-api');
-    expect(screen.getByText(/ANTHROPIC_API_KEY/)).toBeTruthy();
+    const apiEngine = await screen.findByRole('radio', { name: 'Anthropic API' });
+    expect(screen.queryByRole('status')).toBeNull();
+    await user.click(apiEngine);
+    expect(screen.getByRole('status').textContent).toMatch(/ANTHROPIC_API_KEY/);
   });
 });

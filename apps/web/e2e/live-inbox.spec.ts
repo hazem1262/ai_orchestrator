@@ -78,7 +78,7 @@ test('review and red tests are triaged with the keyboard', async ({ page }) => {
 });
 
 test('settings show archive status and retention warning', async ({ page }) => {
-  await page.goto('/settings');
+  await page.goto('/settings?section=advanced');
   await page.getByRole('button', { name: 'Sync now' }).click();
   await expect(page.getByText(/^\d+ files · /)).toBeVisible();
   await expect(page.getByRole('status')).toContainText('30 days (default)');

@@ -9,6 +9,7 @@ import {
 import { Badge } from '@/components/ui/badge.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
 import { Input } from '@/components/ui/input.tsx';
+import { SettingsCard } from '@/features/settings/SettingsCard.tsx';
 import { DecisionsLog } from './DecisionsLog.tsx';
 import { SupervisorRules } from './SupervisorRules.tsx';
 
@@ -50,15 +51,13 @@ export function SupervisorSettings() {
   };
 
   return (
-    <section className="flex min-w-0 flex-col gap-3" aria-labelledby="settings-supervisor">
-      <h2 id="settings-supervisor" className="text-base font-semibold">
-        Supervisor (opt-in)
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        Answers only allow-listed routine questions ("continue", "run the tests", "proceed with the approved
-        plan", "retry") in sessions this app owns. Everything else goes to the inbox. It never merges, deploys
-        or touches production, and every decision is audited.
-      </p>
+    <SettingsCard
+      titleId="settings-supervisor"
+      title="Supervisor (opt-in)"
+      description={
+        'Answers only allow-listed routine questions ("continue", "run the tests", "proceed with the approved plan", "retry") in sessions this app owns. Everything else goes to the inbox. It never merges, deploys or touches production, and every decision is audited.'
+      }
+    >
       {status.isLoading ? <p className="text-sm">Loading…</p> : null}
       {status.error ? (
         <p className="text-sm text-destructive">Supervisor unavailable: {status.error.message}</p>
@@ -155,8 +154,8 @@ export function SupervisorSettings() {
               {save.error.message}
             </p>
           ) : null}
-          <fieldset className="flex min-w-0 flex-col gap-1 rounded border p-3 text-sm">
-            <legend className="px-1">Projects</legend>
+          <fieldset className="flex min-w-0 flex-col gap-2 rounded-lg border p-3 text-sm">
+            <legend className="px-1 font-medium">Projects</legend>
             {projects.length === 0 ? <p className="text-muted-foreground">No projects yet.</p> : null}
             {projects.map((p) => (
               <label key={p.id} className="flex items-center gap-2" htmlFor={`sup-project-${p.id}`}>
@@ -179,6 +178,6 @@ export function SupervisorSettings() {
           <DecisionsLog limit={20} />
         </>
       ) : null}
-    </section>
+    </SettingsCard>
   );
 }
