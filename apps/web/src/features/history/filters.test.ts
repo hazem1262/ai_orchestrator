@@ -3,6 +3,7 @@ import {
   cleanSearch,
   parseHistorySearch,
   searchToViewQuery,
+  secondaryFilterCount,
   toListFilters,
   viewQueryToSearch,
 } from './filters.ts';
@@ -52,5 +53,12 @@ describe('history search params', () => {
     expect(cleanSearch({ q: '', ticket: undefined, pinned: false, touchedProd: true })).toEqual({
       touchedProd: true,
     });
+  });
+
+  it('counts only the filters the Filters sheet owns, not q/source/availability', () => {
+    expect(secondaryFilterCount({})).toBe(0);
+    expect(secondaryFilterCount({ q: 'x', source: 'codex', availability: 'archived' })).toBe(0);
+    expect(secondaryFilterCount({ ticket: 'SAF-1', minCost: 1, touchedProd: true })).toBe(3);
+    expect(secondaryFilterCount({ touchedProd: false })).toBe(0);
   });
 });

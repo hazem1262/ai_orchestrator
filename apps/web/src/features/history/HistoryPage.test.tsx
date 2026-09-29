@@ -70,7 +70,10 @@ describe('HistoryPage', () => {
       expect(sessionsList).toHaveBeenLastCalledWith({ q: 'weekend', projectId: 'wakecap', limit: 50 }),
     );
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Touched prod' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Touched prod' }));
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Touched prod' })).toBeNull());
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Source' }), 'codex');
     await waitFor(() =>
       expect(currentSearch()).toEqual({ q: 'weekend', touchedProd: true, source: 'codex' }),
@@ -117,7 +120,12 @@ describe('HistoryPage', () => {
     await userEvent.click(row.getByRole('button', { name: 'Pin' }));
     await waitFor(() => expect(api.sessionsPin).toHaveBeenCalledWith('claude', 's-basic', true));
 
-    await userEvent.click(row.getByRole('button', { name: 'Labels' }));
+    const menuTrigger = () =>
+      row.getByRole('button', { name: 'More actions for Notification service test check' });
+    menuTrigger().focus();
+    await userEvent.keyboard('{Enter}');
+    let menu = await screen.findByRole('menu');
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Edit labels…' }));
     const input = row.getByRole('textbox', { name: 'Labels' });
     await userEvent.clear(input);
     await userEvent.type(input, 'bug, later{Enter}');
@@ -125,7 +133,10 @@ describe('HistoryPage', () => {
       expect(api.sessionsLabel).toHaveBeenCalledWith('claude', 's-basic', ['bug', 'later']),
     );
 
-    await userEvent.click(row.getByRole('button', { name: 'Hide' }));
+    menuTrigger().focus();
+    await userEvent.keyboard('{Enter}');
+    menu = await screen.findByRole('menu');
+    await userEvent.click(within(menu).getByRole('menuitem', { name: 'Hide' }));
     await waitFor(() =>
       expect(api.sessionsLabel).toHaveBeenLastCalledWith('claude', 's-basic', ['later', 'hidden']),
     );
@@ -166,7 +177,8 @@ describe('HistoryPage', () => {
       .mockResolvedValueOnce({ items, nextCursor: null });
     renderWithProviders(<Harness />, { api: createFakeApi({ sessionsList }) });
 
-    expect((await screen.findByRole('alert')).textContent).toBe('network down');
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByText('network down')).toBeTruthy();
     const retry = screen.getByRole('button', { name: 'Retry' });
     expect(retry).toBeTruthy();
     expect(screen.queryByText('No sessions match these filters.')).toBeNull();

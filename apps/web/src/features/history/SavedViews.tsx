@@ -1,3 +1,4 @@
+import { Bookmark, X } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { useDeleteView, useSavedViews, useSaveView } from '@/api/queries/views.ts';
 import { Button } from '@/components/ui/button.tsx';
@@ -18,19 +19,20 @@ export function SavedViews({ search, onApply }: { search: HistorySearch; onApply
   };
 
   return (
-    <section aria-label="Saved views" className="flex flex-wrap items-center gap-1">
+    <section aria-label="Saved views" className="flex flex-wrap items-center gap-1.5">
+      {views.data?.length ? <Bookmark aria-hidden className="size-3.5 text-muted-foreground" /> : null}
       {(views.data ?? []).map((v) => (
         <span key={v.id} className="inline-flex items-center rounded-md border">
           <Button size="sm" variant="ghost" onClick={() => onApply(viewQueryToSearch(v.query))}>
             {v.name}
           </Button>
           <Button
-            size="icon"
+            size="icon-sm"
             variant="ghost"
             aria-label={`Delete view ${v.name}`}
             onClick={() => remove.mutate(v.id)}
           >
-            ×
+            <X />
           </Button>
         </span>
       ))}

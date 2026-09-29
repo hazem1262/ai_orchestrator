@@ -76,3 +76,11 @@ export function searchToViewQuery(search: HistorySearch): Record<string, string>
 export function viewQueryToSearch(q: Record<string, string>): HistorySearch {
   return parseHistorySearch(q);
 }
+
+/** Keys the Filters sheet owns, exposed as a badge count on its trigger. */
+const SECONDARY_KEYS = [...STRING_KEYS.filter((k) => k !== 'q'), ...NUMBER_KEYS, ...BOOL_KEYS] as const;
+
+export function secondaryFilterCount(search: HistorySearch): number {
+  return SECONDARY_KEYS.filter((k) => search[k] !== undefined && search[k] !== '' && search[k] !== false)
+    .length;
+}
