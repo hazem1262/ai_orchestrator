@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Checkbox } from '@/components/ui/checkbox.tsx';
-import { GitDialog } from './GitDialog.tsx';
+import { GitAlertDialog } from './GitAlertDialog.tsx';
 import type { ConfirmRequest } from './useConfirmedMutation.ts';
 
 interface Props<V> {
@@ -37,7 +37,27 @@ export function GitConfirmDialog<V>({
   const files = Array.isArray(request.details.files) ? (request.details.files as string[]) : [];
   const mainDirty = Array.isArray(request.details.mainDirty) ? (request.details.mainDirty as string[]) : [];
   return (
-    <GitDialog title={title} description={request.summary} onClose={onCancel}>
+    <GitAlertDialog
+      title={title}
+      description={request.summary}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant={danger ? 'destructive' : 'default'}
+            disabled={busy || (external && !ack)}
+            onClick={() =>
+              onConfirm(external ? ({ confirmExternal: true } as unknown as Partial<V>) : undefined)
+            }
+          >
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
       {files.length > 0 && (
         <ul className="max-h-48 overflow-auto font-mono text-xs" aria-label="Files">
           {files.map((f) => (
@@ -53,20 +73,6 @@ export function GitConfirmDialog<V>({
           <label htmlFor={ackId}>I understand this worktree was created outside the app</label>
         </div>
       )}
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onCancel} disabled={busy}>
-          Cancel
-        </Button>
-        <Button
-          variant={danger ? 'destructive' : 'default'}
-          disabled={busy || (external && !ack)}
-          onClick={() =>
-            onConfirm(external ? ({ confirmExternal: true } as unknown as Partial<V>) : undefined)
-          }
-        >
-          {confirmLabel}
-        </Button>
-      </div>
-    </GitDialog>
+    </GitAlertDialog>
   );
 }

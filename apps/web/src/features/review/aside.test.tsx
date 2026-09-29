@@ -107,7 +107,7 @@ describe('SummaryCard', () => {
       expect((screen.getByLabelText('PR title') as HTMLInputElement).value).toBe('SAF-1 x'),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Create PR' }));
-    await screen.findByRole('dialog');
+    await screen.findByRole('alertdialog');
     fireEvent.click(screen.getAllByRole('button', { name: 'Create PR' }).at(-1) as HTMLElement);
     expect(await screen.findByText('#7 · open · checks none')).toBeDefined();
     await waitFor(() => expect(within(card).queryByText('No PR yet')).toBeNull());
@@ -242,9 +242,9 @@ describe('ShipPanel', () => {
       ['Create PR', 'Create PR'],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: button }));
-      await screen.findByRole('dialog');
+      await screen.findByRole('alertdialog');
       fireEvent.click(screen.getAllByRole('button', { name: confirmLabel }).at(-1) as HTMLElement);
-      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     }
     expect(calls).toEqual(['commit', 'push', 'pr']);
     expect(shipPr).toHaveBeenLastCalledWith({

@@ -98,7 +98,7 @@ describe('daemon confirmation flow', () => {
     );
     renderP3(<AutomationEditor projectId="wakecap" initial={auto} onDone={onDone} />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Delete automation?' });
+    const dialog = await screen.findByRole('alertdialog', { name: 'Delete automation?' });
     expect(dialog.textContent).toContain('Delete the automation "Fix CI" and its run history');
     expect(onDone).not.toHaveBeenCalled();
     fireEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1) as HTMLElement);

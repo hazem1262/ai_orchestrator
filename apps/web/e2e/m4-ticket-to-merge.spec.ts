@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { confirmDialog } from './support/confirm-dialog';
 import { type M4State, STATE_FILE } from './support/m4-seed';
 
 const state = () => JSON.parse(readFileSync(STATE_FILE, 'utf8')) as M4State;
@@ -9,13 +10,6 @@ const BRANCH = 'feat/SAF-4242-e2e-flow';
 async function api<T>(path: string): Promise<T> {
   const r = await fetch(`http://127.0.0.1:4418${path}`, { headers: { 'x-orc-token': state().token } });
   return (await r.json()) as T;
-}
-
-async function confirmDialog(page: import('@playwright/test').Page, label: string) {
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: label, exact: true }).click();
-  await expect(dialog).toBeHidden();
 }
 
 test('ticket → worktree → agent → review with inline comment → PR → merged → worktree archived', async ({
