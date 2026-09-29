@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { SessionDetailPage } from '@/features/session-detail/SessionDetailPage.tsx';
-import { DETAIL_TAB_IDS, type DetailNavigation } from '@/features/session-detail/tabs/SessionDetailTabs.tsx';
+import { DETAIL_TAB_IDS, type DetailNavigation } from '@/features/session-detail/tabs/detail-tabs.ts';
 import { isSource } from '@/lib/source.ts';
 
 const DetailSearch = z.object({

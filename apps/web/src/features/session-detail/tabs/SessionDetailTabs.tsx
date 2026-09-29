@@ -10,40 +10,14 @@ import { conductorChain, isConductorSession } from '../agents/conductor.ts';
 import { TrajectoryTimeline } from '../timeline/TrajectoryTimeline.tsx';
 import { ViewModeToggle } from '../timeline/ViewModeToggle.tsx';
 import { DiffTab } from './DiffTab.tsx';
+import { DETAIL_TABS, type DetailNavigation, type DetailTab } from './detail-tabs.ts';
 import { FilesTab } from './FilesTab.tsx';
 import { LinksTab } from './LinksTab.tsx';
 import { RawTab } from './RawTab.tsx';
 import { TerminalTab } from './TerminalTab.tsx';
 import { UsageTab } from './UsageTab.tsx';
 
-export const DETAIL_TAB_IDS = [
-  'timeline',
-  'terminal',
-  'diff',
-  'files',
-  'agents',
-  'usage',
-  'links',
-  'raw',
-] as const;
-export type DetailTab = (typeof DETAIL_TAB_IDS)[number];
-/** `timeline` keeps its URL value (`?tab=timeline`) so existing links still land on the transcript. */
-export const DETAIL_TABS: ReadonlyArray<{ id: DetailTab; label: string }> = [
-  { id: 'timeline', label: 'Transcript' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'diff', label: 'Diff' },
-  { id: 'files', label: 'Files' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'links', label: 'Links' },
-  { id: 'raw', label: 'Raw' },
-];
-
-export interface DetailNavigation {
-  tab?: DetailTab;
-  agent?: string | null;
-  file?: string | null;
-}
+export { DETAIL_TAB_IDS, DETAIL_TABS, type DetailNavigation, type DetailTab } from './detail-tabs.ts';
 
 interface Props {
   session: Session;

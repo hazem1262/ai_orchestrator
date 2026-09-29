@@ -1,14 +1,11 @@
 import type { Source } from '@orc/core';
-import { BarChart, LineChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components';
-import * as echarts from 'echarts/core';
-import { CanvasRenderer } from 'echarts/renderers';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { useSessionUsageSeries } from '@/api/queries/session-detail.ts';
 import { formatPct, formatTokens } from '../timeline/format.ts';
-import { buildUsageOption, hasCost, tokenSplitByModel, type UsageMetric } from './usage-option.ts';
+import { hasCost, tokenSplitByModel, type UsageMetric } from './usage-option.ts';
 
-echarts.use([LineChart, BarChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer]);
+// ECharts loads with the chart, not with the session page.
+const UsageChart = lazy(() => import('./UsageChart.tsx').then((m) => ({ default: m.UsageChart })));
 
 const METRICS: Array<{ id: UsageMetric; label: string }> = [
   { id: 'cost', label: 'Cost' },
@@ -21,20 +18,6 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
   const costAvailable = hasCost(points);
   const [metric, setMetric] = useState<UsageMetric>('cost');
   const effective: UsageMetric = costAvailable ? metric : 'tokens';
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || points.length === 0) return;
-    const chart = echarts.init(el, undefined, { renderer: 'canvas' });
-    chart.setOption(buildUsageOption(points, effective));
-    const onResize = () => chart.resize();
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-      chart.dispose();
-    };
-  }, [points, effective]);
 
   const totals = tokenSplitByModel(points).reduce(
     (t, s) => ({
@@ -89,7 +72,9 @@ export function UsageTab({ source, id }: { source: Source; id: string }) {
       <p data-testid="usage-totals" className="mb-2 text-xs text-muted-foreground">
         {`cache read ${formatTokens(totals.cacheRead)} · cache write ${formatTokens(totals.cacheWrite)} · input ${formatTokens(totals.input)} · output ${formatTokens(totals.output)} · cache hit ${formatPct(denom > 0 ? totals.cacheRead / denom : null)}`}
       </p>
-      <div ref={ref} data-testid="usage-chart" className="h-[420px] w-full" />
+      <Suspense fallback={<div data-testid="usage-chart" className="h-[420px] w-full" />}>
+        <UsageChart points={points} metric={effective} />
+      </Suspense>
     </div>
   );
 }

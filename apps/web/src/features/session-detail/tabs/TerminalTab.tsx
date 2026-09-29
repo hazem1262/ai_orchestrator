@@ -1,9 +1,14 @@
 import type { Session } from '@orc/core';
+import { lazy, Suspense } from 'react';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty.tsx';
-import { TerminalView } from '@/features/terminal/TerminalView.tsx';
 import { useTerminalStore } from '@/stores/terminals.ts';
+
+// xterm is only needed once a session has an app-owned pty, so it loads on demand.
+const TerminalView = lazy(() =>
+  import('@/features/terminal/TerminalView.tsx').then((m) => ({ default: m.TerminalView })),
+);
 
 /**
  * The session's own pty, when the app owns one. The daemon lets several sockets attach to one pty,
@@ -41,7 +46,9 @@ export function TerminalTab({ session }: { session: Session }) {
         </Button>
       </div>
       <div className="h-[60dvh] min-h-72 overflow-hidden rounded-lg border bg-terminal text-terminal-foreground">
-        <TerminalView ptyId={ptyId} active />
+        <Suspense fallback={<p className="p-2 text-xs text-terminal-foreground/60">Loading terminal…</p>}>
+          <TerminalView ptyId={ptyId} active />
+        </Suspense>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import type { SessionLinks, UsagePoint } from '@orc/api-contract';
 import type { FileSummary, Session } from '@orc/core';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlanContent } from '@/api/queries/safety';
@@ -70,10 +70,12 @@ beforeEach(() => {
 });
 
 describe('UsageTab', () => {
-  it('draws token charts when no cost is known and disposes on unmount', () => {
+  it('draws token charts when no cost is known and disposes on unmount', async () => {
     vi.mocked(useSessionUsageSeries).mockReturnValue(q(usage));
     const { unmount } = renderP3(<UsageTab source="claude" id="s-basic" />);
     expect(screen.getByRole('radio', { name: 'Cost' }).hasAttribute('disabled')).toBe(true);
+    // The chart module is lazy-loaded, so it draws after the first render.
+    await waitFor(() => expect(chart.setOption).toHaveBeenCalled());
     const option = chart.setOption.mock.calls[0]?.[0] as { yAxis: Array<{ name?: string }> };
     expect(option.yAxis[0]?.name).toBe('tokens');
     expect(screen.getByTestId('usage-totals').textContent).toBe(
