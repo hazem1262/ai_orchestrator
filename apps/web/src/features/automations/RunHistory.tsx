@@ -1,12 +1,23 @@
 import type { AutomationRunDetail, AutomationWithStats } from '@orc/api-contract';
+import { GitPullRequest, RotateCw, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 import { getApiClient } from '@/api/client.ts';
 import { automationKeys, useAutomationRuns, useRunAction, useRunLog } from '@/api/queries/automations.ts';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog.tsx';
 import { Badge, type BadgeVariant } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.tsx';
 import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
 import { formatCost, formatDateTime } from '@/lib/format.ts';
-import { ConfirmActionDialog } from './ConfirmActionDialog.tsx';
 
 const STATUS_VARIANT: Record<AutomationRunDetail['status'], BadgeVariant> = {
   queued: 'outline',
@@ -43,6 +54,7 @@ export function RunHistory({
   const log = useRunLog(logRun, logTarget !== null && LIVE.has(logTarget.status));
   const deduped = action.data !== undefined && 'deduped' in action.data;
   const failure = error ?? action.error ?? approve.error ?? log.error;
+  const plan = typeof approve.pending?.details.plan === 'string' ? approve.pending.details.plan : '';
 
   const onApprove = (r: AutomationRunDetail) => {
     if (!confirm) {
@@ -65,89 +77,95 @@ export function RunHistory({
       ) : null}
       {deduped ? <p className="text-sm text-muted-foreground">That run is already queued.</p> : null}
       {runs.length > 0 ? (
-        <div className="relative overflow-x-auto">
-          <table className="w-full min-w-[36rem] text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-2 font-normal">Started</th>
-                <th className="pr-2 font-normal">Trigger</th>
-                <th className="pr-2 font-normal">Status</th>
-                <th className="pr-2 font-normal">Cost</th>
-                <th className="pr-2 font-normal">Result</th>
-                <th className="font-normal">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <tr key={r.id} className="border-t align-top">
-                  <td className="py-1 pr-2 whitespace-nowrap">{formatDateTime(r.startedAt)}</td>
-                  <td className="py-1 pr-2">{r.triggerSource}</td>
-                  <td className="py-1 pr-2">
-                    <Badge variant={STATUS_VARIANT[r.status]}>{r.status.replace('_', ' ')}</Badge>
-                  </td>
-                  <td className="py-1 pr-2">{formatCost(r.costUsd)}</td>
-                  <td className="max-w-md py-1 pr-2">
-                    {r.prUrl ? (
-                      <a className="underline" href={r.prUrl} target="_blank" rel="noreferrer">
-                        PR
-                      </a>
+        <Table className="min-w-[36rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Started</TableHead>
+              <TableHead>Trigger</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Cost</TableHead>
+              <TableHead>Result</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((r) => (
+              <TableRow key={r.id} className="align-top">
+                <TableCell className="whitespace-nowrap">{formatDateTime(r.startedAt)}</TableCell>
+                <TableCell>{r.triggerSource}</TableCell>
+                <TableCell>
+                  <Badge variant={STATUS_VARIANT[r.status]}>{r.status.replace('_', ' ')}</Badge>
+                </TableCell>
+                <TableCell>{formatCost(r.costUsd)}</TableCell>
+                <TableCell className="max-w-md whitespace-normal">
+                  {r.prUrl ? (
+                    <a
+                      className="inline-flex items-center gap-1 underline"
+                      href={r.prUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <GitPullRequest className="size-3.5" aria-hidden />
+                      PR
+                    </a>
+                  ) : null}
+                  {r.diffStat ? (
+                    <span className="ml-2 text-xs">
+                      {r.diffStat.files} files +{r.diffStat.insertions} −{r.diffStat.deletions}
+                    </span>
+                  ) : null}
+                  {r.summary ? (
+                    <p className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
+                      {r.summary}
+                    </p>
+                  ) : null}
+                  {r.error && r.error !== r.summary ? (
+                    <p className="text-xs text-destructive">{r.error}</p>
+                  ) : null}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {r.status === 'awaiting_approval' ? (
+                      <>
+                        <Button size="sm" disabled={approve.busy} onClick={() => onApprove(r)}>
+                          Approve plan
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={action.isPending}
+                          onClick={() => action.mutate({ runId: r.id, action: 'reject' })}
+                        >
+                          Reject
+                        </Button>
+                      </>
                     ) : null}
-                    {r.diffStat ? (
-                      <span className="ml-2 text-xs">
-                        {r.diffStat.files} files +{r.diffStat.insertions} −{r.diffStat.deletions}
-                      </span>
-                    ) : null}
-                    {r.summary ? (
-                      <p className="line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">
-                        {r.summary}
-                      </p>
-                    ) : null}
-                    {r.error && r.error !== r.summary ? (
-                      <p className="text-xs text-destructive">{r.error}</p>
-                    ) : null}
-                  </td>
-                  <td className="py-1">
-                    <div className="flex flex-wrap justify-end gap-1">
-                      {r.status === 'awaiting_approval' ? (
-                        <>
-                          <Button size="sm" disabled={approve.busy} onClick={() => onApprove(r)}>
-                            Approve plan
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={action.isPending}
-                            onClick={() => action.mutate({ runId: r.id, action: 'reject' })}
-                          >
-                            Reject
-                          </Button>
-                        </>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={action.isPending}
-                        onClick={() => action.mutate({ runId: r.id, action: 'rerun' })}
-                      >
-                        Rerun
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-pressed={logRun === r.id}
-                        onClick={() => setLogRun(logRun === r.id ? null : r.id)}
-                      >
-                        Log
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={action.isPending}
+                      onClick={() => action.mutate({ runId: r.id, action: 'rerun' })}
+                    >
+                      <RotateCw className="size-3.5" aria-hidden />
+                      Rerun
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-pressed={logRun === r.id}
+                      onClick={() => setLogRun(logRun === r.id ? null : r.id)}
+                    >
+                      <ScrollText className="size-3.5" aria-hidden />
+                      Log
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       ) : null}
       {logRun ? (
         <pre
@@ -158,14 +176,36 @@ export function RunHistory({
           {log.isLoading ? 'Loading…' : (log.data?.lines ?? []).join('\n') || 'No output yet.'}
         </pre>
       ) : null}
-      <ConfirmActionDialog
-        request={approve.pending}
-        busy={approve.busy}
-        title="Approve plan?"
-        confirmLabel="Approve"
-        onConfirm={() => void approve.confirm()}
-        onCancel={approve.cancel}
-      />
+      <AlertDialog
+        open={approve.pending !== null}
+        onOpenChange={(open) => {
+          if (!open) approve.cancel();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve plan?</AlertDialogTitle>
+            <AlertDialogDescription>{approve.pending?.summary}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {plan ? (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">
+              {plan}
+            </pre>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={approve.busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={approve.busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void approve.confirm();
+              }}
+            >
+              Approve
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
