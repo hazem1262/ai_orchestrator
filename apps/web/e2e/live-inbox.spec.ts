@@ -43,9 +43,19 @@ test('a waiting session shows on the board and in the inbox within seconds', asy
   await expect(card).toHaveAttribute('data-attention', 'true');
   await expect(card.getByRole('button', { name: 'Terminal' })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
-  await card.getByRole('button', { name: 'Stop' }).click();
-  await expect(page.getByRole('article', { name: 'fake session — Ended' })).toBeVisible({
+  // The history spec's resumed session is also named "fake session" and can still be on the board
+  // as Ended, so the card is followed by its session link rather than by its name alone.
+  const sessionHref = await card.getByRole('link', { name: 'fake session' }).getAttribute('href');
+  await card.getByRole('button', { name: 'More actions for fake session' }).click();
+  await page.getByRole('menuitem', { name: 'Stop session…' }).click();
+  const confirm = page.getByRole('alertdialog', { name: 'Stop “fake session”?' });
+  await confirm.getByRole('button', { name: 'Stop session' }).click();
+  await expect(confirm).toBeHidden();
+  await expect(
+    page
+      .getByRole('article', { name: 'fake session — Ended' })
+      .filter({ has: page.locator(`a[href="${sessionHref}"]`) }),
+  ).toBeVisible({
     timeout: 5000,
   });
   await page.getByRole('link', { name: /Inbox,/ }).click();

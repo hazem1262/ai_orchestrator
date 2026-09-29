@@ -1,4 +1,5 @@
 import { fireEvent, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setApiClientForTests } from '../../api/client.ts';
 import { useLiveLayoutStore } from '../../stores/live-layout.ts';
@@ -52,6 +53,13 @@ const full = liveSessionFixture(
   },
 );
 
+/** Opens a Radix menu from the keyboard. Radix opens it on pointerdown, and user-event drops that
+ *  pointerdown when an earlier test in the file left its pointer state behind. */
+async function openMenu(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement) {
+  trigger.focus();
+  await user.keyboard('{Enter}');
+}
+
 describe('SessionCard', () => {
   it('shows every F1 field', async () => {
     renderWithProviders(<SessionCard session={full} now={NOW} pinned={false} onTogglePin={() => {}} />, {
@@ -86,6 +94,7 @@ describe('SessionCard', () => {
   });
 
   it('marks a non-attention status and drops Stop once the session ended', async () => {
+    const user = userEvent.setup();
     const busy = liveSessionFixture({ id: 's-busy', name: 'Busy one' }, { status: 'busy' });
     const { unmount } = renderWithProviders(
       <SessionCard session={busy} now={NOW} pinned={false} onTogglePin={() => {}} />,
@@ -93,7 +102,9 @@ describe('SessionCard', () => {
     );
     const busyCard = await screen.findByRole('article', { name: 'Busy one — Busy' });
     expect(busyCard.dataset.attention).toBe('false');
-    expect(within(busyCard).getByRole('button', { name: 'Stop' })).toBeTruthy();
+    await openMenu(user, within(busyCard).getByRole('button', { name: 'More actions for Busy one' }));
+    expect(await screen.findByRole('menuitem', { name: 'Stop session…' })).toBeTruthy();
+    await user.keyboard('{Escape}');
     unmount();
 
     const ended = liveSessionFixture({ id: 's-end', name: 'Ended one' }, { status: 'ended' });
@@ -102,10 +113,13 @@ describe('SessionCard', () => {
     });
     const endedCard = await screen.findByRole('article', { name: 'Ended one — Ended' });
     expect(endedCard.dataset.attention).toBe('false');
-    expect(within(endedCard).queryByRole('button', { name: 'Stop' })).toBeNull();
+    await openMenu(user, within(endedCard).getByRole('button', { name: 'More actions for Ended one' }));
+    await screen.findByRole('menuitem', { name: 'Pin to split' });
+    expect(screen.queryByRole('menuitem', { name: 'Stop session…' })).toBeNull();
   });
 
   it('opens the terminal for owned sessions and stops after confirmation', async () => {
+    const user = userEvent.setup();
     const open = vi.fn();
     useTerminalStore.setState({ open });
     renderWithProviders(<SessionCard session={full} now={NOW} pinned={false} onTogglePin={() => {}} />, {
@@ -113,27 +127,54 @@ describe('SessionCard', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Terminal' }));
     expect(open).toHaveBeenCalledWith('pty-1', 'SLA weekends');
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    const askToStop = async () => {
+      await openMenu(user, screen.getByRole('button', { name: 'More actions for SLA weekends' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Stop session…' }));
+      return screen.findByRole('alertdialog', { name: 'Stop “SLA weekends”?' });
+    };
+    let dialog = await askToStop();
+    expect(within(dialog).getByText('/Users/test/Wakecap/Backend/svc')).toBeTruthy();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(sessionsKill).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    dialog = await askToStop();
+    await user.click(within(dialog).getByRole('button', { name: 'Stop session' }));
     await vi.waitFor(() => expect(sessionsKill).toHaveBeenCalledWith('claude', 's-live', true));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(sessionsKill).toHaveBeenCalledTimes(1);
   });
 
   it('hides the terminal button for observed sessions and remembers open-in per project', async () => {
+    const user = userEvent.setup();
     const observed = liveSessionFixture({}, { ownership: 'observed' });
     renderWithProviders(<SessionCard session={observed} now={NOW} pinned onTogglePin={() => {}} />, {
       api: api(),
     });
     await screen.findByRole('article');
     expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Unpin' })).toBeTruthy();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Open in app' }), {
-      target: { value: 'finder' },
-    });
+    await openMenu(user, screen.getByRole('button', { name: /^More actions for / }));
+    expect(await screen.findByRole('menuitem', { name: 'Unpin from split' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await openMenu(user, screen.getByRole('button', { name: 'Open in app' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Finder' }));
     expect(useLiveLayoutStore.getState().openInByProject.wakecap).toBe('finder');
     fireEvent.click(screen.getByRole('button', { name: 'Open in Finder' }));
     await vi.waitFor(() => expect(sessionsOpenIn).toHaveBeenCalledWith('claude', 's1', 'finder', true));
+  });
+
+  it('copies the resume command and toggles the pin from the actions menu', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const onTogglePin = vi.fn();
+    renderWithProviders(<SessionCard session={full} now={NOW} pinned={false} onTogglePin={onTogglePin} />, {
+      api: api(),
+    });
+    const more = await screen.findByRole('button', { name: 'More actions for SLA weekends' });
+    await openMenu(user, more);
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy resume command' }));
+    expect(writeText).toHaveBeenCalledWith(`cd '/Users/test/Wakecap' && claude --resume s-live`);
+    await openMenu(user, more);
+    await user.click(await screen.findByRole('menuitem', { name: 'Pin to split' }));
+    expect(onTogglePin).toHaveBeenCalledTimes(1);
   });
 });
