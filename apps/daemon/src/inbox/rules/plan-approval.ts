@@ -13,6 +13,11 @@ const MAX_PLAN_CHARS = 20_000;
 /** The inbox identity of a session's pending plan; the engine composes the dedupe key from it. */
 const planItem = (pk: string) => ({ kind: 'plan_approval', scope: { session: pk } }) as const;
 
+const splitSessionPk = (pk: string) => {
+  const idx = pk.indexOf(':');
+  return { source: pk.slice(0, idx) as Source, id: pk.slice(idx + 1) };
+};
+
 /**
  * Opens a `plan_approval` item when a session goes `waiting` on an unanswered ExitPlanMode call,
  * and resolves it when the session leaves `waiting`. The transcript is read incrementally: each
@@ -23,9 +28,7 @@ export function createPlanApprovalRule(): InboxRule & { pending(pk: string): Pen
   const pendingByPk = new Map<string, PendingPlan | null>();
 
   function scan(ctx: DaemonContext, pk: string): PendingPlan | null {
-    const idx = pk.indexOf(':');
-    const source = pk.slice(0, idx) as Source;
-    const id = pk.slice(idx + 1);
+    const { source, id } = splitSessionPk(pk);
     let pending = pendingByPk.get(pk) ?? null;
     let after = cursor.get(pk);
     for (;;) {
@@ -63,13 +66,20 @@ export function createPlanApprovalRule(): InboxRule & { pending(pk: string): Pen
       const plan = scan(ctx, e.pk);
       if (!plan) return;
       const s = ctx.sessions.getByPk(e.pk);
+      const { source, id } = splitSessionPk(e.pk);
       ctx.inbox.upsert({
         ...planItem(e.pk),
         sessionId: e.pk,
         projectId: s?.projectId ?? null,
         ticket: s?.tickets[0] ?? null,
         reason: 'Plan awaiting approval',
-        payload: { toolUseId: plan.toolUseId, plan: plan.plan, owned: s?.live?.ownership === 'owned' },
+        payload: {
+          source,
+          id,
+          toolUseId: plan.toolUseId,
+          plan: plan.plan,
+          owned: s?.live?.ownership === 'owned',
+        },
       });
       ctx.bus.emit({ type: 'plan.pending', pk: e.pk, plan: plan.plan, toolUseId: plan.toolUseId });
     },

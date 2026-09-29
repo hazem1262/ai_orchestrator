@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import type { LiveState, PrStatus, WorkStream } from '@orc/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeP5Context, makeSession, withWakecap } from '../../../test/p5-helpers.ts';
+import { recordingInbox } from '../../../test/stubs.ts';
+import { inboxDedupeKey } from '../../inbox/dedupe-key.ts';
 import { createStreamService, type StreamService } from '../streams/streams.ts';
 import { createGoalService, NEEDS_ANSWER, WAITING_BLOCK_MS } from './goals.ts';
 
@@ -41,7 +43,12 @@ function setup() {
     live: live('busy'),
   });
   const s2 = makeSession({ id: 's2', firstPrompt: 'x'.repeat(300) });
-  const t = makeP5Context({ config: withWakecap('/Users/test/Wakecap'), data: { sessions: [s1, s2] } });
+  const inbox = recordingInbox();
+  const t = makeP5Context({
+    overrides: { inbox },
+    config: withWakecap('/Users/test/Wakecap'),
+    data: { sessions: [s1, s2] },
+  });
   const stream: WorkStream = {
     ticket: 'SAF-1',
     projectId: 'wakecap',
@@ -56,7 +63,7 @@ function setup() {
   };
   t.ctx.streams = { list: () => [stream] } as unknown as StreamService;
   const goals = createGoalService(t.ctx, { now: () => new Date(nowMs), sweepMs: 1_000_000 });
-  return { ...t, goals, advance: (ms: number) => (nowMs += ms) };
+  return { ...t, inbox, goals, advance: (ms: number) => (nowMs += ms) };
 }
 
 describe('goal service', () => {
@@ -138,6 +145,79 @@ describe('goal service', () => {
     expect(goals.get('stream', 'SAF-1')?.state).toBe('complete');
     expect(goals.get('session', 'claude:s2')?.state).toBe('active');
     goals.stop();
+  });
+});
+
+describe('goal service inbox items', () => {
+  const blockedKey = (scope: { session: string } | { ticket: string }) =>
+    inboxDedupeKey({ kind: 'blocked', scope });
+
+  it('opens a blocked inbox item when a goal is blocked and resolves it when unblocked', () => {
+    const { ctx, inbox, goals, advance } = setup();
+    goals.start();
+    goals.set({
+      targetType: 'session',
+      targetId: 'claude:s1',
+      objective: 'ship it',
+      state: 'active',
+      blockedReason: null,
+    });
+    ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:s1', from: 'busy', to: 'waiting' });
+    advance(WAITING_BLOCK_MS);
+    expect(goals.sweep()).toBe(1);
+    expect(inbox.upserts).toContainEqual(
+      expect.objectContaining({
+        kind: 'blocked',
+        scope: { session: 'claude:s1' },
+        payload: expect.objectContaining({ source: 'claude', id: 's1', blockedReason: NEEDS_ANSWER }),
+      }),
+    );
+    ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:s1', from: 'waiting', to: 'busy' });
+    expect(inbox.resolved).toContain(blockedKey({ session: 'claude:s1' }));
+    goals.stop();
+  });
+
+  it('blocked replaces the waiting item', () => {
+    const { ctx, inbox, goals, advance } = setup();
+    goals.start();
+    ctx.bus.emit({ type: 'session.statusChanged', pk: 'claude:s1', from: 'busy', to: 'waiting' });
+    advance(WAITING_BLOCK_MS);
+    goals.sweep();
+    expect(inbox.upserts.map((u) => u.kind)).toContain('blocked');
+    expect(inbox.resolved).toContain(inboxDedupeKey({ kind: 'waiting', scope: { session: 'claude:s1' } }));
+    goals.stop();
+  });
+
+  it('a manual blocked goal raises the item', () => {
+    const { inbox, goals } = setup();
+    goals.set({
+      targetType: 'session',
+      targetId: 'claude:s1',
+      objective: 'ship it',
+      state: 'blocked',
+      blockedReason: 'waiting on QA',
+    });
+    expect(inbox.upserts).toContainEqual(
+      expect.objectContaining({
+        kind: 'blocked',
+        scope: { session: 'claude:s1' },
+        payload: expect.objectContaining({ source: 'claude', id: 's1', blockedReason: 'waiting on QA' }),
+      }),
+    );
+  });
+
+  it('scopes a blocked stream goal to its ticket', () => {
+    const { inbox, goals } = setup();
+    goals.set({
+      targetType: 'stream',
+      targetId: 'SAF-1',
+      objective: 'exclude weekends',
+      state: 'blocked',
+      blockedReason: 'waiting on QA',
+    });
+    expect(inbox.upserts).toContainEqual(
+      expect.objectContaining({ kind: 'blocked', scope: { ticket: 'SAF-1' } }),
+    );
   });
 });
 
