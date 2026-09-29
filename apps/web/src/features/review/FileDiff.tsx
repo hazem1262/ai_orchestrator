@@ -5,6 +5,7 @@ import { Undo2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { Card } from '@/components/ui/card.tsx';
+import { useResolvedTheme } from '@/features/theme/ThemeProvider.tsx';
 import { CommentComposer } from './CommentComposer.tsx';
 
 type LineNotes = Record<string, { data: ReviewComment[] }>;
@@ -19,6 +20,7 @@ export function FileDiff(p: {
   onRevertHunk(index: number): void;
 }) {
   const { file } = p;
+  const theme = useResolvedTheme();
   const extendData = useMemo(() => {
     const oldFile: LineNotes = {};
     const newFile: LineNotes = {};
@@ -68,6 +70,7 @@ export function FileDiff(p: {
             }}
             diffViewMode={p.mode === 'split' ? DiffModeEnum.Split : DiffModeEnum.Unified}
             diffViewHighlight
+            diffViewTheme={theme}
             diffViewWrap
             diffViewAddWidget
             extendData={extendData}
