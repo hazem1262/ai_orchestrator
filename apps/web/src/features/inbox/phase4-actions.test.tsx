@@ -55,7 +55,7 @@ describe('PlanApprovalActions', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(approve).toHaveBeenLastCalledWith('claude', 's1', { confirm: true }));
     expect((screen.getByRole('button', { name: 'Reject plan' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Feedback'), { target: { value: 'smaller steps' } });
+    fireEvent.change(screen.getByLabelText('Feedback for the agent'), { target: { value: 'smaller steps' } });
     fireEvent.click(screen.getByRole('button', { name: 'Reject plan' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Reject' }));
     await waitFor(() =>
