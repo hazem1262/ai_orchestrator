@@ -1,4 +1,4 @@
-import { extractTicketsFrom, type Goal, type GoalState, truncateText } from '@orc/core';
+import { extractTicketsFrom, type Goal, type GoalState, splitPk, truncateText } from '@orc/core';
 import type { DaemonContext } from '../../context.ts';
 import { getGoal, goalSource, listGoals, upsertGoal } from '../../db/repos/goals.ts';
 import { listAllSessions } from '../session-pages.ts';
@@ -42,6 +42,48 @@ export function createGoalService(
     return truncateText((s.firstPrompt ?? s.name ?? '').trim(), 200);
   }
 
+  /** Mirrors a goal's `blocked` state into the inbox; a blocked session goal replaces its `waiting` item. */
+  function syncBlockedItem(goal: Goal): Goal {
+    if (!ctx.inbox) return goal;
+    const scope = goal.targetType === 'session' ? { session: goal.targetId } : { ticket: goal.targetId };
+    if (goal.state !== 'blocked') {
+      ctx.inbox.resolve({ kind: 'blocked', scope });
+      return goal;
+    }
+    const why = goal.blockedReason ?? 'blocked';
+    if (goal.targetType === 'stream') {
+      const stream = ctx.streams?.list({}).find((s) => s.ticket === goal.targetId);
+      ctx.inbox.upsert({
+        kind: 'blocked',
+        scope,
+        projectId: stream?.projectId ?? null,
+        ticket: goal.targetId,
+        reason: `${goal.targetId}: blocked — ${why}`,
+        payload: { goalId: goal.id, blockedReason: goal.blockedReason },
+      });
+      return goal;
+    }
+    let source = '';
+    let id = goal.targetId;
+    try {
+      ({ source, id } = splitPk(goal.targetId));
+    } catch {
+      // keep the raw pk as the id
+    }
+    const s = ctx.sessions.getByPk(goal.targetId);
+    ctx.inbox.upsert({
+      kind: 'blocked',
+      scope,
+      sessionId: id,
+      projectId: s?.projectId ?? null,
+      ticket: s?.tickets[0] ?? null,
+      reason: `${s?.name ?? id}: blocked — ${why}`,
+      payload: { source, id, goalId: goal.id, blockedReason: goal.blockedReason },
+    });
+    ctx.inbox.resolve({ kind: 'waiting', scope });
+    return goal;
+  }
+
   function fromRule(
     targetType: Goal['targetType'],
     targetId: string,
@@ -49,7 +91,7 @@ export function createGoalService(
     reason: string | null,
   ): Goal {
     const g = getGoal(ctx.db, targetType, targetId);
-    return upsertGoal(
+    const goal = upsertGoal(
       ctx.db,
       {
         targetType,
@@ -61,6 +103,7 @@ export function createGoalService(
       'rule',
       iso(),
     );
+    return syncBlockedItem(goal);
   }
 
   function sweep(at: Date = now()): number {
@@ -90,7 +133,7 @@ export function createGoalService(
 
   return {
     get: (t, id) => getGoal(ctx.db, t, id),
-    set: (g) => upsertGoal(ctx.db, g, 'manual', iso()),
+    set: (g) => syncBlockedItem(upsertGoal(ctx.db, g, 'manual', iso())),
     list: (f) => listGoals(ctx.db, f.state),
     prefill,
     sweep,

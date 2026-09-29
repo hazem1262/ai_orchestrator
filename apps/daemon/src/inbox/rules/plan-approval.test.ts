@@ -75,7 +75,12 @@ describe('plan approval rule', () => {
       projectId: 'wakecap',
       ticket: 'SAF-80',
       reason: 'Plan awaiting approval',
-      payload: { toolUseId: 'tu-plan', plan: '1. Do X\n2. token «redacted:github»' },
+      payload: {
+        source: 'claude',
+        id: 'p1',
+        toolUseId: 'tu-plan',
+        plan: '1. Do X\n2. token «redacted:github»',
+      },
     });
     expect(plans).toEqual(['1. Do X\n2. token «redacted:github»']);
     rule.handle({ type: 'session.statusChanged', pk: 'claude:p1', from: 'waiting', to: 'busy' }, ctx);

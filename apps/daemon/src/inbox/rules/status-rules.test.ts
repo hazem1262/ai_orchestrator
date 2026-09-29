@@ -218,6 +218,34 @@ describe('statusRule', () => {
     expect(open()[0]?.reason).toBe('SLA weekends: ready for review');
   });
 
+  it('resolves a supervisor escalation when the session leaves waiting', () => {
+    change(null, 'waiting');
+    engine.upsert({
+      kind: 'supervisor_escalation',
+      scope: { session: PK },
+      reason: 'Supervisor escalated: x',
+    });
+    change('waiting', 'busy');
+    expect(openKinds()).toEqual([]);
+    expect(
+      engine
+        .list({ state: ['auto_resolved'] })
+        .map((i) => i.kind)
+        .sort(),
+    ).toEqual(['supervisor_escalation', 'waiting']);
+  });
+
+  it('resolves a supervisor escalation when a waiting session ends', () => {
+    change(null, 'waiting');
+    engine.upsert({
+      kind: 'supervisor_escalation',
+      scope: { session: PK },
+      reason: 'Supervisor escalated: x',
+    });
+    change('waiting', 'ended');
+    expect(engine.list({ kind: ['supervisor_escalation'] }).map((i) => i.state)).toEqual(['auto_resolved']);
+  });
+
   it('handles error states and ignores neutral transitions', () => {
     change('busy', 'idle');
     expect(openKinds()).toEqual([]);

@@ -61,6 +61,9 @@ export const statusRule: InboxRule = {
     // Work that is ready for review still needs the user after the process exits.
     const keepReviewAfterExit = fromKind === 'review' && e.to === 'ended';
     if (fromKind && fromKind !== toKind && !keepReviewAfterExit) ctx.inbox.resolve({ kind: fromKind, scope });
+    // An escalated question is moot once the session stops waiting on it, including when it ends.
+    if (e.from === 'waiting' && e.to !== 'waiting')
+      ctx.inbox.resolve({ kind: 'supervisor_escalation', scope });
     if (!toKind) return;
     const { s, source, id, label } = lookup(ctx, e.pk);
     ctx.inbox.upsert({
