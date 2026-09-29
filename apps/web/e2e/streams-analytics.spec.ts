@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test';
 test('work streams and analytics render against the fixture daemon', async ({ page }) => {
   await page.goto('/streams');
   await expect(page.getByRole('heading', { name: 'Work streams' })).toBeVisible();
-  await page.getByRole('button', { name: 'Kanban' }).click();
+  // the List/Board switch is a radiogroup (shadcn ToggleGroup, exclusive selection)
+  await page.getByRole('radio', { name: 'Board' }).click();
   await expect(page.getByRole('region', { name: 'Planned' })).toBeVisible();
 
   await page.goto('/analytics');
@@ -17,7 +18,7 @@ test('work streams and analytics render against the fixture daemon', async ({ pa
 test('the stream detail page answers what happened, what it cost and what is next', async ({ page }) => {
   await page.goto('/streams');
   await expect(page.getByRole('heading', { name: 'Work streams' })).toBeVisible();
-  await page.getByRole('button', { name: 'List' }).click();
+  await page.getByRole('radio', { name: 'List' }).click();
   const link = page.getByRole('link', { name: /SAF-1787/ }).first();
   await link.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
   if (await link.isVisible()) {

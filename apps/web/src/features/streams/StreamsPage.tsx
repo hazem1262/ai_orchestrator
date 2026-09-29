@@ -1,15 +1,40 @@
 import type { StreamStage, WorkStream } from '@orc/core';
-import { useId, useState } from 'react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Kanban, List, RefreshCw, Waves } from 'lucide-react';
+import { useId, useMemo, useState } from 'react';
 import { scopeProject } from '@/api/queries/inbox.ts';
 import { useRefreshStreams, useStreams } from '@/api/queries/streams.ts';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Button } from '@/components/ui/button.tsx';
+import { cn } from '@/components/ui/cn.ts';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty.tsx';
 import { NativeSelect } from '@/components/ui/native-select.tsx';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area.tsx';
+import { Skeleton } from '@/components/ui/skeleton.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.tsx';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { formatUsd } from '@/features/limits/format.ts';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useStreamViewStore } from '@/stores/streams.ts';
-import { formatActivity, groupByStage, STAGE_LABELS, STAGE_ORDER, streamHref } from './stages.ts';
+import {
+  cleanTitle,
+  formatActivity,
+  groupByStage,
+  STAGE_BADGE_VARIANT,
+  STAGE_LABELS,
+  STAGE_ORDER,
+  streamHref,
+} from './stages.ts';
+
+const PAGE_SIZE = 15;
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -23,17 +48,26 @@ function counts(s: WorkStream): string {
   ].join(' · ');
 }
 
+function titleOf(s: WorkStream): string {
+  return cleanTitle(s.title) || 'Untitled stream';
+}
+
 function StreamCard({ s, showStage = false }: { s: WorkStream; showStage?: boolean }) {
   return (
-    <article className="flex min-w-0 flex-col gap-0.5 rounded border p-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <a className="font-medium underline" href={streamHref(s.ticket)}>
+    <article className="flex min-w-0 flex-col gap-1 rounded-lg border p-3 text-sm">
+      <div className="flex items-center gap-2">
+        <a className="truncate font-medium underline" href={streamHref(s.ticket)}>
           {s.ticket}
         </a>
-        {showStage ? <Badge variant="outline">{STAGE_LABELS[s.stage]}</Badge> : null}
-        <span className={showStage ? 'ml-auto' : undefined}>{formatUsd(s.costUsd)}</span>
+        {showStage ? <Badge variant={STAGE_BADGE_VARIANT[s.stage]}>{STAGE_LABELS[s.stage]}</Badge> : null}
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">{formatUsd(s.costUsd)}</span>
       </div>
-      {s.title ? <p className="truncate text-muted-foreground">{s.title}</p> : null}
+      <a
+        href={streamHref(s.ticket)}
+        className="line-clamp-2 min-w-0 break-words text-muted-foreground hover:underline"
+      >
+        {titleOf(s)}
+      </a>
       <p className="text-xs text-muted-foreground">{counts(s)}</p>
       <p className="text-xs text-muted-foreground">{formatActivity(s.lastActivityAt)}</p>
     </article>
@@ -42,36 +76,42 @@ function StreamCard({ s, showStage = false }: { s: WorkStream; showStage?: boole
 
 function StreamTable({ streams }: { streams: WorkStream[] }) {
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="text-left text-xs text-muted-foreground">
-          <th className="py-1 font-medium">ticket</th>
-          <th className="py-1 font-medium">title</th>
-          <th className="py-1 font-medium">stage</th>
-          <th className="py-1 font-medium">cost</th>
-          <th className="py-1 font-medium">links</th>
-          <th className="py-1 font-medium">last activity</th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label="Streams" className="table-fixed">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-28">Ticket</TableHead>
+          <TableHead>Title</TableHead>
+          <TableHead className="w-32">Stage</TableHead>
+          <TableHead className="w-44">Links</TableHead>
+          <TableHead className="w-20 text-right">Cost</TableHead>
+          <TableHead className="w-40 text-right">Last activity</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {streams.map((s) => (
-          <tr key={s.ticket} className="border-t">
-            <td className="py-1">
+          <TableRow key={s.ticket}>
+            <TableCell>
               <a className="underline" href={streamHref(s.ticket)}>
                 {s.ticket}
               </a>
-            </td>
-            <td className="max-w-md truncate py-1">{s.title ?? '—'}</td>
-            <td className="py-1">
-              <Badge variant="outline">{STAGE_LABELS[s.stage]}</Badge>
-            </td>
-            <td className="py-1">{formatUsd(s.costUsd)}</td>
-            <td className="py-1 text-xs text-muted-foreground">{counts(s)}</td>
-            <td className="py-1 text-xs text-muted-foreground">{formatActivity(s.lastActivityAt)}</td>
-          </tr>
+            </TableCell>
+            <TableCell className="max-w-0 truncate" title={titleOf(s)}>
+              <a className="hover:underline" href={streamHref(s.ticket)}>
+                {titleOf(s)}
+              </a>
+            </TableCell>
+            <TableCell>
+              <Badge variant={STAGE_BADGE_VARIANT[s.stage]}>{STAGE_LABELS[s.stage]}</Badge>
+            </TableCell>
+            <TableCell className="text-xs text-muted-foreground">{counts(s)}</TableCell>
+            <TableCell className="text-right">{formatUsd(s.costUsd)}</TableCell>
+            <TableCell className="text-right text-xs text-muted-foreground">
+              {formatActivity(s.lastActivityAt)}
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 
@@ -86,18 +126,104 @@ function StreamCards({ streams }: { streams: WorkStream[] }) {
   );
 }
 
-function StreamBoard({ streams }: { streams: WorkStream[] }) {
+function Pages({
+  page,
+  pages,
+  from,
+  to,
+  total,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  from: number;
+  to: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  if (total === 0) return null;
   return (
-    <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
-      {groupByStage(streams).map((col) => (
-        <section key={col.stage} aria-label={col.label} className="flex w-56 shrink-0 flex-col gap-2">
-          <h2 className="text-xs font-semibold text-muted-foreground">
-            {col.label} ({col.streams.length})
-          </h2>
-          {col.streams.map((s) => (
-            <StreamCard key={s.ticket} s={s} />
-          ))}
-        </section>
+    <nav aria-label="Pages" className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+      <span className="text-xs">
+        {from}–{to} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => onPage(page - 1)}>
+          <ChevronLeft />
+          Previous
+        </Button>
+        <Button variant="outline" size="sm" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>
+          Next
+          <ChevronRight />
+        </Button>
+      </div>
+    </nav>
+  );
+}
+
+function StreamBoard({ streams, mobile }: { streams: WorkStream[]; mobile: boolean }) {
+  return (
+    <ScrollArea className="w-full pb-2">
+      <div className="flex min-w-0 gap-3">
+        {groupByStage(streams).map((col) => (
+          <section
+            key={col.stage}
+            aria-label={col.label}
+            className={cn('flex shrink-0 flex-col gap-2', mobile ? 'w-[78vw]' : 'w-64')}
+          >
+            <h2 className="flex items-center gap-2 text-sm font-medium">
+              {col.label}
+              <Badge variant="secondary">{col.streams.length}</Badge>
+            </h2>
+            <div className="flex max-h-[32rem] flex-col gap-2 overflow-y-auto rounded-lg bg-muted/40 p-2">
+              {col.streams.map((s) => (
+                <StreamCard key={s.ticket} s={s} />
+              ))}
+              {col.streams.length === 0 ? (
+                <p className="p-1 text-xs text-muted-foreground">Nothing here</p>
+              ) : null}
+            </div>
+          </section>
+        ))}
+      </div>
+      <ScrollBar orientation="horizontal" />
+    </ScrollArea>
+  );
+}
+
+function StreamsSkeleton({ mobile }: { mobile: boolean }) {
+  const rows = [0, 1, 2, 3, 4, 5];
+  if (mobile) {
+    return (
+      <div role="status" aria-busy="true" aria-label="Loading streams" className="flex flex-col gap-2">
+        {rows.slice(0, 4).map((i) => (
+          <div key={i} className="flex flex-col gap-2 rounded-lg border p-3">
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="ml-auto h-4 w-10" />
+            </div>
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label="Loading streams"
+      className="flex flex-col gap-0 rounded-lg border"
+    >
+      {rows.map((i) => (
+        <div key={i} className="flex items-center gap-4 border-b p-3 last:border-0">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-4 flex-1" style={{ maxWidth: `${60 - i * 6}%` }} />
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-16" />
+        </div>
       ))}
     </div>
   );
@@ -107,12 +233,25 @@ export function StreamsPage() {
   const stageId = useId();
   const projectId = scopeProject(useProjectStore((st) => st.projectId));
   const [stage, setStage] = useState<StreamStage | ''>('');
+  const [rawPage, setRawPage] = useState(0);
   const view = useStreamViewStore((st) => st.view);
   const setView = useStreamViewStore((st) => st.setView);
   const q = useStreams({ ...(projectId ? { projectId } : {}), ...(stage ? { stage } : {}) });
   const refresh = useRefreshStreams();
-  const streams = q.data ?? [];
   const isMobile = useIsMobile();
+
+  const streams = useMemo(
+    () => [...(q.data ?? [])].sort((a, b) => Date.parse(b.lastActivityAt) - Date.parse(a.lastActivityAt)),
+    [q.data],
+  );
+  const pages = Math.max(1, Math.ceil(streams.length / PAGE_SIZE));
+  const page = Math.min(rawPage, pages - 1);
+  const shown = streams.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  function onStage(next: StreamStage | '') {
+    setStage(next);
+    setRawPage(0);
+  }
 
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -124,7 +263,7 @@ export function StreamsPage() {
             id={stageId}
             className="h-7 text-xs"
             value={stage}
-            onChange={(e) => setStage(e.target.value as StreamStage | '')}
+            onChange={(e) => onStage(e.target.value as StreamStage | '')}
           >
             <option value="">all</option>
             {STAGE_ORDER.map((s) => (
@@ -134,48 +273,76 @@ export function StreamsPage() {
             ))}
           </NativeSelect>
         </span>
-        <fieldset aria-label="View" className="flex gap-1">
-          <Button
-            size="sm"
-            variant={view === 'list' ? 'default' : 'outline'}
-            aria-pressed={view === 'list'}
-            onClick={() => setView('list')}
-          >
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view}
+          onValueChange={(v) => v && setView(v as 'list' | 'kanban')}
+          aria-label="View"
+        >
+          <ToggleGroupItem value="list" aria-label="List" className="gap-1.5 px-2.5">
+            <List />
             List
-          </Button>
-          <Button
-            size="sm"
-            variant={view === 'kanban' ? 'default' : 'outline'}
-            aria-pressed={view === 'kanban'}
-            onClick={() => setView('kanban')}
-          >
-            Kanban
-          </Button>
-        </fieldset>
+          </ToggleGroupItem>
+          <ToggleGroupItem value="kanban" aria-label="Board" className="gap-1.5 px-2.5">
+            <Kanban />
+            Board
+          </ToggleGroupItem>
+        </ToggleGroup>
         <Button size="sm" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+          <RefreshCw className={refresh.isPending ? 'animate-spin' : undefined} />
           Refresh
         </Button>
       </header>
 
       {q.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          Could not load work streams.
-        </p>
-      ) : null}
-      {q.isLoading ? <p className="text-sm text-muted-foreground">Loading streams…</p> : null}
-      {q.isSuccess && streams.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No streams yet. Work streams are built from tickets in prompts, branches, PRs, plans, worktrees and
-          wstack workflows, for projects with work streams enabled.
-        </p>
-      ) : null}
-
-      {view === 'kanban' ? (
-        <StreamBoard streams={streams} />
-      ) : isMobile ? (
-        <StreamCards streams={streams} />
+        <Alert variant="destructive">
+          <AlertTriangle aria-hidden />
+          <AlertTitle>Could not load work streams.</AlertTitle>
+          <AlertDescription>
+            <Button variant="outline" size="sm" onClick={() => q.refetch()}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : q.isLoading ? (
+        <StreamsSkeleton mobile={isMobile} />
+      ) : streams.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Waves />
+            </EmptyMedia>
+            <EmptyTitle>{stage ? 'No streams in this stage' : 'No streams yet'}</EmptyTitle>
+            <EmptyDescription>
+              {stage
+                ? 'Pick another stage, or show all.'
+                : 'Work streams are built from tickets in prompts, branches, PRs, plans, worktrees and wstack workflows, for projects with work streams enabled.'}
+            </EmptyDescription>
+          </EmptyHeader>
+          {stage ? (
+            <EmptyContent>
+              <Button variant="outline" size="sm" onClick={() => onStage('')}>
+                Show all stages
+              </Button>
+            </EmptyContent>
+          ) : null}
+        </Empty>
+      ) : view === 'kanban' ? (
+        <StreamBoard streams={streams} mobile={isMobile} />
       ) : (
-        <StreamTable streams={streams} />
+        <>
+          {isMobile ? <StreamCards streams={shown} /> : <StreamTable streams={shown} />}
+          <Pages
+            page={page}
+            pages={pages}
+            from={page * PAGE_SIZE + 1}
+            to={page * PAGE_SIZE + shown.length}
+            total={streams.length}
+            onPage={setRawPage}
+          />
+        </>
       )}
     </div>
   );
