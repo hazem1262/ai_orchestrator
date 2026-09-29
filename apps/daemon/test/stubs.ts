@@ -139,7 +139,11 @@ export function recordingInbox(): InboxEngine & {
         .filter((i) => !f.state || f.state.includes(i.state))
         .filter((i) => !f.kind || f.kind.includes(i.kind)),
     markDone: (id) => ({ ...find(id), state: 'done' }),
-    snooze: (id, until) => ({ ...find(id), state: 'snoozed', snoozeUntil: until }),
+    snooze: (id, until) => {
+      const it: InboxItem = { ...find(id), state: 'snoozed', snoozeUntil: until };
+      items.set(it.dedupeKey, it);
+      return it;
+    },
     reopen: (id) => ({ ...find(id), state: 'open' }),
     registerRule: (r) => {
       rules.push(r);

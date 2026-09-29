@@ -78,9 +78,31 @@ export function mapPrJson(repo: string, j: GhPrJson): PrStatus {
 const keyOf = (p: PrRef) => `${p.repo}#${p.number}`;
 const signature = (s: PrStatus) => JSON.stringify([s.state, s.checks, s.review, s.failedChecks, s.updatedAt]);
 
+/**
+ * Review requests the inbox still shows as open or snoozed. The in-memory `lastRequested` starts
+ * empty after a restart, so without this a PR that left the search while the daemon was down
+ * would never emit `active: false` and its row would stay open forever.
+ */
+function openReviewRequests(ctx: DaemonContext): Map<string, PrRef & { title: string }> {
+  const out = new Map<string, PrRef & { title: string }>();
+  for (const item of ctx.inbox?.list({ state: ['open', 'snoozed'], kind: ['pr_event'] }) ?? []) {
+    if (item.payload.event !== 'review_requested') continue;
+    const pr = item.payload.pr as Partial<PrRef> | undefined;
+    // Rows written by `prEventRule` end their reason with `(owner/repo#N)`.
+    const m = /^Review requested: (.*) \(([^()\s]+)#(\d+)\)$/.exec(item.reason);
+    const repo = typeof pr?.repo === 'string' ? pr.repo : m?.[2];
+    const number = typeof pr?.number === 'number' ? pr.number : Number(m?.[3]);
+    if (!repo || !Number.isInteger(number)) continue;
+    const url = typeof pr?.url === 'string' ? pr.url : `https://github.com/${repo}/pull/${number}`;
+    out.set(keyOf({ repo, number, url }), { repo, number, url, title: m?.[1] ?? item.reason });
+  }
+  return out;
+}
+
 export function createGithubConnector(ctx: DaemonContext): GithubConnector {
   const watched = new Map<string, PrRef>();
   let lastRequested = new Map<string, PrRef & { title: string }>();
+  let seededRequests = false;
   let polling: Promise<void> | null = null;
 
   async function status(): Promise<'ok' | 'unauthenticated' | 'error'> {
@@ -188,6 +210,10 @@ export function createGithubConnector(ctx: DaemonContext): GithubConnector {
 
     try {
       const now = new Map((await reviewRequestedRefs()).map((r) => [keyOf(r), r]));
+      if (!seededRequests) {
+        lastRequested = new Map([...openReviewRequests(ctx), ...lastRequested]);
+        seededRequests = true;
+      }
       for (const [k, r] of now) {
         if (!lastRequested.has(k))
           ctx.bus.emit({

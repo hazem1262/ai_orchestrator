@@ -29,7 +29,25 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       payload: { pr: s.pr, event: 'archive_blocked', path: w.path, presetId: null, vars: {} },
     });
 
-  return ctx.bus.on('pr.changed', (e) => {
+  const unblock = (path: string) =>
+    ctx.inbox?.resolve({
+      kind: 'pr_event',
+      scope: { domain: 'worktree', id: path },
+      facet: 'archive_blocked',
+    });
+
+  // `worktree.removed` only fires for worktrees still active in the DB, so rows whose worktree
+  // went away while the daemon was down are swept here.
+  const active = new Set(listWorktrees(ctx.db, { state: 'active' }).map((w) => w.path));
+  for (const item of ctx.inbox?.list({ state: ['open', 'snoozed'], kind: ['pr_event'] }) ?? []) {
+    const path = item.payload.path;
+    if (item.payload.event === 'archive_blocked' && typeof path === 'string' && !active.has(path))
+      unblock(path);
+  }
+
+  const offRemoved = ctx.bus.on('worktree.removed', (e) => unblock(e.path));
+
+  const offChanged = ctx.bus.on('pr.changed', (e) => {
     if (e.after.state !== 'merged' || e.before?.state === 'merged') return;
     if (!ctx.config().worktrees.autoArchiveOnMerge || !ctx.worktrees) return;
     const worktrees = ctx.worktrees;
@@ -48,4 +66,9 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       });
     }
   });
+
+  return () => {
+    offRemoved();
+    offChanged();
+  };
 }

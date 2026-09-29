@@ -128,4 +128,64 @@ describe('registerAutoArchive', () => {
     expect(existsSync(again.view.path)).toBe(true);
     again.off();
   });
+
+  describe('closing the archive_blocked row', () => {
+    const DIRTY = '.worktrees/feat-SAF-50-merge-me/src/a.ts';
+    const ORIGINAL = 'export const a = 1;\nexport const b = 2;\nexport const c = 3;\n';
+
+    async function blockedByDirt() {
+      const s = await setup();
+      repo?.write(DIRTY, 'dirty\n');
+      s.ctx.bus.emit(merged(s.url, s.view.branch));
+      await vi.waitFor(() => expect(s.inbox.upserts.length).toBeGreaterThan(0));
+      const row = s.inbox.list({ state: ['open'] }).find((i) => i.payload.event === 'archive_blocked');
+      if (!row) throw new Error('no archive_blocked row');
+      const stateOf = () => s.inbox.list({}).find((i) => i.id === row.id)?.state;
+      return { ...s, stateOf };
+    }
+
+    it('resolves the archive_blocked row when the worktree is removed', async () => {
+      const { ctx, view, stateOf, off } = await blockedByDirt();
+      ctx.bus.emit({ type: 'worktree.removed', path: `${view.path}-other` });
+      expect(stateOf()).toBe('open');
+      ctx.bus.emit({ type: 'worktree.removed', path: view.path });
+      expect(stateOf()).toBe('auto_resolved');
+      off();
+    });
+
+    it('resolves the archive_blocked row when the worktree is archived', async () => {
+      const { ctx, view, stateOf, off } = await blockedByDirt();
+      const removed: string[] = [];
+      ctx.bus.on('worktree.removed', (e) => removed.push(e.path));
+      repo?.write(DIRTY, ORIGINAL);
+      await ctx.worktrees?.archiveAs(view.path, 'user');
+      expect(existsSync(view.path)).toBe(false);
+      expect(removed).toEqual([view.path]);
+      expect(stateOf()).toBe('auto_resolved');
+      off();
+    });
+
+    it('resolves archive_blocked rows left for worktrees that are no longer active at startup', async () => {
+      const { ctx, view, inbox, off } = await setup();
+      off();
+      const row = (path: string) =>
+        inbox.upsert({
+          kind: 'pr_event',
+          scope: { domain: 'worktree', id: path },
+          facet: 'archive_blocked',
+          reason: 'o/r#1 merged; worktree kept because it has uncommitted changes',
+          payload: { event: 'archive_blocked', path, presetId: null, vars: {} },
+        });
+      const stale = row(`${view.path}-gone`);
+      const snoozed = inbox.snooze(row(`${view.path}-archived`).id, '2099-01-01T00:00:00Z');
+      const live = row(view.path);
+      const stateOf = (id: string) => inbox.list({}).find((i) => i.id === id)?.state;
+
+      disposers.push(registerAutoArchive(ctx));
+
+      expect(stateOf(stale.id)).toBe('auto_resolved');
+      expect(stateOf(snoozed.id)).toBe('auto_resolved');
+      expect(stateOf(live.id)).toBe('open');
+    });
+  });
 });

@@ -3,8 +3,9 @@ import type { PrStatus } from '@orc/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type FakeGh, type FakePr, useFakeGh } from '../../../test/fake-gh.ts';
 import { createTestContext, type TestContext } from '../../../test/helpers.ts';
-import { stubSessions } from '../../../test/stubs.ts';
+import { recordingInbox, stubSessions } from '../../../test/stubs.ts';
 import { getPrStatus, upsertPrStatus } from '../../db/repos/pr-cache.ts';
+import { prEventRule } from '../../inbox/rules/pr-event.ts';
 import { createGithubConnector, mapPrJson } from './github.ts';
 
 let fake: FakeGh;
@@ -29,10 +30,14 @@ const fakePr = (p: Partial<FakePr> = {}): FakePr => ({
   ...p,
 });
 
-function setup(initial: Parameters<typeof useFakeGh>[0] = {}, github = {}) {
+function setup(
+  initial: Parameters<typeof useFakeGh>[0] = {},
+  github = {},
+  inbox?: ReturnType<typeof recordingInbox>,
+) {
   fake = useFakeGh(initial);
   const cfg = OrcConfig.parse({ github });
-  const ctx = createTestContext({ config: () => cfg, sessions: stubSessions([]) });
+  const ctx = createTestContext({ config: () => cfg, sessions: stubSessions([]), inbox });
   contexts.push(ctx);
   const changes: Array<{ before: PrStatus | null; after: PrStatus }> = [];
   ctx.bus.on('pr.changed', (e) => changes.push({ before: e.before, after: e.after }));
@@ -190,5 +195,56 @@ describe('GithubConnector', () => {
     fake.setPr(fakePr({ state: 'MERGED' }));
     await gh.poll();
     expect(changes[0]?.after.state).toBe('merged');
+  });
+
+  describe('review-request rows across a daemon restart', () => {
+    const reviewRow = (number: number) => ({
+      kind: 'pr_event' as const,
+      scope: { domain: 'pr', id: `example-org/temp-repo#${number}` },
+      facet: 'review_requested',
+      sessionId: null,
+      projectId: null,
+      ticket: null,
+      reason: `Review requested: SAF-1 thing (example-org/temp-repo#${number})`,
+      payload: { event: 'review_requested' },
+    });
+
+    /** A fresh connector (empty memory) over an inbox that already holds rows from before the restart. */
+    function restarted(numbers: number[]) {
+      const inbox = recordingInbox();
+      const rows = numbers.map((n) => inbox.upsert(reviewRow(n)));
+      const s = setup({}, {}, inbox);
+      s.ctx.bus.on('pr.reviewRequested', (e) => prEventRule.handle(e, s.ctx));
+      const stateOf = (id: string) => inbox.list({}).find((i) => i.id === id)?.state;
+      return { ...s, inbox, rows, stateOf };
+    }
+
+    it('resolves a stale review-request row after a restart', async () => {
+      const { gh, rows, stateOf } = restarted([41]);
+      fake.setPr(
+        fakePr({
+          number: 41,
+          url: 'https://github.com/example-org/temp-repo/pull/41',
+          reviewRequested: true,
+          state: 'MERGED',
+        }),
+      );
+      await gh.poll();
+      expect(fake.calls().some((c) => c[0] === 'search' && c.includes('--review-requested=@me'))).toBe(true);
+      expect(stateOf(rows[0]?.id ?? '')).toBe('auto_resolved');
+    });
+
+    it('keeps a review-request row open while the PR is still in the search', async () => {
+      const { gh, rows, stateOf } = restarted([42]);
+      fake.setPr(
+        fakePr({
+          number: 42,
+          url: 'https://github.com/example-org/temp-repo/pull/42',
+          reviewRequested: true,
+        }),
+      );
+      await gh.poll();
+      expect(stateOf(rows[0]?.id ?? '')).toBe('open');
+    });
   });
 });
