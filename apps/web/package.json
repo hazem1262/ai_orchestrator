@@ -9,6 +9,7 @@
     "routes:gen": "tsr generate",
     "typecheck": "tsr generate && tsc -p tsconfig.json && tsc -p tsconfig.sw.json",
     "check:contrast": "node scripts/check-contrast.mjs",
+    "check:colors": "node scripts/check-colors.mjs",
     "e2e": "playwright test",
     "e2e:m4": "pnpm --filter @orc/daemon build && pnpm build && playwright test -c playwright.m4.config.ts"
   },
