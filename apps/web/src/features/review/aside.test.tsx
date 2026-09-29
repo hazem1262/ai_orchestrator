@@ -155,8 +155,13 @@ describe('CheckpointTimeline', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Turn 2' }));
     expect(onSelect).toHaveBeenCalledWith({ kind: 'checkpoint', id: 'c2' });
     fireEvent.click(screen.getByRole('button', { name: 'Rewind to turn 1' }));
-    expect(await screen.findByText('Restore the files in /w to turn 1.')).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: 'Rewind' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Rewind files?' });
+    expect(within(dialog).getByText('Restore the files in /w to turn 1.')).toBeDefined();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(rewind).not.toHaveBeenCalledWith('c1', { confirm: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Rewind to turn 1' }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Rewind' }));
     await waitFor(() => expect(rewind).toHaveBeenLastCalledWith('c1', { confirm: true }));
   });
 
