@@ -25,8 +25,9 @@ export default defineConfig({
         start_url: '/inbox',
         scope: '/',
         display: 'standalone',
-        background_color: '#0b0f19',
-        theme_color: '#0b0f19',
+        // The light Calm --background (src/index.css); index.html sets the dark one per color scheme.
+        background_color: '#fdfdfd',
+        theme_color: '#fdfdfd',
         icons: [
           { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png' },

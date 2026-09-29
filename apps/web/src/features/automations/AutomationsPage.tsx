@@ -32,7 +32,7 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty.tsx';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.tsx';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip.tsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.tsx';
 import { useFocusReturn } from '@/components/ui/use-focus-return.ts';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { formatCost, formatDateTime } from '@/lib/format.ts';
@@ -274,91 +274,89 @@ export function AutomationsPage() {
   );
 
   return (
-    <TooltipProvider>
-      <div className="flex h-full flex-col gap-4 p-4">
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h1 className="text-lg font-semibold">Automations</h1>
-          <label className="flex items-center gap-2 text-sm" htmlFor="automations-master">
-            <ToggleSwitch
-              id="automations-master"
-              label="Automations enabled"
-              checked={masterOn}
-              disabled={!settings.data || saveSettings.isPending}
-              onCheckedChange={(v) => saveSettings.mutate({ enabled: v })}
-            />
-            Automations enabled
-          </label>
-          {settings.data && !masterOn ? <Badge variant="warning">Off — nothing runs</Badge> : null}
-          {automations.length > 0 ? (
-            <Button className="ml-auto" onClick={() => setEditing({ kind: 'new' })}>
-              New automation
-            </Button>
-          ) : null}
-        </header>
-        <Alert>
-          <ShieldCheck className="size-4" aria-hidden />
-          <AlertDescription>
-            Automations never merge, deploy or touch production. Each one has a monthly budget, and every run
-            is audited.
-          </AlertDescription>
-        </Alert>
-        {failure ? (
-          <p role="alert" className="text-sm text-destructive">
-            {failure.message}
-          </p>
-        ) : null}
-        {isMobile ? (
-          pane.kind === 'none' ? (
-            <div className="flex min-w-0 flex-col gap-6">
-              {list}
-              {detail}
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-col gap-3">
-              <Button size="sm" variant="ghost" className="self-start" onClick={close}>
-                ← Back to list
-              </Button>
-              {detail}
-            </div>
-          )
-        ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,1fr)_2fr] gap-4">
-            {list}
-            <section className="min-h-0 overflow-auto">{detail}</section>
-          </div>
-        )}
-        {askVars ? (
-          <RunVarsDialog
-            name={askVars.name}
-            vars={templateVars(askVars)}
-            busy={runNow.isPending}
-            onRun={(vars) => start(askVars, vars)}
-            onClose={() => setAskVars(null)}
+    <div className="flex h-full flex-col gap-4 p-4">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <h1 className="text-lg font-semibold">Automations</h1>
+        <label className="flex items-center gap-2 text-sm" htmlFor="automations-master">
+          <ToggleSwitch
+            id="automations-master"
+            label="Automations enabled"
+            checked={masterOn}
+            disabled={!settings.data || saveSettings.isPending}
+            onCheckedChange={(v) => saveSettings.mutate({ enabled: v })}
           />
+          Automations enabled
+        </label>
+        {settings.data && !masterOn ? <Badge variant="warning">Off — nothing runs</Badge> : null}
+        {automations.length > 0 ? (
+          <Button className="ml-auto" onClick={() => setEditing({ kind: 'new' })}>
+            New automation
+          </Button>
         ) : null}
-        <Sheet
-          open={editing !== null}
-          onOpenChange={(open) => {
-            if (!open) setEditing(null);
-          }}
-        >
-          <SheetContent className="w-full sm:max-w-lg" onCloseAutoFocus={returnFocus}>
-            <SheetHeader className="sr-only">
-              <SheetTitle>
-                {editing?.kind === 'edit' ? `Edit ${editing.automation.name}` : 'New automation'}
-              </SheetTitle>
-            </SheetHeader>
-            {editing ? (
-              <AutomationEditor
-                key={editing.kind === 'edit' ? editing.automation.id : 'new'}
-                projectId={projectId}
-                initial={editing.kind === 'edit' ? editing.automation : undefined}
-                onDone={() => setEditing(null)}
-              />
-            ) : null}
-          </SheetContent>
-        </Sheet>
-      </div>
-    </TooltipProvider>
+      </header>
+      <Alert>
+        <ShieldCheck className="size-4" aria-hidden />
+        <AlertDescription>
+          Automations never merge, deploy or touch production. Each one has a monthly budget, and every run is
+          audited.
+        </AlertDescription>
+      </Alert>
+      {failure ? (
+        <p role="alert" className="text-sm text-destructive">
+          {failure.message}
+        </p>
+      ) : null}
+      {isMobile ? (
+        pane.kind === 'none' ? (
+          <div className="flex min-w-0 flex-col gap-6">
+            {list}
+            {detail}
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-col gap-3">
+            <Button size="sm" variant="ghost" className="self-start" onClick={close}>
+              ← Back to list
+            </Button>
+            {detail}
+          </div>
+        )
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,1fr)_2fr] gap-4">
+          {list}
+          <section className="min-h-0 overflow-auto">{detail}</section>
+        </div>
+      )}
+      {askVars ? (
+        <RunVarsDialog
+          name={askVars.name}
+          vars={templateVars(askVars)}
+          busy={runNow.isPending}
+          onRun={(vars) => start(askVars, vars)}
+          onClose={() => setAskVars(null)}
+        />
+      ) : null}
+      <Sheet
+        open={editing !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditing(null);
+        }}
+      >
+        <SheetContent className="w-full sm:max-w-lg" onCloseAutoFocus={returnFocus}>
+          <SheetHeader className="sr-only">
+            <SheetTitle>
+              {editing?.kind === 'edit' ? `Edit ${editing.automation.name}` : 'New automation'}
+            </SheetTitle>
+          </SheetHeader>
+          {editing ? (
+            <AutomationEditor
+              key={editing.kind === 'edit' ? editing.automation.id : 'new'}
+              projectId={projectId}
+              initial={editing.kind === 'edit' ? editing.automation : undefined}
+              onDone={() => setEditing(null)}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </div>
   );
 }

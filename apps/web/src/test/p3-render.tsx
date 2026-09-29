@@ -9,6 +9,7 @@ import type {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 
 /** The full client surface `createApiClient` returns: phase 1 routes plus the phase 2, 3, 4, 5 and 6 methods. */
 export type P3FakeApi = ApiClient & P2Methods & P3Methods & Phase4Client & P5ClientMethods & P6Methods;
@@ -19,7 +20,11 @@ export function makeQueryClient(): QueryClient {
 
 export function wrapperFor(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }): ReactElement {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </QueryClientProvider>
+    );
   };
 }
 

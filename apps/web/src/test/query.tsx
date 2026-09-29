@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 
 /** A QueryClient with retries off and no garbage collection, so cached data stays put in a test. */
 export function makeQueryClient(): QueryClient {
@@ -14,6 +15,10 @@ export function makeQueryClient(): QueryClient {
 /** A `renderHook` wrapper that provides `qc`. */
 export function queryWrapper(qc: QueryClient) {
   return function QueryWrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </QueryClientProvider>
+    );
   };
 }

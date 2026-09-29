@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 import { getToken } from '@/api/client.ts';
 import { connectPty, type PtySocket, type PtySocketStatus } from '@/api/pty-socket.ts';
 
+const GEIST_MONO = '"Geist Mono Variable"';
+const FALLBACK_FONT = 'Menlo, Monaco, monospace';
+const TERMINAL_FONT = `${GEIST_MONO}, ${FALLBACK_FONT}`;
+
 export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -17,8 +21,9 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const fontReady = document.fonts?.check(`12px ${GEIST_MONO}`) === true;
     const term = new Terminal({
-      fontFamily: 'Menlo, Monaco, monospace',
+      fontFamily: fontReady ? TERMINAL_FONT : FALLBACK_FONT,
       fontSize: 12,
       cursorBlink: true,
       scrollback: 5000,
@@ -52,9 +57,19 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
     );
     sockRef.current = sock;
     const input = term.onData((d) => sock.send({ t: 'in', d }));
+    // xterm measures glyphs when the font option is set, so switch to Geist Mono once it has loaded.
+    let disposed = false;
+    if (!fontReady) {
+      void document.fonts?.load(`12px ${GEIST_MONO}`).then(() => {
+        if (disposed) return;
+        term.options.fontFamily = TERMINAL_FONT;
+        sendSize();
+      });
+    }
     const observer = new ResizeObserver(() => sendSize());
     observer.observe(host);
     return () => {
+      disposed = true;
       observer.disconnect();
       input.dispose();
       sock.close();

@@ -3,6 +3,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Toaster } from './components/ui/sonner.tsx';
+import { TooltipProvider } from './components/ui/tooltip.tsx';
 import { ThemeProvider } from './features/theme/ThemeProvider.tsx';
 import { registerServiceWorker } from './pwa/register.ts';
 import { createAppRouter } from './router.tsx';
@@ -16,10 +17,12 @@ if (!root) throw new Error('missing #root');
 createRoot(root).render(
   <StrictMode>
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-      <Toaster />
+      <TooltipProvider>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+        <Toaster />
+      </TooltipProvider>
     </ThemeProvider>
   </StrictMode>,
 );

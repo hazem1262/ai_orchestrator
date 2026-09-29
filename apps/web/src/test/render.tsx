@@ -9,6 +9,7 @@ import {
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { setApiClientForTests } from '../api/client.ts';
+import { TooltipProvider } from '../components/ui/tooltip.tsx';
 import { createFakeApi, type FakeApi } from './fake-api.ts';
 
 /** Renders `ui` inside a QueryClient and a memory router (so <Link> works) with a fake API client.
@@ -31,7 +32,9 @@ export function renderWithProviders(ui: ReactNode, opts: { api?: FakeApi; path?:
   });
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <RouterContextProvider router={router}>{ui}</RouterContextProvider>
+      <TooltipProvider>
+        <RouterContextProvider router={router}>{ui}</RouterContextProvider>
+      </TooltipProvider>
     </QueryClientProvider>,
   );
   return { ...result, queryClient, router };

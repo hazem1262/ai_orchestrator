@@ -14,7 +14,6 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { Kbd, KbdGroup } from '@/components/ui/kbd.tsx';
 import { Skeleton } from '@/components/ui/skeleton.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
-import { TooltipProvider } from '@/components/ui/tooltip.tsx';
 import { formatDuration } from '@/features/live-board/sort.ts';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { DailyUpdateButton } from '@/features/share/DailyUpdateButton.tsx';
@@ -136,131 +135,129 @@ export function InboxPage({ now }: { now?: () => number } = {}) {
     tab === 'open' ? items.filter((i) => i.kind === 'plan_approval' || i.kind === 'waiting').length : 0;
 
   return (
-    <TooltipProvider>
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 p-3 md:p-6">
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-              {openCount ? <Badge variant="secondary">{openCount}</Badge> : null}
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {tab === 'open' && !isLoading && !error
-                ? `${items.length} open · ${deciding} waiting on a decision`
-                : 'Everything that needs you, newest first.'}
-            </p>
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-4 p-3 md:p-6">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
+            {openCount ? <Badge variant="secondary">{openCount}</Badge> : null}
           </div>
-          {isMobile ? null : (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <p className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
-                <KbdGroup>
-                  <Kbd>j</Kbd>
-                  <Kbd>k</Kbd>
-                </KbdGroup>
-                move
-                <Kbd>e</Kbd>
-                done
-                <Kbd>s</Kbd>
-                snooze 1h
-                <Kbd>↵</Kbd>
-                open
-              </p>
-              <DailyUpdateButton />
-            </div>
-          )}
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {tab === 'open' && !isLoading && !error
+              ? `${items.length} open · ${deciding} waiting on a decision`
+              : 'Everything that needs you, newest first.'}
+          </p>
         </div>
+        {isMobile ? null : (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <p className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+              <KbdGroup>
+                <Kbd>j</Kbd>
+                <Kbd>k</Kbd>
+              </KbdGroup>
+              move
+              <Kbd>e</Kbd>
+              done
+              <Kbd>s</Kbd>
+              snooze 1h
+              <Kbd>↵</Kbd>
+              open
+            </p>
+            <DailyUpdateButton />
+          </div>
+        )}
+      </div>
 
-        <Tabs
-          value={tab}
-          onValueChange={(v) => {
-            setTab(v as Tab);
-            setSelected(0);
-          }}
-        >
-          <TabsList>
-            {TABS.map((t) => (
-              <TabsTrigger key={t.id} value={t.id} className="px-3">
-                {t.label}
-                {counts[t.id] !== undefined ? (
-                  <span aria-hidden="true" className="font-mono text-xs text-muted-foreground tabular-nums">
-                    {counts[t.id]}
-                  </span>
-                ) : null}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value={tab} className="pt-3">
-            {error ? (
-              <Alert variant="destructive">
-                <TriangleAlert />
-                <AlertTitle>Couldn't load the inbox</AlertTitle>
-                <AlertDescription>
-                  <p>{error.message}</p>
-                  <Button size="sm" variant="outline" className="mt-2" onClick={() => void refetch()}>
-                    <RotateCw />
-                    Retry
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            ) : isLoading ? (
-              <InboxSkeleton mobile={isMobile} />
-            ) : groups.length === 0 ? (
-              <Empty className="border">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <InboxIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>{current.empty.title}</EmptyTitle>
-                  <EmptyDescription>{current.empty.description}</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : isMobile ? (
-              <section aria-label="Inbox items" className="flex flex-col gap-2">
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v as Tab);
+          setSelected(0);
+        }}
+      >
+        <TabsList>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.id} value={t.id} className="px-3">
+              {t.label}
+              {counts[t.id] !== undefined ? (
+                <span aria-hidden="true" className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {counts[t.id]}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TabsContent value={tab} className="pt-3">
+          {error ? (
+            <Alert variant="destructive">
+              <TriangleAlert />
+              <AlertTitle>Couldn't load the inbox</AlertTitle>
+              <AlertDescription>
+                <p>{error.message}</p>
+                <Button size="sm" variant="outline" className="mt-2" onClick={() => void refetch()}>
+                  <RotateCw />
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : isLoading ? (
+            <InboxSkeleton mobile={isMobile} />
+          ) : groups.length === 0 ? (
+            <Empty className="border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <InboxIcon />
+                </EmptyMedia>
+                <EmptyTitle>{current.empty.title}</EmptyTitle>
+                <EmptyDescription>{current.empty.description}</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : isMobile ? (
+            <section aria-label="Inbox items" className="flex flex-col gap-2">
+              {groups.map((g, i) => (
+                <InboxCard
+                  key={g.key}
+                  group={g}
+                  now={clock()}
+                  selected={i === selected}
+                  triage={triage}
+                  onSelect={() => setSelected(i)}
+                />
+              ))}
+            </section>
+          ) : (
+            <Card className="overflow-hidden">
+              <div
+                aria-hidden="true"
+                className={cn(ROW_GRID, 'border-b px-3 py-2 text-xs font-medium text-muted-foreground')}
+              >
+                <span />
+                <span>Kind</span>
+                <span>Item</span>
+                <span>Ticket</span>
+                <span className="text-right">Age</span>
+                <span />
+              </div>
+              <ul aria-label="Inbox items">
                 {groups.map((g, i) => (
-                  <InboxCard
+                  <InboxRow
                     key={g.key}
                     group={g}
                     now={clock()}
                     selected={i === selected}
+                    pty={ownedPty(g.lead)}
                     triage={triage}
                     onSelect={() => setSelected(i)}
+                    onOpen={() => onOpen(i)}
+                    onTerminal={(ptyId) => openTerminal(ptyId, g.lead.reason)}
                   />
                 ))}
-              </section>
-            ) : (
-              <Card className="overflow-hidden">
-                <div
-                  aria-hidden="true"
-                  className={cn(ROW_GRID, 'border-b px-3 py-2 text-xs font-medium text-muted-foreground')}
-                >
-                  <span />
-                  <span>Kind</span>
-                  <span>Item</span>
-                  <span>Ticket</span>
-                  <span className="text-right">Age</span>
-                  <span />
-                </div>
-                <ul aria-label="Inbox items">
-                  {groups.map((g, i) => (
-                    <InboxRow
-                      key={g.key}
-                      group={g}
-                      now={clock()}
-                      selected={i === selected}
-                      pty={ownedPty(g.lead)}
-                      triage={triage}
-                      onSelect={() => setSelected(i)}
-                      onOpen={() => onOpen(i)}
-                      onTerminal={(ptyId) => openTerminal(ptyId, g.lead.reason)}
-                    />
-                  ))}
-                </ul>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
-      </div>
-    </TooltipProvider>
+              </ul>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 
