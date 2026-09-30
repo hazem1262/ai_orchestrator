@@ -222,6 +222,65 @@ describe('WorktreesPage clean-up', () => {
     expect(within(dialog).queryByRole('button', { name: /^Archive/ })).toBeNull();
   });
 
+  it('shows each row folder and the short commit of detached worktrees', async () => {
+    api.worktreesCleanupPreview = vi.fn(async () => ({
+      candidates: [
+        {
+          path: '/r/.claude/worktrees/agent-a1',
+          repo: '/r',
+          repoName: 'o/r',
+          branch: '(detached)',
+          head: '1a2b3c4',
+          reason: 'in_default_branch' as const,
+        },
+        {
+          path: '/r/.claude/worktrees/agent-b2',
+          repo: '/r',
+          repoName: 'o/r',
+          branch: '(detached)',
+          head: '5d6e7f8',
+          reason: 'in_default_branch' as const,
+        },
+        {
+          path: '/r/.worktrees/feat-SAF-1-x',
+          repo: '/r',
+          repoName: 'o/r',
+          branch: 'feat/SAF-1-x',
+          reason: 'pr_merged' as const,
+          pr: { repo: 'o/r', number: 7, url: 'https://github.com/o/r/pull/7' },
+        },
+      ],
+      skipped: [
+        {
+          path: '/r/.worktrees/ext',
+          repo: '/r',
+          repoName: 'o/r',
+          branch: 'fix/SAF-2-ext',
+          why: 'uncommitted changes in 1 file(s)',
+        },
+      ],
+    })) as unknown as FakeApi['worktreesCleanupPreview'];
+    const user = userEvent.setup();
+    renderWithProviders(<WorktreesPage />, { api });
+    await screen.findByText('feat/SAF-1-x');
+    await user.click(screen.getByRole('button', { name: 'Clean up merged' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Clean up merged worktrees' });
+    const r = await within(dialog).findByRole('list', { name: 'o/r' });
+    const rows = within(r).getAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    const folder = (name: string) => within(r).getByText(name);
+    expect(folder('agent-a1').getAttribute('title')).toBe('/r/.claude/worktrees/agent-a1');
+    expect(folder('agent-b2').getAttribute('title')).toBe('/r/.claude/worktrees/agent-b2');
+    expect(within(rows[0] as HTMLElement).getByText('1a2b3c4')).toBeDefined();
+    expect(within(rows[1] as HTMLElement).getByText('5d6e7f8')).toBeDefined();
+    expect(folder('feat-SAF-1-x').getAttribute('title')).toBe('/r/.worktrees/feat-SAF-1-x');
+    expect(within(rows[2] as HTMLElement).getByText('feat/SAF-1-x')).toBeDefined();
+    expect(within(rows[2] as HTMLElement).getByText('PR merged')).toBeDefined();
+    expect(within(rows[2] as HTMLElement).getByRole('link', { name: '#7' })).toBeDefined();
+    const skipped = within(dialog).getByRole('list', { name: 'Skipped' });
+    expect(within(skipped).getByText('ext').getAttribute('title')).toBe('/r/.worktrees/ext');
+  });
+
   it('previews every project when no project is selected', async () => {
     useProjectStore.setState({ projectId: '' });
     const cleanupPreview = vi.fn(async () => ({ candidates: [], skipped: [] }));

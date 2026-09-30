@@ -159,6 +159,21 @@ describe('worktree clean-up preview', () => {
     expect(all).not.toContain(r.dir);
   });
 
+  it('gives a detached worktree its short HEAD commit', async () => {
+    const { svc, r, merged } = await setup();
+    const tip = r.git('rev-parse', 'refs/remotes/origin/main').trim();
+    const det = `${r.dir}/.worktrees/detached-a`;
+    r.git('worktree', 'add', '--detach', det, tip);
+    await svc.discover();
+    const preview = await svc.cleanupPreview({});
+    expect(preview.candidates.find((c) => c.path === det)).toMatchObject({
+      branch: '(detached)',
+      head: tip.slice(0, 7),
+      reason: 'in_default_branch',
+    });
+    expect(preview.candidates.find((c) => c.path === merged.path)).not.toHaveProperty('head');
+  });
+
   it('resolves the default branch from origin/main when origin/HEAD is not set', async () => {
     const { svc, merged } = await setup({ originHead: false });
     const preview = await svc.cleanupPreview({});

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { GitAlertDialog } from '@/features/git/GitAlertDialog.tsx';
 
 type Candidate = z.infer<typeof WorktreeCleanupCandidate>;
+type Item = Pick<Candidate, 'path' | 'branch' | 'head'>;
 type Preview = z.infer<typeof WorktreeCleanupPreview>;
 type Result = z.infer<typeof WorktreeCleanupResult>;
 
@@ -28,6 +29,23 @@ function byRepo(candidates: Candidate[]): Array<[string, Candidate[]]> {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
+const folderOf = (path: string) => path.replace(/\/+$/, '').split('/').pop() || path;
+
+/** Folder name (full path on hover), branch, and the short commit when the worktree is detached. */
+function RowIdentity({ item }: { item: Item }) {
+  return (
+    <>
+      <span className="min-w-0 max-w-full truncate font-mono font-medium" title={item.path}>
+        {folderOf(item.path)}
+      </span>
+      <span className="min-w-0 max-w-full truncate font-mono text-xs text-muted-foreground">
+        {item.branch}
+      </span>
+      {item.head && <code className="font-mono text-xs text-muted-foreground">{item.head}</code>}
+    </>
+  );
+}
+
 function CandidateList({ preview }: { preview: Preview }) {
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -39,8 +57,8 @@ function CandidateList({ preview }: { preview: Preview }) {
           <h3 className="font-mono text-xs font-semibold text-muted-foreground">{repo}</h3>
           <ul aria-label={repo} className="flex flex-col gap-1">
             {rows.map((c) => (
-              <li key={c.path} className="flex min-w-0 flex-wrap items-center gap-1.5" title={c.path}>
-                <span className="truncate font-mono">{c.branch}</span>
+              <li key={c.path} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <RowIdentity item={c} />
                 <Badge variant="outline">{REASON_LABEL[c.reason]}</Badge>
                 {c.pr && (
                   <a href={c.pr.url} target="_blank" rel="noreferrer" className="underline">
@@ -57,8 +75,8 @@ function CandidateList({ preview }: { preview: Preview }) {
           <h3 className="text-xs font-semibold text-muted-foreground">Skipped</h3>
           <ul aria-label="Skipped" className="flex flex-col gap-1">
             {preview.skipped.map((s) => (
-              <li key={s.path} className="flex min-w-0 flex-wrap items-center gap-1.5" title={s.path}>
-                <span className="truncate font-mono">{s.branch}</span>
+              <li key={s.path} className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <RowIdentity item={s} />
                 <span className="text-xs text-muted-foreground">{s.repoName}</span>
                 <span className="text-xs text-destructive">{s.why}</span>
               </li>

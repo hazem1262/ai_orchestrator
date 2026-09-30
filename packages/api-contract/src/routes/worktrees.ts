@@ -88,6 +88,8 @@ const CleanupItem = z.object({
   /** GitHub `owner/name` when known, else the main checkout's folder name. */
   repoName: z.string(),
   branch: z.string(),
+  /** Short HEAD commit (7 chars), set for detached worktrees when it can be resolved. */
+  head: z.string().optional(),
 });
 
 export const WorktreeCleanupCandidate = CleanupItem.extend({

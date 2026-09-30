@@ -19,6 +19,8 @@ type Preview = z.infer<typeof WorktreeCleanupPreview>;
 type Result = z.infer<typeof WorktreeCleanupResult>;
 type Reason = Candidate['reason'];
 
+const DETACHED = '(detached)';
+
 export type ArchiveFn = (path: string) => Promise<void>;
 
 /** `origin/<default>` of a repo: `refs/remotes/origin/HEAD`, else `origin/main` or `origin/master`. Never fetches. */
@@ -37,6 +39,13 @@ async function branchTip(w: WorktreeView): Promise<string | null> {
   const [cwd, ref] = existsSync(w.path) ? [w.path, 'HEAD'] : [w.repo, `refs/heads/${w.branch}`];
   const r = await git(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { allowFail: true });
   return r.exitCode === 0 ? r.stdout.trim() : null;
+}
+
+/** Short HEAD commit of a detached worktree, so identical `(detached)` rows can be told apart. */
+async function detachedHead(w: WorktreeView): Promise<string | null> {
+  if (w.branch !== DETACHED) return null;
+  const sha = w.head ?? (existsSync(w.path) ? await branchTip(w) : null);
+  return sha ? sha.slice(0, 7) : null;
 }
 
 /** Per-call caches, so one preview or run resolves each repo's default branch and name once. */
@@ -101,7 +110,14 @@ export async function cleanupPreview(d: WorktreeDeps, f: { projectId?: string })
     async (w) => {
       const reason = await mergedReason(w, info);
       if (!reason) return null;
-      const base = { path: w.path, repo: w.repo, repoName: await info.name(w.repo), branch: w.branch };
+      const head = await detachedHead(w);
+      const base = {
+        path: w.path,
+        repo: w.repo,
+        repoName: await info.name(w.repo),
+        branch: w.branch,
+        ...(head ? { head } : {}),
+      };
       const why = await dirtyReason(w);
       if (why) return { skipped: { ...base, why } };
       const pr = reason === 'pr_merged' ? w.prStatus?.pr : undefined;
