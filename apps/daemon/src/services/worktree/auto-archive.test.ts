@@ -6,6 +6,7 @@ import { recordingPty } from '../../../test/fake-pty.ts';
 import { makeTempRepo, type TempRepo } from '../../../test/git-fixture.ts';
 import { createTestContext } from '../../../test/helpers.ts';
 import { memoryAudit, recordingInbox, stubSessions } from '../../../test/stubs.ts';
+import { upsertPrStatus } from '../../db/repos/pr-cache.ts';
 import type { WorktreeRow } from '../../db/repos/worktrees.ts';
 import { getWorktree, upsertWorktree } from '../../db/repos/worktrees.ts';
 import { registerAutoArchive } from './auto-archive.ts';
@@ -371,6 +372,115 @@ describe('registerAutoArchive', () => {
         [a.path, 2],
         [b.path, 3],
       ]);
+    });
+  });
+
+  describe('worktrees linked to a PR already merged in pr_cache', () => {
+    const cacheMerged = (ctx: Parameters<typeof upsertPrStatus>[0], n: number, headRef: string) =>
+      upsertPrStatus(
+        ctx,
+        {
+          ...merged(`https://github.com/o/r/pull/${n}`, headRef).after,
+          pr: { repo: 'o/r', number: n, url: `https://github.com/o/r/pull/${n}` },
+        },
+        '2026-09-17T11:00:00Z',
+      );
+    const grouped = (inbox: ReturnType<typeof recordingInbox>) =>
+      inbox.list({ state: ['open', 'snoozed'] }).filter((i) => i.payload.event === 'archive_external');
+    const listed = (inbox: ReturnType<typeof recordingInbox>) =>
+      grouped(inbox).flatMap(
+        (i) => (i.payload.worktrees ?? []) as Array<{ path: string; pr: { number: number } }>,
+      );
+
+    it('lists an external worktree in its repo row when discovery links it to a merged PR', async () => {
+      const { ctx, inbox, off } = await setup();
+      const dir = repo?.dir ?? '';
+      repo?.git('remote', 'add', 'origin', 'git@github.com:o/r.git');
+      cacheMerged(ctx.db, 7, 'ext-7');
+      const path = `${dir}/.worktrees/ext-7`;
+      repo?.git('worktree', 'add', '-b', 'ext-7', path, 'main');
+
+      await ctx.worktrees?.discover();
+
+      expect(getWorktree(ctx.db, path)?.prUrl).toBe('https://github.com/o/r/pull/7');
+      await vi.waitFor(() => expect(listed(inbox).map((e) => [e.path, e.pr.number])).toEqual([[path, 7]]));
+      await ctx.worktrees?.discover();
+      await new Promise((r) => setTimeout(r, 100));
+      expect(listed(inbox).filter((e) => e.path === path)).toHaveLength(1);
+      off();
+    });
+
+    it('archives an app worktree when discovery links it to a merged PR', async () => {
+      const { ctx, view, row, audit, off } = await setup();
+      off();
+      repo?.git('remote', 'add', 'origin', 'git@github.com:o/r.git');
+      upsertWorktree(ctx.db, { ...row, prUrl: 'https://github.com/o/other/pull/9' });
+      disposers.push(registerAutoArchive(ctx));
+      cacheMerged(ctx.db, 1, view.branch);
+
+      await ctx.worktrees?.discover();
+
+      expect(getWorktree(ctx.db, view.path)?.prUrl).toBe('https://github.com/o/r/pull/1');
+      await vi.waitFor(() => {
+        expect(existsSync(view.path)).toBe(false);
+        expect(audit.entries.find((e) => e.action === 'worktree.archive')).toMatchObject({
+          actor: 'automation',
+          result: 'ok',
+        });
+      });
+    });
+
+    it('lists active external worktrees linked to a merged PR but missing from their repo row at startup', async () => {
+      const { ctx, row, inbox, off } = await setup();
+      off();
+      const dir = repo?.dir ?? '';
+      const ext = (n: number) => {
+        const w: WorktreeRow = {
+          ...row,
+          path: `${dir}/.worktrees/ext-${n}`,
+          branch: `ext-${n}`,
+          prUrl: `https://github.com/o/r/pull/${n}`,
+          createdByApp: false,
+          origin: 'worktree-dir',
+          sessionPks: [],
+        };
+        upsertWorktree(ctx.db, w);
+        cacheMerged(ctx.db, n, w.branch);
+        return w;
+      };
+      const a = ext(2);
+      const b = ext(3);
+      const c = ext(4);
+      const open = merged(c.prUrl ?? '', c.branch).before;
+      upsertPrStatus(
+        ctx.db,
+        { ...open, pr: { repo: 'o/r', number: 4, url: c.prUrl ?? '' } },
+        '2026-09-17T11:00:00Z',
+      );
+      inbox.upsert({
+        kind: 'pr_event',
+        scope: { domain: 'repo', id: dir },
+        facet: 'archive_external',
+        reason: '1 merged worktree in o/r was not created by the app — archive it yourself',
+        payload: {
+          event: 'archive_external',
+          repo: dir,
+          label: 'o/r',
+          worktrees: [{ path: a.path, pr: { repo: 'o/r', number: 2, url: a.prUrl } }],
+          presetId: null,
+          vars: {},
+        },
+      });
+
+      disposers.push(registerAutoArchive(ctx));
+
+      await vi.waitFor(() =>
+        expect(listed(inbox).map((e) => [e.path, e.pr.number])).toEqual([
+          [a.path, 2],
+          [b.path, 3],
+        ]),
+      );
+      expect(grouped(inbox)).toHaveLength(1);
     });
   });
 });
