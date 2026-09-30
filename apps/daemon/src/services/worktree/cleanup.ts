@@ -77,6 +77,13 @@ async function mergedReason(w: WorktreeView, info: ReturnType<typeof repoInfo>):
   return r.exitCode === 0 ? 'in_default_branch' : null;
 }
 
+const INSIDE_GIT = 'managed by another tool (inside .git)';
+
+/** True when a path segment is exactly `.git`: another tool keeps its own worktrees there. */
+function insideGitDir(path: string): boolean {
+  return path.split(/[\\/]/).includes('.git');
+}
+
 async function dirtyReason(w: WorktreeView): Promise<string | null> {
   if (!existsSync(w.path)) return null;
   const dirty = await dirtyFiles(w.path);
@@ -118,7 +125,7 @@ export async function cleanupPreview(d: WorktreeDeps, f: { projectId?: string })
         branch: w.branch,
         ...(head ? { head } : {}),
       };
-      const why = await dirtyReason(w);
+      const why = insideGitDir(w.path) ? INSIDE_GIT : await dirtyReason(w);
       if (why) return { skipped: { ...base, why } };
       const pr = reason === 'pr_merged' ? w.prStatus?.pr : undefined;
       return { candidate: { ...base, reason, ...(pr ? { pr } : {}) } };
@@ -144,6 +151,7 @@ async function refusal(
   if (row.isMain) return `${path} is the main checkout`;
   const w = toView(d, row);
   if (!(await mergedReason(w, info))) return `${w.branch} is not merged`;
+  if (insideGitDir(w.path)) return INSIDE_GIT;
   return dirtyReason(w);
 }
 

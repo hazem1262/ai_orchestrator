@@ -174,6 +174,23 @@ describe('worktree clean-up preview', () => {
     expect(preview.candidates.find((c) => c.path === merged.path)).not.toHaveProperty('head');
   });
 
+  it('skips a merged, clean worktree kept inside .git by another tool', async () => {
+    const { svc, r } = await setup();
+    const tip = r.git('rev-parse', 'refs/remotes/origin/main').trim();
+    const tool = `${r.dir}/.git/tool/x`;
+    const github = `${r.dir}/.worktrees/.github/x`;
+    r.git('worktree', 'add', '--detach', tool, tip);
+    r.git('worktree', 'add', '--detach', github, tip);
+    await svc.discover();
+    const preview = await svc.cleanupPreview({});
+    expect(preview.candidates.map((c) => c.path)).not.toContain(tool);
+    expect(preview.skipped.find((s) => s.path === tool)).toMatchObject({
+      path: tool,
+      why: 'managed by another tool (inside .git)',
+    });
+    expect(preview.candidates.find((c) => c.path === github)?.reason).toBe('in_default_branch');
+  });
+
   it('resolves the default branch from origin/main when origin/HEAD is not set', async () => {
     const { svc, merged } = await setup({ originHead: false });
     const preview = await svc.cleanupPreview({});
@@ -225,6 +242,18 @@ describe('worktree clean-up run', () => {
     expect(
       audit.entries.filter((e) => e.action === 'worktree.archive' && e.result === 'ok').map((e) => e.actor),
     ).toEqual(['user', 'user']);
+  });
+
+  it('refuses a worktree kept inside .git by another tool', async () => {
+    const { ctx, svc, r } = await setup();
+    const tip = r.git('rev-parse', 'refs/remotes/origin/main').trim();
+    const tool = `${r.dir}/.git/tool/x`;
+    r.git('worktree', 'add', '--detach', tool, tip);
+    await svc.discover();
+    const out = await svc.cleanup([tool]);
+    expect(out.results).toEqual([{ path: tool, ok: false, error: 'managed by another tool (inside .git)' }]);
+    expect(existsSync(tool)).toBe(true);
+    expect(getWorktree(ctx.db, tool)?.state).toBe('active');
   });
 
   it('reports an unknown path without throwing', async () => {
