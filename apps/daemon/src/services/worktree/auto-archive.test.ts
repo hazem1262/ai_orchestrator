@@ -129,6 +129,56 @@ describe('registerAutoArchive', () => {
     again.off();
   });
 
+  describe('cross-repo PR links', () => {
+    const OTHER = 'https://github.com/o/other/pull/1';
+    const mergedOther = (headRef: string) => {
+      const e = merged(OTHER, headRef);
+      const pr = { repo: 'o/other', number: 1, url: OTHER };
+      return { ...e, before: { ...e.before, pr }, after: { ...e.after, pr } };
+    };
+
+    it('ignores a merged PR from another repo even when the worktree row links it', async () => {
+      const { ctx, view, row, inbox, archiveCalls, off } = await setup();
+      repo?.git('remote', 'add', 'origin', 'git@github.com:o/r.git');
+      upsertWorktree(ctx.db, { ...row, prUrl: OTHER, createdByApp: false, origin: 'worktree-dir' });
+      ctx.bus.emit(mergedOther(view.branch));
+      await new Promise((r) => setTimeout(r, 200));
+      expect(archiveCalls).toEqual([]);
+      expect(inbox.upserts).toEqual([]);
+      off();
+    });
+
+    it('resolves archive_blocked rows whose PR is from another repo at startup', async () => {
+      const { ctx, view, inbox, off } = await setup();
+      off();
+      repo?.git('remote', 'add', 'origin', 'https://github.com/o/r.git');
+      const row = (prRepo: string) =>
+        inbox.upsert({
+          kind: 'pr_event',
+          scope: { domain: 'worktree', id: view.path },
+          facet: `archive_blocked`,
+          reason: `${prRepo}#1 merged; worktree kept because it was not created by the app`,
+          payload: {
+            pr: { repo: prRepo, number: 1, url: `https://github.com/${prRepo}/pull/1` },
+            event: 'archive_blocked',
+            path: view.path,
+            presetId: null,
+            vars: {},
+          },
+        });
+      const stateOf = (id: string) => inbox.list({}).find((i) => i.id === id)?.state;
+
+      const same = row('o/r');
+      disposers.push(registerAutoArchive(ctx));
+      await new Promise((r) => setTimeout(r, 200));
+      expect(stateOf(same.id)).toBe('open');
+
+      const wrong = row('o/other');
+      disposers.push(registerAutoArchive(ctx));
+      await vi.waitFor(() => expect(stateOf(wrong.id)).toBe('auto_resolved'));
+    });
+  });
+
   describe('closing the archive_blocked row', () => {
     const DIRTY = '.worktrees/feat-SAF-50-merge-me/src/a.ts';
     const ORIGINAL = 'export const a = 1;\nexport const b = 2;\nexport const c = 3;\n';

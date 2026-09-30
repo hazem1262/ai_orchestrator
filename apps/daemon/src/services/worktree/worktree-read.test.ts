@@ -11,6 +11,7 @@ import {
   discoverWorktrees,
   findWorktreeByCwd,
   getWorktreeView,
+  githubSlugFromRemote,
   listWorktreeViews,
   prRepoSlug,
   type WorktreeDeps,
@@ -24,8 +25,16 @@ afterEach(() => {
   repo.cleanup();
 });
 
-function setup() {
+type PrRef = { repo: string; number: number; url: string };
+const ref = (repo: string, number: number): PrRef => ({
+  repo,
+  number,
+  url: `https://github.com/${repo}/pull/${number}`,
+});
+
+function setup(opts: { origin?: string; prs?: PrRef[] } = {}) {
   repo = makeTempRepo();
+  if (opts.origin) repo.git('remote', 'add', 'origin', opts.origin);
   const wt = join(repo.dir, '.worktrees', 'feat-SAF-9-thing');
   repo.git('worktree', 'add', '-b', 'feat/SAF-9-thing', wt, 'main');
   const cfg = OrcConfig.parse({
@@ -54,7 +63,7 @@ function setup() {
     syncTable: unused,
   };
   const sessions = stubSessions([
-    makeSession({ id: 'in-wt', startCwd: join(wt, 'src'), cwds: [join(wt, 'src')] }),
+    makeSession({ id: 'in-wt', startCwd: join(wt, 'src'), cwds: [join(wt, 'src')], prs: opts.prs ?? [] }),
     makeSession({ id: 'in-main', startCwd: repo.dir, cwds: [repo.dir] }),
   ]);
   const ctx = createTestContext({ config: () => cfg, sessions, projects });
@@ -151,6 +160,69 @@ describe('discoverWorktrees', () => {
   });
 });
 
+describe('discoverWorktrees PR linking across repos', () => {
+  const cached = (ctx: ReturnType<typeof setup>['ctx'], r: PrRef, updatedAt: string) =>
+    upsertPrStatus(
+      ctx.db,
+      {
+        pr: r,
+        state: 'open',
+        title: 't',
+        checks: 'success',
+        review: 'approved',
+        updatedAt,
+        headRef: 'feat/SAF-9-thing',
+        failedChecks: [],
+      },
+      updatedAt,
+    );
+
+  it('does not stamp a session PR from a different repo on the worktree', async () => {
+    const { d, wt } = setup({ origin: 'git@github.com:o/r.git', prs: [ref('o/other', 93)] });
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBeNull();
+  });
+
+  it('stamps the first session PR from the worktree own repo', async () => {
+    const { d, wt } = setup({
+      origin: 'https://github.com/o/r.git',
+      prs: [ref('o/other', 93), ref('o/r', 7), ref('o/r', 8)],
+    });
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBe('https://github.com/o/r/pull/7');
+  });
+
+  it('does not use session PRs when the worktree repo slug is unknown', async () => {
+    const { d, wt } = setup({ prs: [ref('o/r', 7)] });
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBeNull();
+  });
+
+  it('only links a branch-matched PR from the worktree own repo', async () => {
+    const { ctx, d, wt } = setup({ origin: 'git@github.com:o/r.git' });
+    cached(ctx, ref('o/r', 5), '2026-09-17T09:00:00Z');
+    cached(ctx, ref('o/other', 6), '2026-09-17T09:30:00Z');
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBe('https://github.com/o/r/pull/5');
+    expect(getWorktreeView(d, wt)?.prStatus?.pr.repo).toBe('o/r');
+  });
+
+  it('drops a stored PR link from a different repo and re-derives it', async () => {
+    const { ctx, d, wt } = setup({ origin: 'git@github.com:o/r.git' });
+    await discoverWorktrees(d);
+    const row = getWorktree(ctx.db, wt);
+    if (!row) throw new Error('no row');
+    upsertWorktree(ctx.db, { ...row, prUrl: 'https://github.com/o/other/pull/93' });
+    await discoverWorktrees(d);
+    expect(getWorktree(ctx.db, wt)?.prUrl).toBeNull();
+
+    upsertWorktree(ctx.db, { ...row, prUrl: 'https://github.com/o/other/pull/93' });
+    cached(ctx, ref('o/r', 5), '2026-09-17T09:00:00Z');
+    await discoverWorktrees(d);
+    expect(getWorktree(ctx.db, wt)?.prUrl).toBe('https://github.com/o/r/pull/5');
+  });
+});
+
 describe('findWorktreeByCwd', () => {
   it('picks the longest active worktree prefix', async () => {
     const { d, wt } = setup();
@@ -158,6 +230,17 @@ describe('findWorktreeByCwd', () => {
     expect(findWorktreeByCwd(d, join(wt, 'src'))?.path).toBe(wt);
     expect(findWorktreeByCwd(d, join(repo.dir, 'src'))?.path).toBe(repo.dir);
     expect(findWorktreeByCwd(d, '/elsewhere')).toBeNull();
+  });
+});
+
+describe('githubSlugFromRemote', () => {
+  it('parses GitHub remote URLs', () => {
+    expect(githubSlugFromRemote('git@github.com:o/r.git')).toBe('o/r');
+    expect(githubSlugFromRemote('https://github.com/o/r.git')).toBe('o/r');
+    expect(githubSlugFromRemote('https://github.com/o/r')).toBe('o/r');
+    expect(githubSlugFromRemote('ssh://git@github.com/o/r.git')).toBe('o/r');
+    expect(githubSlugFromRemote('/tmp/remote.git')).toBeNull();
+    expect(githubSlugFromRemote('')).toBeNull();
   });
 });
 

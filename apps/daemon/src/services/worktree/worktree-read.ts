@@ -31,6 +31,27 @@ export function prRepoSlug(prUrl: string | null): { repo: string; number: number
   return m?.[1] && m[2] ? { repo: m[1], number: Number(m[2]) } : null;
 }
 
+/** `owner/name` of a GitHub remote URL (https, ssh or scp-style), or null for anything else. */
+export function githubSlugFromRemote(url: string): string | null {
+  const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(url.trim());
+  return m?.[1] && m[2] ? `${m[1]}/${m[2]}` : null;
+}
+
+export const sameRepo = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+const slugCache = new Map<string, string | null>();
+
+/**
+ * The GitHub `owner/name` of a repo checkout, read from its `origin` remote. Null when there is no
+ * origin or it isn't on GitHub. Each call re-reads git and refreshes the cache `toView` reads.
+ */
+export async function repoSlugOf(repoPath: string): Promise<string | null> {
+  const r = await git(repoPath, ['remote', 'get-url', 'origin'], { allowFail: true });
+  const slug = r.exitCode === 0 ? githubSlugFromRemote(r.stdout) : null;
+  slugCache.set(repoPath, slug);
+  return slug;
+}
+
 export async function dirtyFiles(path: string): Promise<string[]> {
   const r = await git(path, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { allowFail: true });
   if (r.exitCode !== 0) return [];
@@ -43,7 +64,7 @@ export function toView(d: WorktreeDeps, row: WorktreeRow): WorktreeView {
     ? getPrStatus(d.ctx.db, slug.repo, slug.number)
     : row.isMain
       ? null
-      : findPrByHead(d.ctx.db, row.branch);
+      : findPrByHead(d.ctx.db, row.branch, slugCache.get(row.repo) ?? null);
   const { createdAt: _c, archivedAt: _a, ...view } = row;
   return { ...view, prUrl: row.prUrl ?? prStatus?.pr.url ?? null, prStatus };
 }
@@ -62,6 +83,28 @@ function sessionLinks(d: WorktreeDeps, paths: string[]): Map<string, string[]> {
     for (const p of hit) links.get(p)?.push(item.pk);
   }
   return links;
+}
+
+/**
+ * A worktree only links a PR from its own repo. A stored link from another repo is dropped and
+ * re-derived. Without a known repo slug, only a branch match is used — never session PRs.
+ */
+function linkedPrUrl(
+  d: WorktreeDeps,
+  f: { branch: string; isMain: boolean },
+  slug: string | null,
+  prevUrl: string | null,
+  sessionPrs: Array<{ repo: string; url: string }>,
+): string | null {
+  if (f.isMain) return null;
+  if (prevUrl) {
+    const prev = prRepoSlug(prevUrl);
+    if (!slug || (prev && sameRepo(prev.repo, slug))) return prevUrl;
+  }
+  const byBranch = findPrByHead(d.ctx.db, f.branch, slug);
+  if (byBranch) return byBranch.pr.url;
+  if (!slug) return null;
+  return sessionPrs.find((p) => sameRepo(p.repo, slug))?.url ?? null;
 }
 
 const fingerprint = (v: WorktreeView) =>
@@ -90,6 +133,8 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
     d,
     found.map((f) => f.path),
   );
+  const slugs = new Map<string, string | null>();
+  for (const repo of new Set(found.map((f) => f.repo))) slugs.set(repo, await repoSlugOf(repo));
   const nowIso = d.now().toISOString();
   const seen = new Set<string>();
   const views: WorktreeView[] = [];
@@ -101,9 +146,7 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
     const projectId = ctx.projects.resolve(f.path);
     const regex = projectId ? (ctx.projects.get(projectId)?.ticketRegex ?? null) : null;
     const linked = links.get(f.path) ?? [];
-    const sessionPrUrl = f.isMain
-      ? null
-      : (linked.map((pk) => ctx.sessions.getByPk(pk)).flatMap((s) => s?.prs ?? [])[0]?.url ?? null);
+    const sessionPrs = linked.flatMap((pk) => ctx.sessions.getByPk(pk)?.prs ?? []);
     const row: WorktreeRow = {
       path: f.path,
       repo: f.repo,
@@ -111,7 +154,7 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
       base: prev?.base ?? null,
       ticket: f.isMain ? null : ticketFromBranch(f.branch, regex),
       dirty: (await dirtyFiles(f.path)).length > 0,
-      prUrl: prev?.prUrl ?? (f.isMain ? null : (findPrByHead(ctx.db, f.branch)?.pr.url ?? sessionPrUrl)),
+      prUrl: linkedPrUrl(d, f, slugs.get(f.repo) ?? null, prev?.prUrl ?? null, sessionPrs),
       state: 'active',
       createdByApp: prev?.createdByApp ?? false,
       head: f.head,
