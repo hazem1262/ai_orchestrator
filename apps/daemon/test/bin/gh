@@ -48,6 +48,19 @@ if (cmd === 'pr' && sub === 'view') {
   process.stdout.write(`${JSON.stringify(pr)}\n`);
   process.exit(0);
 }
+if (cmd === 'pr' && sub === 'list') {
+  const repo = flag('-R') ?? flag('--repo') ?? state.repo;
+  const head = flag('--head');
+  const want = flag('--state') ?? 'open';
+  const limit = Number(flag('--limit') ?? 30);
+  const rows = Object.values(state.prs)
+    .filter((p) => p.repo === repo && (head === undefined || p.headRefName === head))
+    .filter((p) => want === 'all' || p.state.toLowerCase() === want)
+    .sort((a, b) => b.number - a.number)
+    .slice(0, limit);
+  process.stdout.write(`${JSON.stringify(rows)}\n`);
+  process.exit(0);
+}
 if (cmd === 'search' && sub === 'prs') {
   const wantReview = has('--review-requested=@me');
   const open = Object.values(state.prs)

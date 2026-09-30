@@ -75,6 +75,35 @@ export function mapPrJson(repo: string, j: GhPrJson): PrStatus {
   };
 }
 
+/**
+ * The newest PR on GitHub whose head is `branch` in `repo`, any state. Null when there is none.
+ * Throws when gh is missing, unauthenticated or fails.
+ */
+export async function findPrForBranch(repo: string, branch: string): Promise<PrStatus | null> {
+  const r = await gh([
+    'pr',
+    'list',
+    '-R',
+    repo,
+    '--head',
+    branch,
+    '--state',
+    'all',
+    '--limit',
+    '1',
+    '--json',
+    GH_PR_FIELDS,
+  ]);
+  if (r.exitCode !== 0)
+    throw new GitError(
+      'gh_unavailable',
+      `gh pr list ${repo} --head ${branch} failed: ${r.stderr.trim()}`,
+      r.stderr,
+    );
+  const rows = JSON.parse(r.stdout) as GhPrJson[];
+  return rows[0] ? mapPrJson(repo, rows[0]) : null;
+}
+
 const keyOf = (p: PrRef) => `${p.repo}#${p.number}`;
 const signature = (s: PrStatus) => JSON.stringify([s.state, s.checks, s.review, s.failedChecks, s.updatedAt]);
 

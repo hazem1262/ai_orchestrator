@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
 import { sep } from 'node:path';
 import { parseStatusPorcelainZ, ticketFromBranch, type WorktreeView } from '@orc/core';
+import { findPrForBranch } from '../../connectors/github/github.ts';
 import type { DaemonContext } from '../../context.ts';
-import { findPrByHead, getPrStatus } from '../../db/repos/pr-cache.ts';
+import { findPrByHead, getPrStatus, upsertPrStatus } from '../../db/repos/pr-cache.ts';
 import {
   getWorktree,
   listWorktrees,
@@ -85,26 +86,92 @@ function sessionLinks(d: WorktreeDeps, paths: string[]): Map<string, string[]> {
   return links;
 }
 
+const BRANCH_LOOKUP_TTL_MS = 10 * 60_000;
+/** Per worktree path: the branch last looked up on GitHub, the link that lookup produced, and when. */
+const branchLookups = new Map<string, { branch: string; result: string | null; at: number }>();
+
 /**
- * A worktree only links a PR from its own repo. A stored link from another repo is dropped and
- * re-derived. Without a known repo slug, only a branch match is used — never session PRs.
+ * A worktree only links a PR from its own repo. A stored link from another repo, or one whose
+ * cached PR head is a different branch, is re-derived: pr_cache by branch, then GitHub by branch
+ * (`gh pr list --head`), then the first same-repo session PR. GitHub is asked at most once per
+ * path and branch while the link it produced stays stored. When gh fails, a same-repo stored
+ * link is kept. Without a known repo slug, only a branch match is used — never session PRs.
  */
-function linkedPrUrl(
+async function linkedPrUrl(
   d: WorktreeDeps,
-  f: { branch: string; isMain: boolean },
+  f: { path: string; branch: string; isMain: boolean },
   slug: string | null,
   prevUrl: string | null,
   sessionPrs: Array<{ repo: string; url: string }>,
-): string | null {
+): Promise<string | null> {
   if (f.isMain) return null;
-  if (prevUrl) {
-    const prev = prRepoSlug(prevUrl);
-    if (!slug || (prev && sameRepo(prev.repo, slug))) return prevUrl;
-  }
+  const headDiffers = (url: string) => {
+    const r = prRepoSlug(url);
+    const s = r ? getPrStatus(d.ctx.db, r.repo, r.number) : null;
+    return !!s?.headRef && s.headRef !== f.branch;
+  };
+  const prev = prRepoSlug(prevUrl);
+  const keepPrev = prevUrl !== null && (!slug || (prev !== null && sameRepo(prev.repo, slug)));
+  if (keepPrev && !headDiffers(prevUrl)) return prevUrl;
   const byBranch = findPrByHead(d.ctx.db, f.branch, slug);
   if (byBranch) return byBranch.pr.url;
-  if (!slug) return null;
-  return sessionPrs.find((p) => sameRepo(p.repo, slug))?.url ?? null;
+  if (!slug) return keepPrev ? prevUrl : null;
+
+  const now = d.now().getTime();
+  const last = branchLookups.get(f.path);
+  const fresh = last?.branch === f.branch && last.result === prevUrl && now - last.at < BRANCH_LOOKUP_TTL_MS;
+  if (!fresh) {
+    const found = d.ctx.config().github.enabled
+      ? await findPrForBranch(slug, f.branch).catch((err: unknown) => {
+          d.ctx.log.warn({ err: String(err), path: f.path }, 'worktree PR lookup by branch failed');
+          return undefined;
+        })
+      : undefined;
+    if (found === undefined) {
+      if (keepPrev) return prevUrl;
+      return sessionPrs.find((p) => sameRepo(p.repo, slug))?.url ?? null;
+    }
+    // Only open PRs are cached, so the GitHub poll still sees a merge as a transition.
+    if (found?.state === 'open') upsertPrStatus(d.ctx.db, found, d.now().toISOString());
+    const result = found?.pr.url ?? sessionFallback(slug, sessionPrs, headDiffers);
+    branchLookups.set(f.path, { branch: f.branch, result, at: now });
+    return result;
+  }
+  return prevUrl;
+}
+
+const sessionFallback = (
+  slug: string,
+  sessionPrs: Array<{ repo: string; url: string }>,
+  headDiffers: (url: string) => boolean,
+) => sessionPrs.find((p) => sameRepo(p.repo, slug) && !headDiffers(p.url))?.url ?? null;
+
+/** Resolves open archive_blocked rows that name a PR other than the worktree's current link. */
+function resolveStaleArchiveBlocked(
+  ctx: DaemonContext,
+  rows: Map<string, string | null>,
+  view: WorktreeView,
+): void {
+  if (!rows.has(view.path)) return;
+  const url = rows.get(view.path);
+  if (url === view.prUrl) return;
+  ctx.inbox?.resolve({
+    kind: 'pr_event',
+    scope: { domain: 'worktree', id: view.path },
+    facet: 'archive_blocked',
+  });
+  rows.delete(view.path);
+}
+
+function openArchiveBlocked(ctx: DaemonContext): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  for (const item of ctx.inbox?.list({ state: ['open', 'snoozed'], kind: ['pr_event'] }) ?? []) {
+    const path = item.payload.path;
+    if (item.payload.event !== 'archive_blocked' || typeof path !== 'string') continue;
+    const url = (item.payload.pr as { url?: unknown } | undefined)?.url;
+    out.set(path, typeof url === 'string' ? url : null);
+  }
+  return out;
 }
 
 const fingerprint = (v: WorktreeView) =>
@@ -136,6 +203,7 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
   const slugs = new Map<string, string | null>();
   for (const repo of new Set(found.map((f) => f.repo))) slugs.set(repo, await repoSlugOf(repo));
   const nowIso = d.now().toISOString();
+  const blockedRows = openArchiveBlocked(ctx);
   const seen = new Set<string>();
   const views: WorktreeView[] = [];
 
@@ -154,7 +222,7 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
       base: prev?.base ?? null,
       ticket: f.isMain ? null : ticketFromBranch(f.branch, regex),
       dirty: (await dirtyFiles(f.path)).length > 0,
-      prUrl: linkedPrUrl(d, f, slugs.get(f.repo) ?? null, prev?.prUrl ?? null, sessionPrs),
+      prUrl: await linkedPrUrl(d, f, slugs.get(f.repo) ?? null, prev?.prUrl ?? null, sessionPrs),
       state: 'active',
       createdByApp: prev?.createdByApp ?? false,
       head: f.head,
@@ -167,6 +235,7 @@ export async function discoverWorktrees(d: WorktreeDeps): Promise<WorktreeView[]
       archivedAt: null,
     };
     const view = toView(d, row);
+    resolveStaleArchiveBlocked(ctx, blockedRows, view);
     if (!before || fingerprint(before) !== fingerprint(view)) {
       upsertWorktree(ctx.db, row);
       ctx.bus.emit({ type: 'worktree.updated', worktree: view });

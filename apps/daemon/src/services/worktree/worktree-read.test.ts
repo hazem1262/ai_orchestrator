@@ -1,9 +1,10 @@
 import { join } from 'node:path';
 import { type LiveEvent, OrcConfig } from '@orc/api-contract';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { type FakeGh, type FakePr, useFakeGh } from '../../../test/fake-gh.ts';
 import { makeTempRepo, type TempRepo } from '../../../test/git-fixture.ts';
 import { createTestContext } from '../../../test/helpers.ts';
-import { makeSession, stubSessions } from '../../../test/stubs.ts';
+import { makeSession, recordingInbox, stubSessions } from '../../../test/stubs.ts';
 import { upsertPrStatus } from '../../db/repos/pr-cache.ts';
 import { getWorktree, upsertWorktree } from '../../db/repos/worktrees.ts';
 import type { ProjectServiceImpl } from '../projects.ts';
@@ -32,7 +33,7 @@ const ref = (repo: string, number: number): PrRef => ({
   url: `https://github.com/${repo}/pull/${number}`,
 });
 
-function setup(opts: { origin?: string; prs?: PrRef[] } = {}) {
+function setup(opts: { origin?: string; prs?: PrRef[]; inbox?: ReturnType<typeof recordingInbox> } = {}) {
   repo = makeTempRepo();
   if (opts.origin) repo.git('remote', 'add', 'origin', opts.origin);
   const wt = join(repo.dir, '.worktrees', 'feat-SAF-9-thing');
@@ -66,7 +67,12 @@ function setup(opts: { origin?: string; prs?: PrRef[] } = {}) {
     makeSession({ id: 'in-wt', startCwd: join(wt, 'src'), cwds: [join(wt, 'src')], prs: opts.prs ?? [] }),
     makeSession({ id: 'in-main', startCwd: repo.dir, cwds: [repo.dir] }),
   ]);
-  const ctx = createTestContext({ config: () => cfg, sessions, projects });
+  const ctx = createTestContext({
+    config: () => cfg,
+    sessions,
+    projects,
+    ...(opts.inbox ? { inbox: opts.inbox } : {}),
+  });
   disposers.push(() => ctx.dispose());
   const events: LiveEvent[] = [];
   ctx.bus.on('worktree.updated', (e) => events.push(e));
@@ -161,6 +167,27 @@ describe('discoverWorktrees', () => {
 });
 
 describe('discoverWorktrees PR linking across repos', () => {
+  let fake: FakeGh;
+  beforeEach(() => {
+    fake = useFakeGh({ prs: {} });
+  });
+  afterEach(() => fake.restore());
+
+  const ghPr = (number: number, headRefName: string, state: FakePr['state'] = 'OPEN'): FakePr => ({
+    repo: 'o/r',
+    number,
+    url: `https://github.com/o/r/pull/${number}`,
+    title: `pr ${number}`,
+    state,
+    headRefName,
+    baseRefName: 'main',
+    body: '',
+    updatedAt: '2026-09-17T08:00:00Z',
+    reviewDecision: '',
+    statusCheckRollup: [],
+  });
+  const prListCalls = () => fake.calls().filter((c) => c[0] === 'pr' && c[1] === 'list');
+
   const cached = (ctx: ReturnType<typeof setup>['ctx'], r: PrRef, updatedAt: string) =>
     upsertPrStatus(
       ctx.db,
@@ -220,6 +247,83 @@ describe('discoverWorktrees PR linking across repos', () => {
     cached(ctx, ref('o/r', 5), '2026-09-17T09:00:00Z');
     await discoverWorktrees(d);
     expect(getWorktree(ctx.db, wt)?.prUrl).toBe('https://github.com/o/r/pull/5');
+  });
+
+  it("links the branch's own PR from GitHub over a same-repo session PR", async () => {
+    const { d, wt } = setup({ origin: 'git@github.com:o/r.git', prs: [ref('o/r', 7)] });
+    fake.setPr(ghPr(7, 'feat/SAF-9-other'));
+    fake.setPr(ghPr(12, 'feat/SAF-9-thing', 'MERGED'));
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBe('https://github.com/o/r/pull/12');
+  });
+
+  it('asks GitHub once per worktree branch, not on every discovery', async () => {
+    const { d, wt } = setup({ origin: 'git@github.com:o/r.git', prs: [ref('o/r', 7)] });
+    await discoverWorktrees(d);
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBe('https://github.com/o/r/pull/7');
+    expect(prListCalls()).toEqual([
+      [
+        'pr',
+        'list',
+        '-R',
+        'o/r',
+        '--head',
+        'feat/SAF-9-thing',
+        '--state',
+        'all',
+        '--limit',
+        '1',
+        '--json',
+        expect.any(String),
+      ],
+    ]);
+  });
+
+  it('re-derives a stored link whose PR head is another branch and resolves its archive_blocked row', async () => {
+    const inbox = recordingInbox();
+    const { ctx, d, wt } = setup({ origin: 'git@github.com:o/r.git', inbox });
+    await discoverWorktrees(d);
+    const row = getWorktree(ctx.db, wt);
+    if (!row) throw new Error('no row');
+    const wrong = ref('o/r', 7);
+    upsertWorktree(ctx.db, { ...row, prUrl: wrong.url });
+    upsertPrStatus(
+      ctx.db,
+      {
+        pr: wrong,
+        state: 'merged',
+        title: 't',
+        checks: 'success',
+        review: 'approved',
+        updatedAt: '2026-09-17T09:00:00Z',
+        headRef: 'feat/SAF-9-other',
+        failedChecks: [],
+      },
+      '2026-09-17T09:00:00Z',
+    );
+    inbox.upsert({
+      kind: 'pr_event',
+      scope: { domain: 'worktree', id: wt },
+      facet: 'archive_blocked',
+      reason: 'o/r#7 merged; worktree kept',
+      payload: { pr: wrong, event: 'archive_blocked', path: wt, presetId: null, vars: {} },
+    });
+    fake.setPr(ghPr(12, 'feat/SAF-9-thing'));
+    await discoverWorktrees(d);
+    expect(getWorktree(ctx.db, wt)?.prUrl).toBe('https://github.com/o/r/pull/12');
+    expect(inbox.list({ state: ['open'], kind: ['pr_event'] })).toEqual([]);
+
+    await discoverWorktrees(d);
+    expect(prListCalls()).toHaveLength(2);
+  });
+
+  it('keeps the session PR when gh is unavailable', async () => {
+    const { d, wt } = setup({ origin: 'git@github.com:o/r.git', prs: [ref('o/r', 7)] });
+    fake.setState({ authed: false });
+    fake.setPr(ghPr(12, 'feat/SAF-9-thing'));
+    await discoverWorktrees(d);
+    expect(getWorktreeView(d, wt)?.prUrl).toBe('https://github.com/o/r/pull/7');
   });
 });
 
