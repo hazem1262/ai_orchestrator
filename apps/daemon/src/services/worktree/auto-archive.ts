@@ -1,7 +1,8 @@
-import type { PrStatus } from '@orc/core';
+import type { PrRef, PrStatus } from '@orc/core';
 import type { DaemonContext } from '../../context.ts';
 import { getWorktree, listWorktrees, type WorktreeRow } from '../../db/repos/worktrees.ts';
 import { GitError } from '../git/exec.ts';
+import { addExternal, dropExternal, EXTERNAL_EVENT, externalEntries, externalRows } from './archive-rows.ts';
 import { repoSlugOf, sameRepo } from './worktree-read.ts';
 
 /** Worktrees linked to the PR. A worktree whose repo slug is known must be in the PR's repo. */
@@ -24,7 +25,8 @@ export async function worktreesForPr(ctx: DaemonContext, s: PrStatus): Promise<W
 /**
  * Archives app-created worktrees when their PR transitions to merged. It never forces: a dirty
  * worktree makes `archiveAs` refuse, and an external one is skipped before archiving is tried.
- * Either way the worktree stays and an inbox item says why.
+ * Either way the worktree stays and an inbox item says why: one item per worktree for an app
+ * worktree, and one item per repo listing every external worktree.
  */
 export function registerAutoArchive(ctx: DaemonContext): () => void {
   const blocked = (w: WorktreeRow, s: PrStatus, why: string) =>
@@ -39,16 +41,27 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       payload: { pr: s.pr, event: 'archive_blocked', path: w.path, presetId: null, vars: {} },
     });
 
-  const unblock = (path: string) =>
+  const resolveBlocked = (path: string) =>
     ctx.inbox?.resolve({
       kind: 'pr_event',
       scope: { domain: 'worktree', id: path },
       facet: 'archive_blocked',
     });
 
+  const external = (w: WorktreeRow, pr: PrRef) => {
+    resolveBlocked(w.path);
+    addExternal(ctx, w, pr);
+  };
+
+  const unblock = (path: string) => {
+    resolveBlocked(path);
+    dropExternal(ctx, (e) => e.path === path);
+  };
+
   // `worktree.removed` only fires for worktrees still active in the DB, so rows whose worktree
   // went away while the daemon was down are swept here.
   // Rows raised for a PR from another repo (a bad cross-repo link) are swept too.
+  // Per-worktree rows for external worktrees are folded into their repo's grouped row.
   const active = new Set(listWorktrees(ctx.db, { state: 'active' }).map((w) => w.path));
   const crossRepoChecks: Array<{ path: string; prRepo: string }> = [];
   for (const item of ctx.inbox?.list({ state: ['open', 'snoozed'], kind: ['pr_event'] }) ?? []) {
@@ -58,8 +71,26 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       unblock(path);
       continue;
     }
-    const prRepo = (item.payload.pr as { repo?: unknown } | undefined)?.repo;
-    if (typeof prRepo === 'string') crossRepoChecks.push({ path, prRepo });
+    const pr = item.payload.pr as Partial<PrRef> | undefined;
+    const w = getWorktree(ctx.db, path);
+    if (
+      w &&
+      !w.createdByApp &&
+      item.reason.includes('not created by the app') &&
+      typeof pr?.repo === 'string' &&
+      typeof pr.number === 'number' &&
+      typeof pr.url === 'string'
+    ) {
+      external(w, { repo: pr.repo, number: pr.number, url: pr.url });
+      continue;
+    }
+    if (typeof pr?.repo === 'string') crossRepoChecks.push({ path, prRepo: pr.repo });
+  }
+  dropExternal(ctx, (e) => !active.has(e.path));
+  for (const item of externalRows(ctx)) {
+    for (const e of externalEntries(item.payload)) {
+      if (typeof e.pr?.repo === 'string') crossRepoChecks.push({ path: e.path, prRepo: e.pr.repo });
+    }
   }
   void (async () => {
     for (const { path, prRepo } of crossRepoChecks) {
@@ -67,7 +98,9 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       const slug = w ? await repoSlugOf(w.repo) : null;
       if (slug && !sameRepo(slug, prRepo)) unblock(path);
     }
-  })().catch((err: unknown) => ctx.log.warn({ err: String(err) }, 'archive_blocked repo sweep failed'));
+  })().catch((err: unknown) =>
+    ctx.log.warn({ err: String(err) }, `archive_blocked/${EXTERNAL_EVENT} repo sweep failed`),
+  );
 
   const offRemoved = ctx.bus.on('worktree.removed', (e) => unblock(e.path));
 
@@ -79,7 +112,7 @@ export function registerAutoArchive(ctx: DaemonContext): () => void {
       .then((ws) => {
         for (const w of ws) {
           if (!w.createdByApp) {
-            blocked(w, e.after, 'it was not created by the app (archive it yourself)');
+            external(w, e.after.pr);
             continue;
           }
           worktrees.archiveAs(w.path, 'automation', { allowExternal: false }).catch((err: unknown) => {

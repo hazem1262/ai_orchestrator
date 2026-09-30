@@ -12,6 +12,7 @@ import {
   type WorktreeRow,
 } from '../../db/repos/worktrees.ts';
 import { git } from '../git/exec.ts';
+import { dropExternal, externalEntries, externalRows } from './archive-rows.ts';
 import { resolveWorktrees } from './discover.ts';
 import { collectCandidates } from './sources.ts';
 
@@ -146,7 +147,7 @@ const sessionFallback = (
   headDiffers: (url: string) => boolean,
 ) => sessionPrs.find((p) => sameRepo(p.repo, slug) && !headDiffers(p.url))?.url ?? null;
 
-/** Resolves open archive_blocked rows that name a PR other than the worktree's current link. */
+/** Resolves open archive rows (per-worktree or grouped) that name a PR other than the worktree's current link. */
 function resolveStaleArchiveBlocked(
   ctx: DaemonContext,
   rows: Map<string, string | null>,
@@ -160,6 +161,7 @@ function resolveStaleArchiveBlocked(
     scope: { domain: 'worktree', id: view.path },
     facet: 'archive_blocked',
   });
+  dropExternal(ctx, (e) => e.path === view.path);
   rows.delete(view.path);
 }
 
@@ -170,6 +172,10 @@ function openArchiveBlocked(ctx: DaemonContext): Map<string, string | null> {
     if (item.payload.event !== 'archive_blocked' || typeof path !== 'string') continue;
     const url = (item.payload.pr as { url?: unknown } | undefined)?.url;
     out.set(path, typeof url === 'string' ? url : null);
+  }
+  for (const item of externalRows(ctx)) {
+    for (const e of externalEntries(item.payload))
+      out.set(e.path, typeof e.pr?.url === 'string' ? e.pr.url : null);
   }
   return out;
 }

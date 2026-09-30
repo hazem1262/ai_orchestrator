@@ -6,6 +6,7 @@ import { recordingPty } from '../../../test/fake-pty.ts';
 import { makeTempRepo, type TempRepo } from '../../../test/git-fixture.ts';
 import { createTestContext } from '../../../test/helpers.ts';
 import { memoryAudit, recordingInbox, stubSessions } from '../../../test/stubs.ts';
+import type { WorktreeRow } from '../../db/repos/worktrees.ts';
 import { getWorktree, upsertWorktree } from '../../db/repos/worktrees.ts';
 import { registerAutoArchive } from './auto-archive.ts';
 import { createWorktreeService } from './worktree.ts';
@@ -236,6 +237,140 @@ describe('registerAutoArchive', () => {
       expect(stateOf(stale.id)).toBe('auto_resolved');
       expect(stateOf(snoozed.id)).toBe('auto_resolved');
       expect(stateOf(live.id)).toBe('open');
+    });
+  });
+  describe('external worktrees are grouped per repo', () => {
+    const mergedPr = (repoSlug: string, number: number, headRef: string) => {
+      const url = `https://github.com/${repoSlug}/pull/${number}`;
+      const e = merged(url, headRef);
+      const pr = { repo: repoSlug, number, url };
+      return { ...e, before: { ...e.before, pr }, after: { ...e.after, pr } };
+    };
+    const external = (
+      ctx: Parameters<typeof upsertWorktree>[0],
+      base: WorktreeRow,
+      repoDir: string,
+      n: number,
+    ) => {
+      const w: WorktreeRow = {
+        ...base,
+        path: `${repoDir}/.worktrees/ext-${n}`,
+        repo: repoDir,
+        branch: `ext-${n}`,
+        prUrl: `https://github.com/o/r/pull/${n}`,
+        createdByApp: false,
+        origin: 'worktree-dir',
+        sessionPks: [],
+      };
+      upsertWorktree(ctx, w);
+      return w;
+    };
+    const grouped = (inbox: ReturnType<typeof recordingInbox>, repoDir: string) =>
+      inbox
+        .list({ state: ['open', 'snoozed'] })
+        .filter((i) => i.payload.event === 'archive_external' && i.payload.repo === repoDir);
+    const entries = (item: { payload: Record<string, unknown> } | undefined) =>
+      (item?.payload.worktrees ?? []) as Array<{ path: string; pr: { number: number } }>;
+
+    it('raises one row per repo listing every external worktree, and a per-worktree row for a dirty one', async () => {
+      const { ctx, view, url, inbox, row, off } = await setup();
+      const dir = repo?.dir ?? '';
+      const other = makeTempRepo();
+      disposers.push(() => other.cleanup());
+      const a = external(ctx.db, row, dir, 2);
+      const b = external(ctx.db, row, dir, 3);
+      const c = external(ctx.db, row, other.dir, 4);
+      ctx.bus.emit(mergedPr('o/r', 2, a.branch));
+      ctx.bus.emit(mergedPr('o/r', 3, b.branch));
+      ctx.bus.emit(mergedPr('o/r', 4, c.branch));
+      repo?.write('.worktrees/feat-SAF-50-merge-me/src/a.ts', 'dirty\n');
+      ctx.bus.emit(merged(url, view.branch));
+
+      await vi.waitFor(() => {
+        expect(entries(grouped(inbox, dir)[0])).toHaveLength(2);
+        expect(entries(grouped(inbox, other.dir)[0])).toHaveLength(1);
+        expect(inbox.list({ state: ['open'] }).some((i) => i.payload.path === view.path)).toBe(true);
+      });
+      const rows = grouped(inbox, dir);
+      expect(rows).toHaveLength(1);
+      expect(inbox.upserts.find((u) => u.payload?.event === 'archive_external')).toMatchObject({
+        kind: 'pr_event',
+        facet: 'archive_external',
+      });
+      expect(entries(rows[0]).map((e) => [e.path, e.pr.number])).toEqual([
+        [a.path, 2],
+        [b.path, 3],
+      ]);
+      expect(rows[0]?.reason).toContain('2 merged worktrees in o/r were not created by the app');
+      expect(
+        inbox.list({ state: ['open'] }).filter((i) => i.payload.event === 'archive_blocked'),
+      ).toHaveLength(1);
+      expect(
+        inbox.list({ state: ['open'] }).find((i) => i.payload.event === 'archive_blocked')?.reason,
+      ).toContain('uncommitted changes');
+
+      ctx.bus.emit(mergedPr('o/r', 2, a.branch));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(entries(grouped(inbox, dir)[0])).toHaveLength(2);
+      off();
+    });
+
+    it('drops a removed worktree from the grouped row and resolves the row with the last one', async () => {
+      const { ctx, inbox, row, off } = await setup();
+      const dir = repo?.dir ?? '';
+      const a = external(ctx.db, row, dir, 2);
+      const b = external(ctx.db, row, dir, 3);
+      ctx.bus.emit(mergedPr('o/r', 2, a.branch));
+      ctx.bus.emit(mergedPr('o/r', 3, b.branch));
+      await vi.waitFor(() => expect(entries(grouped(inbox, dir)[0])).toHaveLength(2));
+      const id = grouped(inbox, dir)[0]?.id;
+
+      ctx.bus.emit({ type: 'worktree.removed', path: a.path });
+      expect(entries(grouped(inbox, dir)[0]).map((e) => e.path)).toEqual([b.path]);
+      expect(grouped(inbox, dir)[0]?.reason).toContain('1 merged worktree in o/r was not created by the app');
+
+      ctx.bus.emit({ type: 'worktree.removed', path: b.path });
+      expect(grouped(inbox, dir)).toEqual([]);
+      expect(inbox.list({}).find((i) => i.id === id)?.state).toBe('auto_resolved');
+      off();
+    });
+
+    it('folds per-worktree "not created by the app" rows into the grouped row at startup', async () => {
+      const { ctx, view, inbox, row, off } = await setup();
+      off();
+      const dir = repo?.dir ?? '';
+      const a = external(ctx.db, row, dir, 2);
+      const b = external(ctx.db, row, dir, 3);
+      const legacy = (path: string, n: number, why: string) =>
+        inbox.upsert({
+          kind: 'pr_event',
+          scope: { domain: 'worktree', id: path },
+          facet: 'archive_blocked',
+          reason: `o/r#${n} merged; worktree kept because ${why}`,
+          payload: {
+            pr: { repo: 'o/r', number: n, url: `https://github.com/o/r/pull/${n}` },
+            event: 'archive_blocked',
+            path,
+            presetId: null,
+            vars: {},
+          },
+        });
+      const la = legacy(a.path, 2, 'it was not created by the app (archive it yourself)');
+      const lb = legacy(b.path, 3, 'it was not created by the app (archive it yourself)');
+      const dirty = legacy(view.path, 1, 'it has uncommitted changes');
+      const stateOf = (id: string) => inbox.list({}).find((i) => i.id === id)?.state;
+
+      disposers.push(registerAutoArchive(ctx));
+
+      await vi.waitFor(() => expect(entries(grouped(inbox, dir)[0])).toHaveLength(2));
+      expect(stateOf(la.id)).toBe('auto_resolved');
+      expect(stateOf(lb.id)).toBe('auto_resolved');
+      expect(stateOf(dirty.id)).toBe('open');
+      expect(grouped(inbox, dir)).toHaveLength(1);
+      expect(entries(grouped(inbox, dir)[0]).map((e) => [e.path, e.pr.number])).toEqual([
+        [a.path, 2],
+        [b.path, 3],
+      ]);
     });
   });
 });
