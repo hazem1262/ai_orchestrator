@@ -68,7 +68,12 @@ export function toView(d: WorktreeDeps, row: WorktreeRow): WorktreeView {
       ? null
       : findPrByHead(d.ctx.db, row.branch, slugCache.get(row.repo) ?? null);
   const { createdAt: _c, archivedAt: _a, ...view } = row;
-  return { ...view, prUrl: row.prUrl ?? prStatus?.pr.url ?? null, prStatus };
+  return {
+    ...view,
+    prUrl: row.prUrl ?? prStatus?.pr.url ?? null,
+    prStatus,
+    repoSlug: slugCache.get(row.repo) ?? null,
+  };
 }
 
 function sessionLinks(d: WorktreeDeps, paths: string[]): Map<string, string[]> {

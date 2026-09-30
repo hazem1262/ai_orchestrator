@@ -125,6 +125,13 @@ export const AUDITED_ROUTES: AuditedRoute[] = [
   },
   {
     method: 'POST',
+    pattern: /^\/api\/worktrees\/cleanup$/,
+    action: 'worktree.cleanup',
+    target: () => null,
+    recordedBy: 'service',
+  },
+  {
+    method: 'POST',
     pattern: /^\/api\/diff\/revert$/,
     action: 'git.revert',
     target: (_m, b) => str(b.cwd),

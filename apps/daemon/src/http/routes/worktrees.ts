@@ -3,6 +3,8 @@ import {
   CreateWorktreeBody,
   LaunchRequest,
   WorktreeArchiveBody,
+  WorktreeCleanupBody,
+  WorktreeCleanupQuery,
   WorktreeListQuery,
   WorktreeOpenBody,
   WorktreePathBody,
@@ -143,6 +145,18 @@ export function worktreesRoutes(ctx: DaemonContext): Hono {
     }
     await svc().archiveAs(b.path, 'user', { allowExternal: b.confirmExternal });
     return c.json({ ok: true });
+  });
+
+  app.get('/worktrees/cleanup/preview', async (c) =>
+    redactedJson(c, await svc().cleanupPreview(parseQuery(c, WorktreeCleanupQuery))),
+  );
+
+  app.post('/worktrees/cleanup', async (c) => {
+    const b = await parseJson(c, WorktreeCleanupBody);
+    requireConfirm(b.confirm, `Remove ${b.paths.length} merged worktree(s). Their branches are kept.`, {
+      paths: b.paths,
+    });
+    return redactedJson(c, await svc().cleanup(b.paths));
   });
 
   return app;

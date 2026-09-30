@@ -70,6 +70,8 @@ export function createFakeApi(overrides: Partial<FakeApi> = {}): FakeApi {
     worktreesSyncPreview: unexpected('worktreesSyncPreview'),
     worktreesSync: unexpected('worktreesSync'),
     worktreesArchive: unexpected('worktreesArchive'),
+    worktreesCleanupPreview: unexpected('worktreesCleanupPreview'),
+    worktreesCleanup: unexpected('worktreesCleanup'),
     diffGet: unexpected('diffGet'),
     diffRevert: unexpected('diffRevert'),
     checkpointsList: unexpected('checkpointsList'),

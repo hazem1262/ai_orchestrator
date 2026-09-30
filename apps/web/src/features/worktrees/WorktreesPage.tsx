@@ -1,5 +1,5 @@
 import type { WorktreeView } from '@orc/core';
-import { GitBranch, ScanSearch } from 'lucide-react';
+import { BrushCleaning, GitBranch, ScanSearch } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import { getApiClient } from '@/api/client.ts';
 import { useDiscoverWorktrees, useWorktrees, worktreeKeys } from '@/api/queries/worktrees.ts';
@@ -20,8 +20,15 @@ import { useConfirmedMutation } from '@/features/git/useConfirmedMutation.ts';
 import { useIsMobile } from '@/features/mobile/useIsMobile.ts';
 import { useProjectStore } from '@/stores/project.ts';
 import { useTerminalStore } from '@/stores/terminals.ts';
+import { CleanupDialog } from './CleanupDialog.tsx';
 import { CreateWorktreeDialog } from './CreateWorktreeDialog.tsx';
-import { RepoGroupHeading, type WorktreeAction, WorktreeCard, WorktreeRow } from './WorktreeRow.tsx';
+import {
+  RepoGroupHeading,
+  repoGroupName,
+  type WorktreeAction,
+  WorktreeCard,
+  WorktreeRow,
+} from './WorktreeRow.tsx';
 
 type ArchiveVars = { path: string; confirmExternal: boolean };
 
@@ -52,6 +59,7 @@ export function WorktreesPage() {
   const discover = useDiscoverWorktrees();
   const openTerminal = useTerminalStore((s) => s.open);
   const [creating, setCreating] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
   const isMobile = useIsMobile();
 
   const archive = useConfirmedMutation(
@@ -71,7 +79,9 @@ export function WorktreesPage() {
   const groups = useMemo(() => {
     const byRepo = new Map<string, WorktreeView[]>();
     for (const w of list.data ?? []) byRepo.set(w.repo, [...(byRepo.get(w.repo) ?? []), w]);
-    return [...byRepo.entries()];
+    return [...byRepo.entries()]
+      .map(([repo, rows]) => ({ repo, name: repoGroupName(repo, rows), rows }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.repo.localeCompare(b.repo));
   }, [list.data]);
 
   const onAction = (a: WorktreeAction, w: WorktreeView) => {
@@ -97,11 +107,20 @@ export function WorktreesPage() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-lg font-semibold">Worktrees</h1>
         <Button size="sm" variant="outline" disabled={discover.isPending} onClick={() => discover.mutate()}>
           <ScanSearch />
           {discover.isPending ? 'Scanning…' : 'Discover'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!(list.data ?? []).some((w) => !w.isMain)}
+          onClick={() => setCleaning(true)}
+        >
+          <BrushCleaning />
+          Clean up merged
         </Button>
         <Button size="sm" onClick={() => setCreating(true)}>
           New worktree
@@ -137,9 +156,9 @@ export function WorktreesPage() {
         </Empty>
       ) : !list.isSuccess ? null : isMobile ? (
         <div className="flex flex-col gap-4">
-          {groups.map(([repo, rows]) => (
-            <section key={repo} aria-label={repo} className="flex min-w-0 flex-col gap-2">
-              <RepoGroupHeading repo={repo} />
+          {groups.map(({ repo, name, rows }) => (
+            <section key={repo} aria-label={name} className="flex min-w-0 flex-col gap-2">
+              <RepoGroupHeading repo={repo} name={name} count={rows.length} />
               <div className="flex flex-col gap-2">
                 {rows.map((w) => (
                   <WorktreeCard key={w.path} w={w} onAction={onAction} />
@@ -164,11 +183,11 @@ export function WorktreesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {groups.map(([repo, rows]) => (
+              {groups.map(({ repo, name, rows }) => (
                 <Fragment key={repo}>
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                     <TableCell colSpan={6} className="py-1.5 pl-3">
-                      <RepoGroupHeading repo={repo} />
+                      <RepoGroupHeading repo={repo} name={name} count={rows.length} />
                     </TableCell>
                   </TableRow>
                   {rows.map((w) => (
@@ -182,6 +201,7 @@ export function WorktreesPage() {
       )}
 
       <CreateWorktreeDialog open={creating} onClose={() => setCreating(false)} repos={repos} />
+      {cleaning && <CleanupDialog projectId={projectId} onClose={() => setCleaning(false)} />}
       <GitConfirmDialog
         request={archive.pending}
         busy={archive.busy}

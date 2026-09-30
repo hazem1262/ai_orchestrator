@@ -445,6 +445,7 @@ export function fakeWorktrees(): WorktreeService & {
       sessionPks: [],
       projectId: 'wakecap',
       prStatus: null,
+      repoSlug: null,
       updatedAt: iso(),
     };
   };
@@ -490,6 +491,12 @@ export function fakeWorktrees(): WorktreeService & {
         .filter((w) => w.state === 'active' && cwd.startsWith(w.path))
         .sort((a, b) => b.path.length - a.path.length)[0] ?? null,
     async open() {},
+    async cleanupPreview() {
+      return { candidates: [], skipped: [] };
+    },
+    async cleanup(paths) {
+      return { results: paths.map((path) => ({ path, ok: false, error: 'not supported by the fake' })) };
+    },
     branchName,
   };
 }

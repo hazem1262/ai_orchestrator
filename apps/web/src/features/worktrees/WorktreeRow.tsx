@@ -58,16 +58,25 @@ function PrCell({ w }: { w: WorktreeView }) {
   );
 }
 
-/** The repo group's own header: a `heading` so screen readers can jump between groups, its path
- *  truncated with a native tooltip so a long checkout path never wraps a phone card or table row. */
-export function RepoGroupHeading({ repo }: { repo: string }) {
+/** A repo group's display name: the GitHub `owner/name` when known, else the main checkout's folder name. */
+export function repoGroupName(repo: string, rows: WorktreeView[]): string {
+  return rows.find((w) => w.repoSlug)?.repoSlug ?? repo.split('/').filter(Boolean).at(-1) ?? repo;
+}
+
+/** The repo group's own header: a `heading` so screen readers can jump between groups, named with
+ *  its worktree count, and the checkout path as a native tooltip. */
+export function RepoGroupHeading({ repo, name, count }: { repo: string; name: string; count: number }) {
   return (
     <h2
       title={repo}
+      aria-label={`${name}, ${count} worktree${count === 1 ? '' : 's'}`}
       className="flex min-w-0 items-center gap-1.5 truncate font-mono text-sm font-semibold text-muted-foreground"
     >
       <FolderGit2 className="size-3.5 shrink-0" aria-hidden />
-      <span className="truncate">{repo}</span>
+      <span className="truncate">{name}</span>
+      <Badge variant="secondary" className="font-sans tabular-nums">
+        {count}
+      </Badge>
     </h2>
   );
 }

@@ -1,5 +1,8 @@
+import type { WorktreeCleanupPreview, WorktreeCleanupResult } from '@orc/api-contract';
 import { type AuditActor, branchName as coreBranchName, type Worktree, type WorktreeView } from '@orc/core';
+import type { z } from 'zod';
 import type { DaemonContext } from '../../context.ts';
+import { cleanupPreview, runCleanup } from './cleanup.ts';
 import {
   discoverWorktrees,
   findWorktreeByCwd,
@@ -42,6 +45,10 @@ export interface WorktreeService {
     opts: { runSetup: boolean; actor: AuditActor },
   ): Promise<{ view: WorktreeView; setupPtyId: string | null }>;
   open(path: string, target: 'vscode' | 'terminal' | 'finder'): Promise<void>;
+  /** Merged, non-main active worktrees that `cleanup` would archive, and merged ones it would skip. */
+  cleanupPreview(filter: { projectId?: string }): Promise<z.infer<typeof WorktreeCleanupPreview>>;
+  /** Re-checks each path and archives the merged, clean ones as the user, app-created or not. */
+  cleanup(paths: string[]): Promise<z.infer<typeof WorktreeCleanupResult>>;
 }
 
 export function createWorktreeService(
@@ -74,5 +81,8 @@ export function createWorktreeService(
     get: (path) => getWorktreeView(d, path),
     findByCwd: (cwd) => findWorktreeByCwd(d, cwd),
     open: (path, target) => openWorktree(d, path, target),
+    cleanupPreview: (f) => cleanupPreview(d, f),
+    cleanup: (paths) =>
+      runCleanup(d, paths, (path) => archiveWorktree(d, path, 'user', { allowExternal: true })),
   };
 }

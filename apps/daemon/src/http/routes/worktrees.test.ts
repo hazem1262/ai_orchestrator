@@ -187,3 +187,38 @@ describe('worktree listing, scripts, sync and archive', () => {
     expect(await ok.json()).toEqual({ ok: true });
   });
 });
+
+describe('worktree clean-up routes', () => {
+  it('previews merged worktrees, asks to confirm, then archives the listed paths', async () => {
+    const { app, post, repo } = setup();
+    await post('/worktrees', { ...createBody(repo), confirm: true });
+    repo.git('-C', wtPath(repo), 'commit', '--allow-empty', '-m', 'work');
+    repo.git(
+      'update-ref',
+      'refs/remotes/origin/main',
+      repo.git('-C', wtPath(repo), 'rev-parse', 'HEAD').trim(),
+    );
+
+    const preview = await app.request('/worktrees/cleanup/preview?projectId=wakecap');
+    expect(preview.status).toBe(200);
+    expect(await preview.json()).toEqual({
+      candidates: [
+        {
+          path: wtPath(repo),
+          repo: repo.dir,
+          repoName: 'repo',
+          branch: 'feat/SAF-90-routes',
+          reason: 'in_default_branch',
+        },
+      ],
+      skipped: [],
+    });
+
+    const ask = await post('/worktrees/cleanup', { paths: [wtPath(repo)] });
+    expect(ask.status).toBe(409);
+    expect(((await ask.json()) as { error: { code: string } }).error.code).toBe('confirmation_required');
+    const run = await post('/worktrees/cleanup', { paths: [wtPath(repo)], confirm: true });
+    expect(await run.json()).toEqual({ results: [{ path: wtPath(repo), ok: true }] });
+    expect((await post('/worktrees/cleanup', { paths: [], confirm: true })).status).toBe(400);
+  });
+});

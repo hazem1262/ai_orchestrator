@@ -26,6 +26,7 @@ export const view = (p: Partial<WorktreeView>): WorktreeView => ({
   sessionPks: ['claude:s1'],
   projectId: 'wakecap',
   prStatus: null,
+  repoSlug: 'o/r',
   updatedAt: '2026-09-17T10:00:00Z',
   ...p,
 });

@@ -3,7 +3,10 @@ import { and, asc, eq, type SQL } from 'drizzle-orm';
 import type { OrcDb } from '../client.ts';
 import { worktrees } from '../schema.ts';
 
-export type WorktreeRow = Omit<WorktreeView, 'prStatus'> & { createdAt: string; archivedAt: string | null };
+export type WorktreeRow = Omit<WorktreeView, 'prStatus' | 'repoSlug'> & {
+  createdAt: string;
+  archivedAt: string | null;
+};
 
 type Db = typeof worktrees.$inferSelect;
 

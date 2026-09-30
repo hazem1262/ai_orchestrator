@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PrRefSchema } from '../domain.ts';
 import { Confirm, IsoString } from './common.ts';
 import { PrStatusSchema } from './ship.ts';
 
@@ -20,6 +21,7 @@ export const WorktreeViewSchema = z.object({
   sessionPks: z.array(z.string()),
   projectId: z.string().nullable(),
   prStatus: PrStatusSchema.nullable(),
+  repoSlug: z.string().nullable(),
   updatedAt: IsoString,
 });
 
@@ -72,4 +74,39 @@ export const CreateWorktreeResult = z.object({
   worktree: WorktreeViewSchema,
   setupPtyId: z.string().nullable(),
   launch: z.object({ ptyId: z.string(), sessionId: z.string().nullable() }).nullable(),
+});
+
+export const WorktreeCleanupQuery = z.object({ projectId: z.string().optional() });
+
+/** Why a worktree counts as merged: its linked PR is merged, or its branch tip is already in `origin/<default>`. */
+export const WorktreeCleanupReason = z.enum(['pr_merged', 'in_default_branch']);
+
+const CleanupItem = z.object({
+  path: z.string(),
+  /** The main checkout path of the worktree's repo. */
+  repo: z.string(),
+  /** GitHub `owner/name` when known, else the main checkout's folder name. */
+  repoName: z.string(),
+  branch: z.string(),
+});
+
+export const WorktreeCleanupCandidate = CleanupItem.extend({
+  reason: WorktreeCleanupReason,
+  pr: PrRefSchema.optional(),
+});
+
+export const WorktreeCleanupSkipped = CleanupItem.extend({ why: z.string() });
+
+export const WorktreeCleanupPreview = z.object({
+  candidates: z.array(WorktreeCleanupCandidate),
+  skipped: z.array(WorktreeCleanupSkipped),
+});
+
+export const WorktreeCleanupBody = z.object({
+  paths: z.array(z.string().min(1)).min(1).max(500),
+  confirm: Confirm,
+});
+
+export const WorktreeCleanupResult = z.object({
+  results: z.array(z.object({ path: z.string(), ok: z.boolean(), error: z.string().optional() })),
 });

@@ -15,6 +15,9 @@ import type {
   CreateWorktreeBody,
   CreateWorktreeResult,
   SyncPreview,
+  WorktreeCleanupPreview,
+  WorktreeCleanupQuery,
+  WorktreeCleanupResult,
   WorktreeListQuery,
 } from './routes/worktrees.ts';
 
@@ -89,6 +92,10 @@ export function worktreesClient(req: ApiRequester) {
       req<{ files: number }>('POST', '/api/worktrees/sync', { body }),
     worktreesArchive: (body: { path: string; confirm: boolean; confirmExternal: boolean }) =>
       req<{ ok: true }>('POST', '/api/worktrees/archive', { body }),
+    worktreesCleanupPreview: (q: z.infer<typeof WorktreeCleanupQuery> = {}) =>
+      req<z.infer<typeof WorktreeCleanupPreview>>('GET', '/api/worktrees/cleanup/preview', { query: q }),
+    worktreesCleanup: (body: { paths: string[]; confirm: boolean }) =>
+      req<z.infer<typeof WorktreeCleanupResult>>('POST', '/api/worktrees/cleanup', { body }),
   };
 }
 

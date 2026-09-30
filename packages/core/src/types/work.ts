@@ -92,6 +92,8 @@ export interface WorktreeView extends Worktree {
   sessionPks: string[];
   projectId: string | null;
   prStatus: PrStatus | null;
+  /** GitHub `owner/name` of the repo's `origin` remote, or null when unknown. */
+  repoSlug: string | null;
   updatedAt: string;
 }
 

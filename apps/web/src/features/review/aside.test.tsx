@@ -29,6 +29,7 @@ const summary = (p: Partial<ReviewSummary> = {}): ReviewSummary => ({
     sessionPks: ['claude:s1'],
     projectId: 'wakecap',
     prStatus: null,
+    repoSlug: null,
     updatedAt: 'x',
   },
   files: [{ path: 'src/a.ts', additions: 3, deletions: 1 }],

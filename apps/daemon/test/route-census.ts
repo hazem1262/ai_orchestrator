@@ -209,6 +209,16 @@ export const CENSUS: Record<string, CensusEntry> = {
   },
   'POST /api/worktrees/sync': { guardedBy: null, reason: '{ files: number }' },
   'POST /api/worktrees/archive': { guardedBy: null, reason: '{ ok: true }' },
+  'GET /api/worktrees/cleanup/preview': {
+    guardedBy: null,
+    reason:
+      'worktree and main checkout paths, branches, repo names and PR refs, walked by redactedJson (core redactDeep) on the way out',
+  },
+  'POST /api/worktrees/cleanup': {
+    guardedBy: null,
+    reason:
+      'per-path results with git/archive error messages, walked by redactedJson (core redactDeep) on the way out',
+  },
   'GET /api/github/status': { guardedBy: null, reason: '{ status }: one of four constants' },
   'GET /api/github/pr': {
     guardedBy: null,
