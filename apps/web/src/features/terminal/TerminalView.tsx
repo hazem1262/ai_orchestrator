@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 import { useEffect, useRef, useState } from 'react';
 import { getToken } from '@/api/client.ts';
 import { connectPty, type PtySocket, type PtySocketStatus } from '@/api/pty-socket.ts';
+import { DROP_PATHS_EVENT, type DropPathsDetail, dropText } from './drop-paths.ts';
 
 const GEIST_MONO = '"Geist Mono Variable"';
 const FALLBACK_FONT = 'Menlo, Monaco, monospace';
@@ -68,8 +69,20 @@ export function TerminalView({ ptyId, active }: { ptyId: string; active: boolean
     }
     const observer = new ResizeObserver(() => sendSize());
     observer.observe(host);
+    // The desktop app reports dropped files with their absolute paths; a browser never exposes them.
+    const onDropPaths = (event: Event): void => {
+      const { paths, x, y } = (event as CustomEvent<DropPathsDetail>).detail;
+      const target = document.elementFromPoint(x, y);
+      if (!target || !host.contains(target)) return;
+      const text = dropText(paths);
+      if (!text) return;
+      sock.send({ t: 'in', d: text });
+      term.focus();
+    };
+    window.addEventListener(DROP_PATHS_EVENT, onDropPaths);
     return () => {
       disposed = true;
+      window.removeEventListener(DROP_PATHS_EVENT, onDropPaths);
       observer.disconnect();
       input.dispose();
       sock.close();

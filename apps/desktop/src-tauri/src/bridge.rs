@@ -48,6 +48,12 @@ pub fn tray_tooltip(waiting: Option<usize>, pct: Option<f64>) -> String {
     }
 }
 
+/// Script that hands dropped paths to the page. `x`/`y` are CSS pixels from the window's top-left.
+pub fn drop_paths_script(paths: &[String], x: f64, y: f64) -> String {
+    let detail = serde_json::json!({ "paths": paths, "x": x, "y": y });
+    format!("window.dispatchEvent(new CustomEvent('orc:drop-paths', {{ detail: {detail} }}));")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +79,15 @@ mod tests {
         ]);
         assert_eq!(count_waiting(&live), 2);
         assert_eq!(count_waiting(&json!({})), 0);
+    }
+
+    #[test]
+    fn builds_the_drop_script() {
+        let script = drop_paths_script(&["/Users/me/My \"Repo\"".to_string()], 10.5, 20.0);
+        assert_eq!(
+            script,
+            r#"window.dispatchEvent(new CustomEvent('orc:drop-paths', { detail: {"paths":["/Users/me/My \"Repo\""],"x":10.5,"y":20.0} }));"#
+        );
     }
 
     #[test]

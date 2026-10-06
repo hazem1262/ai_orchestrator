@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -188,12 +188,22 @@ pub fn run() {
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
                 // Keep the daemon and the tray running; the window is only hidden.
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) => {
+                let Some(webview) = window.app_handle().get_webview_window(window.label()) else {
+                    return;
+                };
+                let scale = window.scale_factor().unwrap_or(1.0);
+                let logical = position.to_logical::<f64>(scale);
+                let paths: Vec<String> = paths.iter().map(|p| p.to_string_lossy().to_string()).collect();
+                let _ = webview.eval(&bridge::drop_paths_script(&paths, logical.x, logical.y));
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while building the Orchestrator app")
